@@ -11,6 +11,7 @@ on:
       - 'scripts/build15_evolution_hud_patch.py'
       - 'scripts/build16_game_turbo_experience_patch.py'
       - 'scripts/build17_game_turbo_polish_patch.py'
+      - 'scripts/build18_game_turbo_compile_fix.py'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -43,17 +44,20 @@ jobs:
       - name: Apply Build 17 Game Turbo polish
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build17_game_turbo_polish_patch.py
+      - name: Apply Build 18 Kotlin compile fix
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build18_game_turbo_compile_fix.py
       - name: Pre-build regression and safety assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q 'GAME TURBO POLISHED' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'GAME TURBO • REALTIME 1s' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'AUTO GAME DETECTION' app/src/main/java/com/djaeger/controlcenter/GameLauncherActivity.kt
           grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'BOOT_COMPLETED' app/src/main/java/com/djaeger/controlcenter/DjaegerBootReceiver.kt
           grep -q 'WINDOW=ACTIVE' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'RESIZE MANUAL' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'suppressed=true' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'x.scaleX=scale' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'view.scaleX=scale' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'djaeger-ai gemini-chat-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'djaeger-ai gemini-knowledge-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
@@ -99,11 +103,11 @@ jobs:
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.8.1-RC-Game-Turbo-Polished.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.8.2-RC-Game-Turbo.apk
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.8.1-RC-Game-Turbo-Polished
+          name: DJAEGER-v0.8.2-RC-Game-Turbo
           path: output/*
           if-no-files-found: error
