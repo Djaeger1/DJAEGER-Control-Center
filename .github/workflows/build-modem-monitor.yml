@@ -1,0 +1,41 @@
+name: Build DJAEGER Modem Monitor APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'modem-monitor/**'
+      - '.github/workflows/build-modem-monitor.yml'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Static safety audit
+        working-directory: modem-monitor
+        run: |
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          grep -q 'http://192.168.1.1/djaeger-modem/status' app/src/main/java/com/djaeger/modemmonitor/MainActivity.java
+          ! grep -R -nE 'Runtime\.getRuntime|ProcessBuilder|su |/system/bin/sh|MODEM_REBOOT|WAN_RECONNECT' app/src/main || exit 1
+      - name: Build debug APK
+        working-directory: modem-monitor
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Collect artifact
+        run: |
+          mkdir -p output
+          APK="$(find modem-monitor/app/build/outputs/apk -name '*debug*.apk' | head -1)"
+          test -n "$APK"
+          cp "$APK" output/DJAEGER-Modem-Monitor-v1.0.0-RC1.apk
+          sha256sum output/*.apk > output/SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Modem-Monitor-v1.0.0-RC1
+          path: output/*
+          if-no-files-found: error
