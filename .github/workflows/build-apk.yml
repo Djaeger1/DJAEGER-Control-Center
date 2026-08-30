@@ -67,8 +67,8 @@ jobs:
           grep -q 'kernelCapabilitySummary' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'session-recovery-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'snapshot-lifecycle-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'runtime\["active"\]' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'activeFlag' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'map\["active"\]' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
