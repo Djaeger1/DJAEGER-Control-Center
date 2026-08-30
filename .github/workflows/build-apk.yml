@@ -2,6 +2,10 @@ name: Build DJAEGER Control Center APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-apk.yml'
 
 jobs:
   build:
@@ -12,17 +16,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Extract DJAEGER source
         run: |
+          rm -rf project
           mkdir -p project
           unzip -q DJAEGER_Control_Center_v0.5.3_RC_CoGo_AndroidX_Fix.zip -d project
-          echo "Source extracted:"
-          find project -maxdepth 2 -type f | head -50
+          test -f project/DJAEGER_Control_Center/settings.gradle.kts
+          test -f project/DJAEGER_Control_Center/build.gradle.kts
+          echo "Gradle project root verified."
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -30,13 +36,13 @@ jobs:
           gradle-version: '8.14.3'
 
       - name: Build APK
-        working-directory: project
+        working-directory: project/DJAEGER_Control_Center
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Collect APK
         run: |
           mkdir -p output
-          APK="$(find project -type f -name '*debug*.apk' | head -1)"
+          APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
           cp "$APK" output/DJAEGER-Control-Center-v0.5.3-RC.apk
 
@@ -45,3 +51,4 @@ jobs:
         with:
           name: DJAEGER-Control-Center-APK
           path: output/DJAEGER-Control-Center-v0.5.3-RC.apk
+          if-no-files-found: error
