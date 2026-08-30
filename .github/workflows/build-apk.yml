@@ -83,7 +83,6 @@ jobs:
           grep -q 'expandedSessionView' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'private val pollRunnable: Runnable = object : Runnable' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'Single-flight' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          ! grep -q 'mainHandler.postDelayed(this,' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           python3 - <<'PY'
           from pathlib import Path
           s=Path('app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt').read_text()
@@ -96,9 +95,12 @@ jobs:
           assert 'showOverlay' not in update_body
           assert 'rebuildOverlayKeepingPosition' not in update_body
           poll_body=s.split('private val pollRunnable',1)[1].split('private fun applySessionState',1)[0]
-          assert 'postDelayed' in poll_body and 'pollRunnable' in poll_body
-          assert 'postDelayed(this' not in poll_body
-          print('HUD persistent-view assertions PASS')
+          assert 'mainHandler.post {' in poll_body
+          completion=poll_body.split('mainHandler.post {',1)[1]
+          assert 'mainHandler.postDelayed(' in completion
+          assert 'this,' in completion
+          assert 'pollRunnable,' not in completion
+          print('HUD persistent-view + completion-scheduled polling assertions PASS')
           PY
           grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
