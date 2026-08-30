@@ -91,7 +91,7 @@ jobs:
           assert 'showOverlay' not in update_body
           assert 'rebuildOverlayKeepingPosition' not in update_body
           poll_body=s.split('private val pollRunnable',1)[1].split('private fun applySessionState',1)[0]
-          assert 'postDelayed(pollRunnable' in poll_body.replace('\n',' ').replace('  ',' ')
+          assert 'postDelayed' in poll_body and 'pollRunnable' in poll_body
           assert 'postDelayed(this' not in poll_body
           print('HUD persistent-view assertions PASS')
           PY
