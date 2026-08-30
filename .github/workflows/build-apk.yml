@@ -49,7 +49,7 @@ jobs:
       - name: Build APK
         working-directory: project/DJAEGER_Control_Center
         run: gradle :app:assembleDebug --stacktrace
-      - name: Static read-only and merged-manifest audit
+      - name: Static read-only and merged-manifest diagnostic audit
         working-directory: project/DJAEGER_Control_Center
         run: |
           ! grep -R -nE 'android.permission.INTERNET|SYSTEM_ALERT_WINDOW|WRITE_SETTINGS|PACKAGE_USAGE_STATS' app/src/main || exit 1
@@ -62,12 +62,15 @@ jobs:
           if [ -z "$MERGED" ]; then MERGED="$(find app/build/intermediates -name AndroidManifest.xml | head -1)"; fi
           test -n "$MERGED"
           echo "Auditing merged manifest: $MERGED"
-          ! grep -q 'android.permission.INTERNET' "$MERGED" || exit 1
-          ! grep -q 'android.permission.DUMP' "$MERGED" || exit 1
-          ! grep -q 'SYSTEM_ALERT_WINDOW' "$MERGED" || exit 1
-          ! grep -q 'WRITE_SETTINGS' "$MERGED" || exit 1
-          ! grep -q 'PACKAGE_USAGE_STATS' "$MERGED" || exit 1
-          ! grep -q 'androidx.compose.ui.tooling.PreviewActivity' "$MERGED" || exit 1
+          BLOCKED='android.permission.INTERNET|android.permission.DUMP|SYSTEM_ALERT_WINDOW|WRITE_SETTINGS|PACKAGE_USAGE_STATS|androidx.compose.ui.tooling.PreviewActivity'
+          MATCHES="$(grep -nE "$BLOCKED" "$MERGED" || true)"
+          if [ -n "$MATCHES" ]; then
+            echo '=== BLOCKED MERGED-MANIFEST ENTRIES ==='
+            echo "$MATCHES"
+            echo '=== END BLOCKED ENTRIES ==='
+            exit 1
+          fi
+          echo 'Merged manifest contains no blocked permission/tooling entries.'
       - name: Collect APK and hash
         run: |
           mkdir output
