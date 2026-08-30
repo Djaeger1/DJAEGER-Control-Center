@@ -29,3 +29,11 @@ if new_decl not in s or new_call not in s:
 
 p.write_text(s)
 print('Build 23 compile-safe single-flight HUD poll fix applied')
+
+# Chain the next maturity patch from the repository scripts directory. Keeping
+# this here makes the existing workflow execute Build24 without weakening any
+# of the already-proven Build22/23 assertions or requiring device-side testing.
+patch24 = Path('../../scripts/build24_realtime_telemetry_multiwindow_patch.py')
+if not patch24.is_file():
+    raise SystemExit('Build23: Build24 patch missing')
+exec(compile(patch24.read_text(), str(patch24), 'exec'), {'__name__': '__main__'})
