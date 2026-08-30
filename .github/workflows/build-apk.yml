@@ -3,111 +3,66 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['.github/workflows/build-apk.yml']
+    paths:
+      - '.github/workflows/build-apk.yml'
+      - 'scripts/build11_ai_bridge_patch.py'
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '17'}
-      - name: Extract source
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Extract DJAEGER source
         run: |
           rm -rf project && mkdir project
           unzip -q DJAEGER_Control_Center_v0.5.3_RC_CoGo_AndroidX_Fix.zip -d project
           test -f project/DJAEGER_Control_Center/settings.gradle.kts
-      - name: Apply Build 10 Direct User Modes integration
+      - name: Apply Build 11 AI Bridge patch
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build11_ai_bridge_patch.py
+      - name: Pre-build regression and safety assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          g=Path('app/build.gradle.kts'); s=g.read_text(); marker='    kotlinOptions { jvmTarget = "17" }'
-          if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
-              s=s.replace(marker,'    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }\n'+marker)
-          s=s.replace('versionCode = 8','versionCode = 12').replace('versionName = "0.5.3-rc-cogo"','versionName = "0.6.0-rc-direct-modes"'); g.write_text(s)
-          r=Path('app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt'); s=r.read_text()
-          s=s.replace('"__$a__\\n"','"__${a}__\\n"').replace('"__$b__\\n"','"__${b}__\\n"')
-          s=s.replace('val updated:Long=0,val moduleVersion:String="unknown"', 'val updated:Long=0,val userMode:String="AUTO",val moduleVersion:String="unknown"')
-          s=s.replace('updated=rt["updated_at"]?.toLongOrNull()?:0,moduleVersion=moduleVersion', 'updated=rt["updated_at"]?.toLongOrNull()?:0,userMode=rt["user_mode"]?:"AUTO",moduleVersion=moduleVersion')
-          old='    private fun parseTelemetry(line:String):Telemetry{val c=parseCsv(line);fun s(i:Int)=c.getOrNull(i)?.trim().orEmpty();return Telemetry(s(0).toLongOrNull()?:0,s(1).toIntOrNull()?:0,s(2).toIntOrNull()?:0,s(3).toIntOrNull()?:0,s(4).toIntOrNull()?:0,s(5).toLongOrNull()?:0,s(6).toLongOrNull()?:0,s(7).toLongOrNull()?:0,s(8),s(9).toDoubleOrNull()?:0.0,s(10).toDoubleOrNull()?:0.0,s(11).toDoubleOrNull()?:0.0,s(12).toDoubleOrNull()?:0.0,s(13).toDoubleOrNull()?:0.0,s(15),s(16).toLongOrNull()?:0,s(17).toLongOrNull()?:0,s(18).toDoubleOrNull()?:0.0,s(19),s(20),s(22))}'
-          new='''    private fun parseTelemetry(line: String): Telemetry {
-              val c = parseCsv(line)
-              fun field(i: Int): String = c.getOrNull(i)?.trim().orEmpty()
-              return Telemetry(field(0).toLongOrNull()?:0,field(1).toIntOrNull()?:0,field(2).toIntOrNull()?:0,field(3).toIntOrNull()?:0,field(4).toIntOrNull()?:0,field(5).toLongOrNull()?:0,field(6).toLongOrNull()?:0,field(7).toLongOrNull()?:0,field(8),field(9).toDoubleOrNull()?:0.0,field(10).toDoubleOrNull()?:0.0,field(11).toDoubleOrNull()?:0.0,field(12).toDoubleOrNull()?:0.0,field(13).toDoubleOrNull()?:0.0,field(15),field(16).toLongOrNull()?:0,field(17).toLongOrNull()?:0,field(18).toDoubleOrNull()?:0.0,field(19),field(20),field(22))
-          }'''
-          if old not in s: raise SystemExit('parseTelemetry baseline not found')
-          s=s.replace(old,new)
-          insert='''
-              suspend fun setUserMode(mode:String):Pair<Boolean,String> = withContext(Dispatchers.IO) {
-                  val normalized=mode.uppercase()
-                  val arg=when(normalized){"AUTO"->"auto";"DINGIN"->"dingin";"SEDANG"->"sedang";"HANGAT"->"hangat";"PANAS"->"panas";else->return@withContext Pair(false,"INVALID_MODE")}
-                  val (rc,out)=su("djaeger-ai mode $arg")
-                  Pair(rc==0,out.trim().ifBlank{if(rc==0) "REQUEST_SENT" else "MODE_COMMAND_FAILED"})
-              }
-          '''
-          s=s.replace('\n    private fun parseTelemetry',insert+'\n    private fun parseTelemetry')
-          r.write_text(s)
-          m=Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'); s=m.read_text()
-          s=s.replace('import androidx.compose.ui.Modifier','import androidx.compose.ui.Modifier\nimport androidx.compose.ui.platform.LocalClipboardManager\nimport androidx.compose.ui.text.AnnotatedString')
-          s=s.replace('CONTROL CENTER • v0.5.3 RC • REGRESSION VALIDATED','GAMING TURBO • v0.6.0 RC • DIRECT USER MODES • REALTIME 1s')
-          old_chart='@Composable fun LineChartCard(title:String,values:List<Float>,min:Float,max:Float,current:String){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold);Text(current,fontWeight=FontWeight.Bold)};Spacer(Modifier.height(10.dp));Canvas(Modifier.fillMaxWidth().height(120.dp)){if(values.size>1){val lo=min;val hi=max.coerceAtLeast(lo+1);val step=size.width/(values.size-1);fun y(v:Float)=size.height-(v.coerceIn(lo,hi)-lo)/(hi-lo)*size.height;for(i in 1 until values.size)drawLine(color=Green,start=Offset((i-1)*step,y(values[i-1])),end=Offset(i*step,y(values[i])),strokeWidth=3f)}}}}}'
-          new_chart='''@Composable fun LineChartCard(title:String,values:List<Float>,min:Float,max:Float,current:String){
-              val clipboard=LocalClipboardManager.current
-              Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){
-                  Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold);TextButton(onClick={clipboard.setText(AnnotatedString("["+title+"] "+current))}){Text("COPY")}}
-                  Text(current,fontWeight=FontWeight.Bold);Spacer(Modifier.height(10.dp))
-                  Canvas(Modifier.fillMaxWidth().height(120.dp)){if(values.size>1){val lo=min;val hi=max.coerceAtLeast(lo+1f);val step=size.width/(values.size-1);for(i in 1 until values.size){val y1=size.height-(values[i-1].coerceIn(lo,hi)-lo)/(hi-lo)*size.height;val y2=size.height-(values[i].coerceIn(lo,hi)-lo)/(hi-lo)*size.height;drawLine(color=Green,start=Offset((i-1)*step,y1),end=Offset(i*step,y2),strokeWidth=3f)}}}
-              }}
-          }'''
-          if old_chart not in s: raise SystemExit('LineChartCard baseline not found')
-          s=s.replace(old_chart,new_chart)
-          old_ai='@Composable fun AI(s:RuntimeState){Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){BoxCard("AI SUMMARY",aiSummary(s));BoxCard("LOCAL BRAIN",s.brain.ifBlank{"No state published yet"});BoxCard("ADAPTIVE OPERATING ENVELOPE",s.envelope.ifBlank{"No envelope published yet"});BoxCard("GEMINI HTTP STATE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)}}'
-          new_ai='''@Composable fun AI(s:RuntimeState){
-              val repo=remember{DjaegerRepository()}; var request by remember{mutableStateOf<String?>(null)}; var result by remember{mutableStateOf("")}
-              LaunchedEffect(request){val q=request;if(q!=null){val r=repo.setUserMode(q);result=r.second;request=null}}
-              val supported=s.moduleVersion.contains("12.9.21"); val retained=humanDecision(s); val brainText=if(s.brain.isBlank()) "No active Local Brain state.\\nLAST SESSION:\\n"+retained else s.brain
-              Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
-                  BoxCard("GAMING TURBO MODE","Module: ${s.moduleVersion}\\nConfirmed active mode: ${s.userMode}\\nContract: ${if(supported) "DIRECT USER MODES READY" else "REQUIRES DJAEGER v12.9.21+"}\\n${if(result.isBlank()) "Select a mode below." else "Last command: $result"}",true)
-                  if(supported){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)){listOf("AUTO","DINGIN","SEDANG","HANGAT","PANAS").forEach{mode->Button(onClick={request=mode},enabled=request==null,contentPadding=PaddingValues(horizontal=7.dp,vertical=5.dp),modifier=Modifier.weight(1f)){Text(mode,style=MaterialTheme.typography.labelSmall)}}}}
-                  BoxCard("MODE AUTHORITY","The button sends only the official djaeger-ai mode command. DJAEGER controller confirms user_mode in runtime_status. Local Brain validates execution; Gemini receives USER_MODE as strategic context. Native thermal protection remains supreme.",true)
-                  BoxCard("AI SUMMARY LIVE",aiSummary(s));BoxCard("LOCAL BRAIN LIVE",brainText,true);BoxCard("ADAPTIVE OPERATING ENVELOPE LIVE",s.envelope.ifBlank{"No envelope published yet"},true);BoxCard("GEMINI INTELLIGENCE HUMAN VIEW",retained,true);BoxCard("GEMINI HTTP STATE LIVE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE LIVE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)
-              }
-          }'''
-          if old_ai not in s: raise SystemExit('AI baseline not found')
-          s=s.replace(old_ai,new_ai)
-          old_box='@Composable fun BoxCard(title:String,text:String,mono:Boolean=false){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge);Spacer(Modifier.height(7.dp));Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)}}}'
-          new_box='''@Composable fun BoxCard(title:String,text:String,mono:Boolean=false){val clipboard=LocalClipboardManager.current;Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge);TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER v0.6.0 RC\\n["+title+"]\\n"+text))}){Text("COPY")}};Spacer(Modifier.height(7.dp));Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)}}}'''
-          if old_box not in s: raise SystemExit('BoxCard baseline not found')
-          s=s.replace(old_box,new_box).replace('delay(2000)','delay(1000)').replace('delay(3000)','delay(1000)').replace('delay(5000)','delay(1000)')
-          m.write_text(s)
-          res=Path('app/src/main/res/drawable');res.mkdir(parents=True,exist_ok=True);(res/'ic_djaeger_gaming_turbo.xml').write_text('''<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#090B10" android:pathData="M12,8 L96,8 L104,20 L104,88 L92,100 L16,100 L4,88 L4,20 Z"/><path android:fillColor="#43E38A" android:pathData="M26,24 L62,24 C79,24 88,34 88,52 C88,70 78,82 59,82 L26,82 Z M40,37 L40,69 L58,69 C68,69 74,63 74,53 C74,43 68,37 58,37 Z"/><path android:fillColor="#FFC857" android:pathData="M59,14 L48,49 L61,49 L52,90 L81,43 L66,43 L78,14 Z"/></vector>''')
-          mf=Path('app/src/main/AndroidManifest.xml');ms=mf.read_text();
-          if 'android:icon=' not in ms:ms=ms.replace('<application','<application android:icon="@drawable/ic_djaeger_gaming_turbo"',1)
-          mf.write_text(ms)
-          PY
-      - name: Source regression and safety assertions
-        working-directory: project/DJAEGER_Control_Center
-        run: |
-          grep -q 'DIRECT USER MODES' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'AI BRIDGE' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'user_mode' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'djaeger-ai gemini-key-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'djaeger-ai gemini-key-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'djaeger-ai gemini-key-delete' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'djaeger-ai gemini-chat-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'PasswordVisualTransformation' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'delay(1000)' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          ! grep -R -nE 'android.permission.INTERNET|SYSTEM_ALERT_WINDOW|settings put|setprop|force-stop' app/src/main || exit 1
+          ! grep -R -nE 'android.permission.INTERNET|SYSTEM_ALERT_WINDOW|WRITE_SETTINGS|PACKAGE_USAGE_STATS' app/src/main || exit 1
+          ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft ' app/src/main || exit 1
           ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
+          ! grep -R -nE 'gemini-key[[:space:]]+\$|gemini-chat[[:space:]]+\$' app/src/main/java || exit 1
       - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '8.14.3'}
+        with:
+          gradle-version: '8.14.3'
       - name: Build APK
         working-directory: project/DJAEGER_Control_Center
         run: gradle :app:assembleDebug --stacktrace
-      - name: Collect and hash
+      - name: Static read-only audit
+        working-directory: project/DJAEGER_Control_Center
+        run: |
+          ! grep -R -nE 'android.permission.INTERNET|SYSTEM_ALERT_WINDOW|WRITE_SETTINGS|PACKAGE_USAGE_STATS' app/src/main || exit 1
+          ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft ' app/src/main || exit 1
+          ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
+          grep -q 'gemini-chat-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'gemini-key-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'delay(1000)' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+      - name: Collect APK and hash
         run: |
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.6.0-RC-DirectUserModes.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.6.1-RC-AIBridge.apk
           sha256sum output/*.apk > output/SHA256.txt
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.6.0-RC-DirectUserModes
+          name: DJAEGER-v0.6.1-RC-AIBridge
           path: output/*
           if-no-files-found: error
