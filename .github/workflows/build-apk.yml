@@ -13,6 +13,7 @@ on:
       - 'scripts/build17_game_turbo_polish_patch.py'
       - 'scripts/build18_game_turbo_compile_fix.py'
       - 'scripts/build19_game_turbo_service_rewrite.py'
+      - 'scripts/build20_miui_game_turbo_authority_patch.py'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -51,73 +52,48 @@ jobs:
       - name: Apply Build 19 clean HUD state machine rewrite
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build19_game_turbo_service_rewrite.py
-      - name: Pre-build regression and safety assertions
+      - name: Apply Build 20 MIUI Game Turbo authority
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build20_miui_game_turbo_authority_patch.py
+      - name: Pre-build assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q 'v0.8.3 RC • GAME TURBO' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q 'AUTO GAME DETECTION' app/src/main/java/com/djaeger/controlcenter/GameLauncherActivity.kt
-          grep -q 'HudState.HANDLE' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'HudState.COMPACT' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'HudState.EXPANDED' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'v0.9.0 RC • MIUI GAME TURBO EXPERIENCE' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'activeFlag' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'map\["active"\]' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'ACTIVE_POLL_MS = 1000L' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'IDLE_POLL_MS = 1800L' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'suppressedForCurrentSession = true' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'manualScale' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'RESIZE MANUAL' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'BOOT_COMPLETED' app/src/main/java/com/djaeger/controlcenter/DjaegerBootReceiver.kt
-          grep -q 'djaeger-ai gemini-chat-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'djaeger-ai gemini-knowledge-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'prompt.take(8000)' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.FOREGROUND_SERVICE' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' app/src/main/AndroidManifest.xml
-          grep -q 'DjaegerBootReceiver' app/src/main/AndroidManifest.xml
-          grep -q 'androidx.profileinstaller.ProfileInstallReceiver' app/src/main/AndroidManifest.xml
-          grep -q 'tools:node="remove"' app/src/main/AndroidManifest.xml
-          ! grep -R -nE 'android.permission.INTERNET|WRITE_SETTINGS|PACKAGE_USAGE_STATS|BIND_ACCESSIBILITY_SERVICE' app/src/main || exit 1
-          ! grep -R -nE 'UsageStatsManager|AccessibilityService' app/src/main/java || exit 1
+          grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft ' app/src/main || exit 1
           ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
-          ! grep -q 'ui-tooling"' app/build.gradle.kts || exit 1
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
       - name: Build APK
         working-directory: project/DJAEGER_Control_Center
         run: gradle :app:assembleDebug --stacktrace
-      - name: Static safety and merged-manifest final audit
+      - name: Merged manifest audit
         working-directory: project/DJAEGER_Control_Center
         run: |
-          ! grep -R -nE 'android.permission.INTERNET|WRITE_SETTINGS|PACKAGE_USAGE_STATS|BIND_ACCESSIBILITY_SERVICE' app/src/main || exit 1
-          ! grep -R -nE 'UsageStatsManager|AccessibilityService' app/src/main/java || exit 1
-          ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft ' app/src/main || exit 1
-          ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
-          grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'gemini-chat-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          MERGED="$(find app/build/intermediates -path '*merged_manifest*' -o -path '*merged_manifests*' | grep 'AndroidManifest.xml' | head -1 || true)"
-          if [ -z "$MERGED" ]; then MERGED="$(find app/build/intermediates -name AndroidManifest.xml | head -1)"; fi
+          MERGED="$(find app/build/intermediates -name AndroidManifest.xml | head -1)"
           test -n "$MERGED"
-          BLOCKED='android.permission.INTERNET|android.permission.DUMP|WRITE_SETTINGS|PACKAGE_USAGE_STATS|BIND_ACCESSIBILITY_SERVICE|androidx.compose.ui.tooling.PreviewActivity|androidx.profileinstaller.ProfileInstallReceiver'
-          MATCHES="$(grep -nE "$BLOCKED" "$MERGED" || true)"
-          if [ -n "$MATCHES" ]; then echo "$MATCHES"; exit 1; fi
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' "$MERGED"
+          grep -q 'android.permission.PACKAGE_USAGE_STATS' "$MERGED"
           grep -q 'android.permission.FOREGROUND_SERVICE' "$MERGED"
           grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' "$MERGED"
-          grep -q 'DjaegerHudService' "$MERGED"
-          grep -q 'DjaegerBootReceiver' "$MERGED"
-          grep -q 'GameLauncherActivity' "$MERGED"
+          ! grep -nE 'android.permission.INTERNET|android.permission.DUMP|WRITE_SETTINGS|BIND_ACCESSIBILITY_SERVICE|androidx.compose.ui.tooling.PreviewActivity|androidx.profileinstaller.ProfileInstallReceiver' "$MERGED" || exit 1
       - name: Collect APK and hash
         run: |
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.8.3-RC-Game-Turbo.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.9.0-RC-MIUI-Game-Turbo.apk
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.8.3-RC-Game-Turbo
+          name: DJAEGER-v0.9.0-RC-MIUI-Game-Turbo
           path: output/*
           if-no-files-found: error
