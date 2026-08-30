@@ -2,12 +2,30 @@ from pathlib import Path
 
 p = Path('app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt')
 s = p.read_text()
-old = '    private val pollRunnable = object : Runnable {'
-new = '    private val pollRunnable: Runnable = object : Runnable {'
-if old not in s:
+
+# Build 22 intentionally schedules the next poll only after the current root/UI
+# cycle completes. Avoid referencing the property from its own initializer:
+# inside the object-expression Runnable, lambda `this` is the Runnable instance.
+old_decl = '    private val pollRunnable = object : Runnable {'
+new_decl = '    private val pollRunnable: Runnable = object : Runnable {'
+if old_decl not in s:
     raise SystemExit('Build23: pollRunnable declaration not found')
-s = s.replace(old, new, 1)
-if new not in s:
-    raise SystemExit('Build23: explicit Runnable type not applied')
+s = s.replace(old_decl, new_decl, 1)
+
+old_call = '''                    mainHandler.postDelayed(
+                        pollRunnable,
+                        if (gameSessionActive) ACTIVE_POLL_MS else IDLE_POLL_MS
+                    )'''
+new_call = '''                    mainHandler.postDelayed(
+                        this,
+                        if (gameSessionActive) ACTIVE_POLL_MS else IDLE_POLL_MS
+                    )'''
+if old_call not in s:
+    raise SystemExit('Build23: self-reschedule call not found')
+s = s.replace(old_call, new_call, 1)
+
+if new_decl not in s or new_call not in s:
+    raise SystemExit('Build23: compile-safe single-flight poll fix not applied')
+
 p.write_text(s)
-print('Build 23 HUD compile fix applied')
+print('Build 23 compile-safe single-flight HUD poll fix applied')
