@@ -28,104 +28,72 @@ jobs:
           unzip -q DJAEGER_Control_Center_v0.5.3_RC_CoGo_AndroidX_Fix.zip -d project
           test -f project/DJAEGER_Control_Center/settings.gradle.kts
           test -f project/DJAEGER_Control_Center/build.gradle.kts
-          echo "Gradle project root verified."
 
-      - name: Apply build-only Kotlin syntax fixes
+      - name: Apply v0.5.4 monitoring improvements
         working-directory: project/DJAEGER_Control_Center
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          gradle = Path('app/build.gradle.kts')
-          s = gradle.read_text()
-          marker = '    kotlinOptions { jvmTarget = "17" }'
-          compile_opts = '''    compileOptions {
+          gradle=Path('app/build.gradle.kts')
+          s=gradle.read_text()
+          marker='    kotlinOptions { jvmTarget = "17" }'
+          opts='''    compileOptions {
               sourceCompatibility = JavaVersion.VERSION_17
               targetCompatibility = JavaVersion.VERSION_17
           }
           '''
           if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
-              if marker not in s:
-                  raise SystemExit('Expected kotlinOptions JVM 17 marker not found')
-              s = s.replace(marker, compile_opts + marker)
+              s=s.replace(marker,opts+marker)
+          s=s.replace('versionCode = 8','versionCode = 9')
+          s=s.replace('versionName = "0.5.3-rc-cogo"','versionName = "0.5.4-rc"')
           gradle.write_text(s)
 
-          repo = Path('app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt')
-          s = repo.read_text()
-          s = s.replace('"__$a__\\n"', '"__${a}__\\n"')
-          s = s.replace('"__$b__\\n"', '"__${b}__\\n"')
-          old_telemetry = '    private fun parseTelemetry(line:String):Telemetry{val c=parseCsv(line);fun s(i:Int)=c.getOrNull(i)?.trim().orEmpty();return Telemetry(s(0).toLongOrNull()?:0,s(1).toIntOrNull()?:0,s(2).toIntOrNull()?:0,s(3).toIntOrNull()?:0,s(4).toIntOrNull()?:0,s(5).toLongOrNull()?:0,s(6).toLongOrNull()?:0,s(7).toLongOrNull()?:0,s(8),s(9).toDoubleOrNull()?:0.0,s(10).toDoubleOrNull()?:0.0,s(11).toDoubleOrNull()?:0.0,s(12).toDoubleOrNull()?:0.0,s(13).toDoubleOrNull()?:0.0,s(15),s(16).toLongOrNull()?:0,s(17).toLongOrNull()?:0,s(18).toDoubleOrNull()?:0.0,s(19),s(20),s(22))}'
-          new_telemetry = '''    private fun parseTelemetry(line: String): Telemetry {
-              val c = parseCsv(line)
-              fun field(i: Int): String = c.getOrNull(i)?.trim().orEmpty()
-              return Telemetry(
-                  field(0).toLongOrNull() ?: 0,
-                  field(1).toIntOrNull() ?: 0,
-                  field(2).toIntOrNull() ?: 0,
-                  field(3).toIntOrNull() ?: 0,
-                  field(4).toIntOrNull() ?: 0,
-                  field(5).toLongOrNull() ?: 0,
-                  field(6).toLongOrNull() ?: 0,
-                  field(7).toLongOrNull() ?: 0,
-                  field(8),
-                  field(9).toDoubleOrNull() ?: 0.0,
-                  field(10).toDoubleOrNull() ?: 0.0,
-                  field(11).toDoubleOrNull() ?: 0.0,
-                  field(12).toDoubleOrNull() ?: 0.0,
-                  field(13).toDoubleOrNull() ?: 0.0,
-                  field(15),
-                  field(16).toLongOrNull() ?: 0,
-                  field(17).toLongOrNull() ?: 0,
-                  field(18).toDoubleOrNull() ?: 0.0,
-                  field(19),
-                  field(20),
-                  field(22)
-              )
+          repo=Path('app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt')
+          s=repo.read_text().replace('"__$a__\\n"','"__${a}__\\n"').replace('"__$b__\\n"','"__${b}__\\n"')
+          old='    private fun parseTelemetry(line:String):Telemetry{val c=parseCsv(line);fun s(i:Int)=c.getOrNull(i)?.trim().orEmpty();return Telemetry(s(0).toLongOrNull()?:0,s(1).toIntOrNull()?:0,s(2).toIntOrNull()?:0,s(3).toIntOrNull()?:0,s(4).toIntOrNull()?:0,s(5).toLongOrNull()?:0,s(6).toLongOrNull()?:0,s(7).toLongOrNull()?:0,s(8),s(9).toDoubleOrNull()?:0.0,s(10).toDoubleOrNull()?:0.0,s(11).toDoubleOrNull()?:0.0,s(12).toDoubleOrNull()?:0.0,s(13).toDoubleOrNull()?:0.0,s(15),s(16).toLongOrNull()?:0,s(17).toLongOrNull()?:0,s(18).toDoubleOrNull()?:0.0,s(19),s(20),s(22))}'
+          new='''    private fun parseTelemetry(line:String):Telemetry {
+              val c=parseCsv(line)
+              fun f(i:Int)=c.getOrNull(i)?.trim().orEmpty()
+              return Telemetry(f(0).toLongOrNull()?:0,f(1).toIntOrNull()?:0,f(2).toIntOrNull()?:0,f(3).toIntOrNull()?:0,f(4).toIntOrNull()?:0,f(5).toLongOrNull()?:0,f(6).toLongOrNull()?:0,f(7).toLongOrNull()?:0,f(8),f(9).toDoubleOrNull()?:0.0,f(10).toDoubleOrNull()?:0.0,f(11).toDoubleOrNull()?:0.0,f(12).toDoubleOrNull()?:0.0,f(13).toDoubleOrNull()?:0.0,f(15),f(16).toLongOrNull()?:0,f(17).toLongOrNull()?:0,f(18).toDoubleOrNull()?:0.0,f(19),f(20),f(22))
           }'''
-          if old_telemetry not in s:
-              raise SystemExit('Expected parseTelemetry source not found')
-          repo.write_text(s.replace(old_telemetry, new_telemetry))
+          if old not in s: raise SystemExit('parseTelemetry source not found')
+          repo.write_text(s.replace(old,new))
 
-          main = Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
-          s = main.read_text()
-          old = '@Composable fun LineChartCard(title:String,values:List<Float>,min:Float,max:Float,current:String){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold);Text(current,fontWeight=FontWeight.Bold)};Spacer(Modifier.height(10.dp));Canvas(Modifier.fillMaxWidth().height(120.dp)){if(values.size>1){val lo=min;val hi=max.coerceAtLeast(lo+1);val step=size.width/(values.size-1);fun y(v:Float)=size.height-(v.coerceIn(lo,hi)-lo)/(hi-lo)*size.height;for(i in 1 until values.size)drawLine(color=Green,start=Offset((i-1)*step,y(values[i-1])),end=Offset(i*step,y(values[i])),strokeWidth=3f)}}}}}'
-          new = '''@Composable
-          fun LineChartCard(title:String, values:List<Float>, min:Float, max:Float, current:String) {
-              Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Card), shape=RoundedCornerShape(14.dp)) {
-                  Column(Modifier.padding(14.dp)) {
-                      Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceBetween) {
-                          Text(title, color=Green, fontWeight=FontWeight.Bold)
-                          Text(current, fontWeight=FontWeight.Bold)
+          main=Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
+          s=main.read_text()
+          s=s.replace('import androidx.compose.ui.Modifier','import androidx.compose.ui.Modifier\nimport androidx.compose.ui.platform.LocalClipboardManager\nimport androidx.compose.ui.text.AnnotatedString')
+          s=s.replace('CONTROL CENTER • v0.5.3 RC • REGRESSION VALIDATED','CONTROL CENTER • v0.5.4 RC • COPY DIAGNOSTICS')
+          old_ai='@Composable fun AI(s:RuntimeState){Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){BoxCard("AI SUMMARY",aiSummary(s));BoxCard("LOCAL BRAIN",s.brain.ifBlank{"No state published yet"});BoxCard("ADAPTIVE OPERATING ENVELOPE",s.envelope.ifBlank{"No envelope published yet"});BoxCard("GEMINI HTTP STATE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)}}'
+          new_ai='''@Composable fun AI(s:RuntimeState){Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){BoxCard("AI SUMMARY",aiSummary(s));BoxCard("LOCAL BRAIN",localBrainDisplay(s));BoxCard("ADAPTIVE OPERATING ENVELOPE",s.envelope.ifBlank{"No envelope published yet"});BoxCard("GEMINI HTTP STATE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)}}
+          private fun localBrainDisplay(s:RuntimeState):String {
+              if(s.brain.isNotBlank()) return s.brain
+              val d=s.latestDecision ?: return "No active Local Brain state published. No retained decision is available yet."
+              return "No active Local Brain state published. Last retained decision from Decision Ledger:\nID: ${d.id}\nGame: ${d.game} • Scene: ${d.scene}\nProfile: ${d.profile}\nBudgets L/B/G: ${d.little} / ${d.big} / ${d.gpu}\nOutcome: ${d.outcome}\nPred FPS/Skin: ${d.predFps} / ${d.predSkin}\nActual FPS/Skin: ${d.actualFps} / ${d.actualSkin}\nWindow: ${d.window}"
+          }'''
+          if old_ai not in s: raise SystemExit('AI source not found')
+          s=s.replace(old_ai,new_ai)
+          old_chart='@Composable fun LineChartCard(title:String,values:List<Float>,min:Float,max:Float,current:String){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold);Text(current,fontWeight=FontWeight.Bold)};Spacer(Modifier.height(10.dp));Canvas(Modifier.fillMaxWidth().height(120.dp)){if(values.size>1){val lo=min;val hi=max.coerceAtLeast(lo+1);val step=size.width/(values.size-1);fun y(v:Float)=size.height-(v.coerceIn(lo,hi)-lo)/(hi-lo)*size.height;for(i in 1 until values.size)drawLine(color=Green,start=Offset((i-1)*step,y(values[i-1])),end=Offset(i*step,y(values[i])),strokeWidth=3f)}}}}}'
+          new_chart='''@Composable fun LineChartCard(title:String,values:List<Float>,min:Float,max:Float,current:String){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold);Text(current,fontWeight=FontWeight.Bold)};Spacer(Modifier.height(10.dp));Canvas(Modifier.fillMaxWidth().height(120.dp)){if(values.size>1){val lo=min;val hi=max.coerceAtLeast(lo+1f);val step=size.width/(values.size-1);fun chartY(v:Float):Float{return size.height-(v.coerceIn(lo,hi)-lo)/(hi-lo)*size.height};for(i in 1 until values.size){drawLine(color=Green,start=Offset((i-1)*step,chartY(values[i-1])),end=Offset(i*step,chartY(values[i])),strokeWidth=3f)}}}}}}'''
+          if old_chart not in s: raise SystemExit('chart source not found')
+          s=s.replace(old_chart,new_chart)
+          old_box='@Composable fun BoxCard(title:String,text:String,mono:Boolean=false){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge);Spacer(Modifier.height(7.dp));Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)}}}'
+          new_box='''@Composable fun BoxCard(title:String,text:String,mono:Boolean=false){
+              val clipboard=LocalClipboardManager.current
+              Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
+                  Column(Modifier.padding(14.dp)){
+                      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+                          Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge)
+                          TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER Control Center v0.5.4 RC\\n[$title]\\n$text"))}){Text("COPY")}
                       }
-                      Spacer(Modifier.height(10.dp))
-                      Canvas(Modifier.fillMaxWidth().height(120.dp)) {
-                          if (values.size > 1) {
-                              val lo = min
-                              val hi = max.coerceAtLeast(lo + 1f)
-                              val step = size.width / (values.size - 1)
-                              fun chartY(v:Float):Float {
-                                  return size.height - (v.coerceIn(lo, hi) - lo) / (hi - lo) * size.height
-                              }
-                              for (i in 1 until values.size) {
-                                  drawLine(
-                                      color=Green,
-                                      start=Offset((i - 1) * step, chartY(values[i - 1])),
-                                      end=Offset(i * step, chartY(values[i])),
-                                      strokeWidth=3f
-                                  )
-                              }
-                          }
-                      }
+                      Spacer(Modifier.height(7.dp))
+                      Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)
                   }
               }
           }'''
-          if old not in s:
-              raise SystemExit('Expected LineChartCard source not found')
-          main.write_text(s.replace(old, new))
+          if old_box not in s: raise SystemExit('BoxCard source not found')
+          main.write_text(s.replace(old_box,new_box))
           PY
-          grep -n -E 'sourceCompatibility|targetCompatibility|jvmTarget' app/build.gradle.kts
-          grep -n 'fun parseTelemetry' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -n 'fun LineChartCard' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -141,11 +109,11 @@ jobs:
           mkdir -p output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.5.3-RC.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.5.4-RC.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-Control-Center-APK
-          path: output/DJAEGER-Control-Center-v0.5.3-RC.apk
+          name: DJAEGER-Control-Center-v0.5.4-RC-APK
+          path: output/DJAEGER-Control-Center-v0.5.4-RC.apk
           if-no-files-found: error
