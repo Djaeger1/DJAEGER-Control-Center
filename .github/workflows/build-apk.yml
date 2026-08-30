@@ -30,6 +30,27 @@ jobs:
           test -f project/DJAEGER_Control_Center/build.gradle.kts
           echo "Gradle project root verified."
 
+      - name: Align Java and Kotlin JVM targets
+        working-directory: project/DJAEGER_Control_Center
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle.kts')
+          s = p.read_text()
+          marker = '    kotlinOptions { jvmTarget = "17" }'
+          compile_opts = '''    compileOptions {
+              sourceCompatibility = JavaVersion.VERSION_17
+              targetCompatibility = JavaVersion.VERSION_17
+          }
+          '''
+          if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
+              if marker not in s:
+                  raise SystemExit('Expected kotlinOptions JVM 17 marker not found')
+              s = s.replace(marker, compile_opts + marker)
+          p.write_text(s)
+          PY
+          grep -n -E 'compileOptions|sourceCompatibility|targetCompatibility|jvmTarget' app/build.gradle.kts
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
