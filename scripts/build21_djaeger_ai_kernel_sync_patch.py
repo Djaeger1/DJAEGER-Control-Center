@@ -1,16 +1,14 @@
 from pathlib import Path
+import re
 
 # DJAEGER Control Center Build 21
-# Goal: mature the previously designed Game Turbo UI around DJAEGER-AI v12.9.45+
-# and DJAEGER Kernel AI, without direct sysfs/network/game manipulation.
-
 pkg = Path('app/src/main/java/com/djaeger/controlcenter')
 
-# Version metadata
+# Normalize version metadata regardless of which earlier patch string survived.
 g = Path('app/build.gradle.kts')
 s = g.read_text()
-s = s.replace('versionCode = 21', 'versionCode = 22')
-s = s.replace('versionName = "0.9.0-rc-miui-game-turbo"', 'versionName = "0.10.0-rc-ai-kernel-sync"')
+s = re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 22', s, count=1)
+s = re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "0.10.0-rc-ai-kernel-sync"', s, count=1)
 g.write_text(s)
 
 # Root bridge additions: all control remains routed through djaeger-ai.
@@ -35,16 +33,15 @@ extra = '''
     }
 '''
 if 'suspend fun authoritySyncStatus()' not in s:
-    if anchor not in s:
-        raise SystemExit('DjaegerRepository parseTelemetry anchor not found')
+    if anchor not in s: raise SystemExit('DjaegerRepository parseTelemetry anchor not found')
     s = s.replace(anchor, extra + anchor, 1)
 r.write_text(s)
 
-# Main cockpit polish and current authority contract view.
 m = pkg / 'MainActivity.kt'
 s = m.read_text()
-s = s.replace('v0.9.0 RC • MIUI GAME TURBO EXPERIENCE', 'v0.10.0 RC • DJAEGER AI + KERNEL SYNC')
-s = s.replace('DJAEGER v0.9.0 RC', 'DJAEGER v0.10.0 RC')
+# Normalize any historical cockpit subtitle to the current build.
+s = re.sub(r'GAMING TURBO\s*•\s*v[0-9.]+\s*RC\s*•[^"\n]*', 'GAMING TURBO • v0.10.0 RC • DJAEGER AI + KERNEL SYNC • REALTIME 1s', s, count=1)
+s = re.sub(r'DJAEGER v0\.[0-9.]+ RC', 'DJAEGER v0.10.0 RC', s)
 
 state_anchor = 'var knowledgeStatus by remember{mutableStateOf("Knowledge status not loaded yet.")}'
 state_extra = '''var knowledgeStatus by remember{mutableStateOf("Knowledge status not loaded yet.")}
@@ -87,19 +84,12 @@ new_cards = '''BoxCard("GEMINI KNOWLEDGE + EVOLUTION",knowledgeStatus,true)
 if knowledge_card in s:
     s = s.replace(knowledge_card, new_cards, 1)
 
-# The current module family uses dynamic live kernel capability rather than a fixed legacy version gate.
 s = s.replace('val supported=s.moduleVersion.contains("12.9.");', 'val supported=s.moduleVersion.contains("12.9.") || s.moduleVersion.contains("13.");')
-
-# Make the Gemini panel explicit about transport errors so HTTP 400 is visible as transport,
-# not confused with Local AI/kernel failure.
 s = s.replace('BoxCard("GEMINI CONVERSATION",chatResult,true)', 'BoxCard("GEMINI CONVERSATION",chatResult+"\\n\\nTransport errors affect Gemini chat only; Local AI/kernel execution remains independently observable below.",true)')
-
 m.write_text(s)
 
-# HUD: keep the clean Build 19 state machine and Build 20 active=1 parser, update branding.
 h = pkg / 'DjaegerHudService.kt'
 s = h.read_text()
-s = s.replace('DJAEGER Kernel AI v1.3', 'DJAEGER Kernel AI')
 s = s.replace('◆  DJAEGER GAME TURBO', '◆  DJAEGER AI GAME TURBO')
 s = s.replace('DJAEGER Game Turbo', 'DJAEGER AI Game Turbo')
 h.write_text(s)
