@@ -14,6 +14,7 @@ on:
       - 'scripts/build18_game_turbo_compile_fix.py'
       - 'scripts/build19_game_turbo_service_rewrite.py'
       - 'scripts/build20_miui_game_turbo_authority_patch.py'
+      - 'scripts/build21_djaeger_ai_kernel_sync_patch.py'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,7 +35,7 @@ jobs:
       - name: Apply Build 12 hardening patch
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build12_hardening_patch.py
-      - name: Apply Build 14 targeted ProfileInstaller hardening
+      - name: Apply Build 14 ProfileInstaller hardening
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build14_profileinstaller_hardening_patch.py
       - name: Apply Build 15 Evolution HUD and Game Launcher
@@ -49,16 +50,23 @@ jobs:
       - name: Apply Build 18 compile fixes
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build18_game_turbo_compile_fix.py
-      - name: Apply Build 19 clean HUD state machine rewrite
+      - name: Apply Build 19 clean HUD state machine
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build19_game_turbo_service_rewrite.py
       - name: Apply Build 20 MIUI Game Turbo authority
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build20_miui_game_turbo_authority_patch.py
+      - name: Apply Build 21 DJAEGER AI + Kernel sync
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build21_djaeger_ai_kernel_sync_patch.py
       - name: Pre-build assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q 'v0.9.0 RC • MIUI GAME TURBO EXPERIENCE' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'v0.10.0 RC • DJAEGER AI + KERNEL SYNC' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'authoritySyncStatus' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'kernelCapabilitySummary' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'session-recovery-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'snapshot-lifecycle-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'activeFlag' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'map\["active"\]' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
@@ -89,11 +97,11 @@ jobs:
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.9.0-RC-MIUI-Game-Turbo.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.10.0-RC-AI-Kernel-Sync.apk
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.9.0-RC-MIUI-Game-Turbo
+          name: DJAEGER-v0.10.0-RC-AI-Kernel-Sync
           path: output/*
           if-no-files-found: error
