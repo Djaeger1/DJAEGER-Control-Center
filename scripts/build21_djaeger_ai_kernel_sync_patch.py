@@ -4,14 +4,12 @@ import re
 # DJAEGER Control Center Build 21
 pkg = Path('app/src/main/java/com/djaeger/controlcenter')
 
-# Normalize version metadata regardless of which earlier patch string survived.
 g = Path('app/build.gradle.kts')
 s = g.read_text()
 s = re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 22', s, count=1)
 s = re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "0.10.0-rc-ai-kernel-sync"', s, count=1)
 g.write_text(s)
 
-# Root bridge additions: all control remains routed through djaeger-ai.
 r = pkg / 'DjaegerRepository.kt'
 s = r.read_text()
 anchor = '\n    private fun parseTelemetry'
@@ -39,7 +37,6 @@ r.write_text(s)
 
 m = pkg / 'MainActivity.kt'
 s = m.read_text()
-# Normalize any historical cockpit subtitle to the current build.
 s = re.sub(r'GAMING TURBO\s*•\s*v[0-9.]+\s*RC\s*•[^"\n]*', 'GAMING TURBO • v0.10.0 RC • DJAEGER AI + KERNEL SYNC • REALTIME 1s', s, count=1)
 s = re.sub(r'DJAEGER v0\.[0-9.]+ RC', 'DJAEGER v0.10.0 RC', s)
 
@@ -88,10 +85,18 @@ s = s.replace('val supported=s.moduleVersion.contains("12.9.");', 'val supported
 s = s.replace('BoxCard("GEMINI CONVERSATION",chatResult,true)', 'BoxCard("GEMINI CONVERSATION",chatResult+"\\n\\nTransport errors affect Gemini chat only; Local AI/kernel execution remains independently observable below.",true)')
 m.write_text(s)
 
+# HUD maturity: Build 19 service is canonical. Normalize quoted runtime values and
+# treat canonical active=1 as session ACTIVE so launching a game normally can summon the handle.
 h = pkg / 'DjaegerHudService.kt'
 s = h.read_text()
 s = s.replace('◆  DJAEGER GAME TURBO', '◆  DJAEGER AI GAME TURBO')
 s = s.replace('DJAEGER Game Turbo', 'DJAEGER AI Game Turbo')
+s = s.replace('line.substring(split + 1).trim()', 'line.substring(split + 1).trim().replace("\\\"", "").replace("\\\'", "")')
+old_session = 'val session = runtime["session"] ?: runtime["session_state"] ?: if (window.equals("ACTIVE", true)) "ACTIVE" else "INACTIVE"'
+new_session = '''val activeFlag = runtime["active"]?.let { it == "1" || it.equals("true", true) || it.equals("active", true) } ?: false
+        val session = runtime["session"] ?: runtime["session_state"] ?: if (activeFlag || window.equals("ACTIVE", true)) "ACTIVE" else "INACTIVE"'''
+if old_session in s:
+    s = s.replace(old_session, new_session, 1)
 h.write_text(s)
 
 print('Build 21 patch applied')
