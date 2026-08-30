@@ -54,7 +54,37 @@ jobs:
           s = repo.read_text()
           s = s.replace('"__$a__\\n"', '"__${a}__\\n"')
           s = s.replace('"__$b__\\n"', '"__${b}__\\n"')
-          repo.write_text(s)
+          old_telemetry = '    private fun parseTelemetry(line:String):Telemetry{val c=parseCsv(line);fun s(i:Int)=c.getOrNull(i)?.trim().orEmpty();return Telemetry(s(0).toLongOrNull()?:0,s(1).toIntOrNull()?:0,s(2).toIntOrNull()?:0,s(3).toIntOrNull()?:0,s(4).toIntOrNull()?:0,s(5).toLongOrNull()?:0,s(6).toLongOrNull()?:0,s(7).toLongOrNull()?:0,s(8),s(9).toDoubleOrNull()?:0.0,s(10).toDoubleOrNull()?:0.0,s(11).toDoubleOrNull()?:0.0,s(12).toDoubleOrNull()?:0.0,s(13).toDoubleOrNull()?:0.0,s(15),s(16).toLongOrNull()?:0,s(17).toLongOrNull()?:0,s(18).toDoubleOrNull()?:0.0,s(19),s(20),s(22))}'
+          new_telemetry = '''    private fun parseTelemetry(line: String): Telemetry {
+              val c = parseCsv(line)
+              fun field(i: Int): String = c.getOrNull(i)?.trim().orEmpty()
+              return Telemetry(
+                  field(0).toLongOrNull() ?: 0,
+                  field(1).toIntOrNull() ?: 0,
+                  field(2).toIntOrNull() ?: 0,
+                  field(3).toIntOrNull() ?: 0,
+                  field(4).toIntOrNull() ?: 0,
+                  field(5).toLongOrNull() ?: 0,
+                  field(6).toLongOrNull() ?: 0,
+                  field(7).toLongOrNull() ?: 0,
+                  field(8),
+                  field(9).toDoubleOrNull() ?: 0.0,
+                  field(10).toDoubleOrNull() ?: 0.0,
+                  field(11).toDoubleOrNull() ?: 0.0,
+                  field(12).toDoubleOrNull() ?: 0.0,
+                  field(13).toDoubleOrNull() ?: 0.0,
+                  field(15),
+                  field(16).toLongOrNull() ?: 0,
+                  field(17).toLongOrNull() ?: 0,
+                  field(18).toDoubleOrNull() ?: 0.0,
+                  field(19),
+                  field(20),
+                  field(22)
+              )
+          }'''
+          if old_telemetry not in s:
+              raise SystemExit('Expected parseTelemetry source not found')
+          repo.write_text(s.replace(old_telemetry, new_telemetry))
 
           main = Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
           s = main.read_text()
@@ -94,7 +124,7 @@ jobs:
           main.write_text(s.replace(old, new))
           PY
           grep -n -E 'sourceCompatibility|targetCompatibility|jvmTarget' app/build.gradle.kts
-          grep -n 'substringAfter' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -n 'fun parseTelemetry' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -n 'fun LineChartCard' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
 
       - name: Setup Gradle
