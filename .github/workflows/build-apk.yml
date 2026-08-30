@@ -49,15 +49,26 @@ jobs:
           s=s.replace('import androidx.compose.ui.Modifier','import androidx.compose.ui.Modifier\nimport androidx.compose.ui.platform.LocalClipboardManager\nimport androidx.compose.ui.text.AnnotatedString')
           s=s.replace('CONTROL CENTER • v0.5.3 RC • REGRESSION VALIDATED','CONTROL CENTER • v0.5.4 RC • REALTIME 1s')
           old_ai='@Composable fun AI(s:RuntimeState){Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){BoxCard("AI SUMMARY",aiSummary(s));BoxCard("LOCAL BRAIN",s.brain.ifBlank{"No state published yet"});BoxCard("ADAPTIVE OPERATING ENVELOPE",s.envelope.ifBlank{"No envelope published yet"});BoxCard("GEMINI HTTP STATE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)}}'
-          new_ai='''@Composable fun AI(s:RuntimeState){Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){BoxCard("AI SUMMARY • LIVE",aiSummary(s));BoxCard("LOCAL BRAIN • LIVE",localBrainDisplay(s));BoxCard("ADAPTIVE OPERATING ENVELOPE • LIVE",s.envelope.ifBlank{"No envelope published yet"});BoxCard("GEMINI HTTP STATE • LIVE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE • LIVE",s.geminiServer.ifBlank{"No server state / no active backoff"},true);BoxCard("AI DECISION TIMELINE • LIVE",decisionTimeline(s),true)}}
+          new_ai='''@Composable fun AI(s:RuntimeState){
+              Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
+                  BoxCard("AI SUMMARY • LIVE",aiSummary(s))
+                  BoxCard("LOCAL BRAIN • LIVE",localBrainDisplay(s),true)
+                  BoxCard("ADAPTIVE OPERATING ENVELOPE • LIVE",s.envelope.ifBlank{"No envelope published yet"},true)
+                  BoxCard("GEMINI HTTP STATE • LIVE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true)
+                  BoxCard("GEMINI SERVER STATE • LIVE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)
+                  BoxCard("AI DECISION TIMELINE • LIVE",decisionTimeline(s),true)
+              }
+          }
           private fun localBrainDisplay(s:RuntimeState):String {
               if(s.brain.isNotBlank()) return s.brain
-              val d=s.latestDecision ?: return "No active Local Brain state published. Waiting for a published state or retained Decision Ledger entry."
-              return buildString { appendLine("Active state file not published; showing latest retained decision."); appendLine("ID: ${d.id}"); appendLine("Game: ${d.game} • Scene: ${d.scene}"); appendLine("Profile: ${d.profile}"); appendLine("Budgets L/B/G: ${d.little} / ${d.big} / ${d.gpu}"); appendLine("Outcome: ${d.outcome}"); appendLine("Pred FPS/Skin: ${d.predFps} / ${d.predSkin}"); appendLine("Actual FPS/Skin: ${d.actualFps} / ${d.actualSkin}"); append("Window: ${d.window}") }
+              val d=s.latestDecision
+              if(d==null) return "STATE=NO_ACTIVE_BRAIN_STATE\\nNo retained Decision Ledger entry yet."
+              return "STATE=NO_ACTIVE_BRAIN_STATE\\nLAST RETAINED DECISION\\nID: ${d.id}\\nGame: ${d.game}\\nScene: ${d.scene}\\nProfile: ${d.profile}\\nLittle: ${d.little}\\nBig: ${d.big}\\nGPU: ${d.gpu}\\nOutcome: ${d.outcome}\\nPred FPS: ${d.predFps}\\nPred Skin: ${d.predSkin}\\nActual FPS: ${d.actualFps}\\nActual Skin: ${d.actualSkin}\\nWindow: ${d.window}"
           }
           private fun decisionTimeline(s:RuntimeState):String {
-              val d=s.latestDecision ?: return "OBSERVE → waiting for Decision Ledger data"
-              return buildString { appendLine("OBSERVE  game=${d.game} scene=${d.scene}"); appendLine("PROPOSE  hypothesis=${d.hypothesis}"); appendLine("VALIDATE outcome=${d.outcome}"); appendLine("APPLY    profile=${d.profile} L/B/G=${d.little}/${d.big}/${d.gpu}"); appendLine("MEASURE  fps=${d.actualFps} skin=${d.actualSkin}"); append("LEARN    fpsΔ=${d.fpsDelta} skinΔ=${d.skinDelta} powerΔ=${d.powerDelta}") }
+              val d=s.latestDecision
+              if(d==null) return "OBSERVE: waiting for Decision Ledger data"
+              return "OBSERVE: game=${d.game}, scene=${d.scene}\\nPLAN: profile=${d.profile}, budgets L/B/G=${d.little}/${d.big}/${d.gpu}\\nAPPLIED/RECORDED: outcome=${d.outcome}\\nMEASURE: predicted FPS=${d.predFps}, actual FPS=${d.actualFps}, predicted skin=${d.predSkin}, actual skin=${d.actualSkin}\\nLEARN: latest retained decision ID=${d.id}, window=${d.window}"
           }'''
           if old_ai not in s: raise SystemExit('AI source not found')
           s=s.replace(old_ai,new_ai)
@@ -66,14 +77,17 @@ jobs:
               val clipboard=LocalClipboardManager.current
               Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
                   Column(Modifier.padding(14.dp)){
-                      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge);TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER Control Center v0.5.4 RC\\n[$title]\\n$text"))}){Text("COPY")}}
-                      Spacer(Modifier.height(7.dp));Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)
+                      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+                          Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge)
+                          TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER Control Center v0.5.4 RC\\n["+title+"]\\n"+text))}){Text("COPY")}
+                      }
+                      Spacer(Modifier.height(7.dp))
+                      Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)
                   }
               }
           }'''
           if old_box not in s: raise SystemExit('BoxCard source not found')
           s=s.replace(old_box,new_box)
-          # Existing lifecycle polling is intentionally preserved. Tighten only delays >=2s to 1s; never poll faster than source publication.
           s=s.replace('delay(2000)', 'delay(1000)').replace('delay(3000)', 'delay(1000)').replace('delay(5000)', 'delay(1000)')
           m.write_text(s)
           PY
