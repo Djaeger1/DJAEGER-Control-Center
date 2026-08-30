@@ -15,6 +15,7 @@ on:
       - 'scripts/build19_game_turbo_service_rewrite.py'
       - 'scripts/build20_miui_game_turbo_authority_patch.py'
       - 'scripts/build21_djaeger_ai_kernel_sync_patch.py'
+      - 'scripts/build22_hud_flicker_fix_patch.py'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -59,10 +60,13 @@ jobs:
       - name: Apply Build 21 DJAEGER AI + Kernel sync
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build21_djaeger_ai_kernel_sync_patch.py
+      - name: Apply Build 22 persistent HUD flicker fix
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build22_hud_flicker_fix_patch.py
       - name: Pre-build assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q 'v0.10.0 RC • DJAEGER AI + KERNEL SYNC' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'v0.10.1 RC • HUD STABLE + AI/KERNEL SYNC' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'authoritySyncStatus' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'kernelCapabilitySummary' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'session-recovery-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
@@ -70,6 +74,31 @@ jobs:
           grep -q 'runtime\["active"\]' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'activeFlag' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'private fun updateOverlayContent()' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'compactFpsView' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'expandedSessionView' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'Single-flight' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          ! grep -q 'else {$' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt || true
+          ! grep -q 'mainHandler.postDelayed(this,' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt').read_text()
+          assert '''if (overlayView == null) {
+              hudState = HudState.HANDLE
+              showOverlay()
+          } else {
+              updateOverlayContent()
+          }''' in s
+          assert '''if (overlayView == null) {
+              hudState = HudState.HANDLE
+              showOverlay()
+          } else {
+              rebuildOverlayKeepingPosition()
+          }''' not in s
+          body=s.split('private fun updateOverlayContent()',1)[1].split('private fun buildHandle()',1)[0]
+          assert 'removeView' not in body and 'addView' not in body and 'showOverlay' not in body
+          print('HUD persistent-view assertions PASS')
+          PY
           grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' app/src/main/AndroidManifest.xml
@@ -97,11 +126,11 @@ jobs:
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.10.0-RC-AI-Kernel-Sync.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.10.1-RC-HUD-Stable.apk
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.10.0-RC-AI-Kernel-Sync
+          name: DJAEGER-v0.10.1-RC-HUD-Stable
           path: output/*
           if-no-files-found: error
