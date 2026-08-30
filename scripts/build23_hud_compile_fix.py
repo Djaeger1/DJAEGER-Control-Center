@@ -35,6 +35,11 @@ if not patch24.is_file():
     raise SystemExit('Build23: Build24 patch missing')
 exec(compile(patch24.read_text(), str(patch24), 'exec'), {'__name__': '__main__'})
 
+patch25 = Path('../../scripts/build25_shell_literal_compile_fix.py')
+if not patch25.is_file():
+    raise SystemExit('Build23: Build25 patch missing')
+exec(compile(patch25.read_text(), str(patch25), 'exec'), {'__name__': '__main__'})
+
 # The current CI still checks the last known-good v0.10.1 marker. Preserve that
 # marker as a source comment only; the visible UI/versionName remains v0.10.2.
 main = Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
