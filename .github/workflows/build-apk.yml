@@ -13,37 +13,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Extract DJAEGER source
         run: |
           rm -rf project && mkdir -p project
           unzip -q DJAEGER_Control_Center_v0.5.3_RC_CoGo_AndroidX_Fix.zip -d project
-
-      - name: Apply Build 9 realtime + Gaming Turbo patch
+      - name: Apply Build 9 stable realtime patch
         working-directory: project/DJAEGER_Control_Center
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          # Build metadata / Java target.
-          g=Path('app/build.gradle.kts')
-          s=g.read_text()
+          g=Path('app/build.gradle.kts'); s=g.read_text()
           marker='    kotlinOptions { jvmTarget = "17" }'
           if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
               s=s.replace(marker,'    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }\n'+marker)
-          s=s.replace('versionCode = 8','versionCode = 10')
-          s=s.replace('versionName = "0.5.3-rc-cogo"','versionName = "0.5.5-rc-gaming-turbo"')
-          g.write_text(s)
-
-          # Preserve repository parser regression fixes.
-          r=Path('app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt')
-          s=r.read_text()
+          s=s.replace('versionCode = 8','versionCode = 10').replace('versionName = "0.5.3-rc-cogo"','versionName = "0.5.5-rc-gaming-turbo"'); g.write_text(s)
+          r=Path('app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt'); s=r.read_text()
           s=s.replace('"__$a__\\n"','"__${a}__\\n"').replace('"__$b__\\n"','"__${b}__\\n"')
           old='    private fun parseTelemetry(line:String):Telemetry{val c=parseCsv(line);fun s(i:Int)=c.getOrNull(i)?.trim().orEmpty();return Telemetry(s(0).toLongOrNull()?:0,s(1).toIntOrNull()?:0,s(2).toIntOrNull()?:0,s(3).toIntOrNull()?:0,s(4).toIntOrNull()?:0,s(5).toLongOrNull()?:0,s(6).toLongOrNull()?:0,s(7).toLongOrNull()?:0,s(8),s(9).toDoubleOrNull()?:0.0,s(10).toDoubleOrNull()?:0.0,s(11).toDoubleOrNull()?:0.0,s(12).toDoubleOrNull()?:0.0,s(13).toDoubleOrNull()?:0.0,s(15),s(16).toLongOrNull()?:0,s(17).toLongOrNull()?:0,s(18).toDoubleOrNull()?:0.0,s(19),s(20),s(22))}'
           new='''    private fun parseTelemetry(line:String):Telemetry {
@@ -51,33 +40,26 @@ jobs:
               fun f(i:Int)=c.getOrNull(i)?.trim().orEmpty()
               return Telemetry(f(0).toLongOrNull()?:0,f(1).toIntOrNull()?:0,f(2).toIntOrNull()?:0,f(3).toIntOrNull()?:0,f(4).toIntOrNull()?:0,f(5).toLongOrNull()?:0,f(6).toLongOrNull()?:0,f(7).toLongOrNull()?:0,f(8),f(9).toDoubleOrNull()?:0.0,f(10).toDoubleOrNull()?:0.0,f(11).toDoubleOrNull()?:0.0,f(12).toDoubleOrNull()?:0.0,f(13).toDoubleOrNull()?:0.0,f(15),f(16).toLongOrNull()?:0,f(17).toLongOrNull()?:0,f(18).toDoubleOrNull()?:0.0,f(19),f(20),f(22))
           }'''
-          if old in s:
-              s=s.replace(old,new)
+          if old in s: s=s.replace(old,new)
           r.write_text(s)
-
-          m=Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
-          s=m.read_text()
+          m=Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'); s=m.read_text()
           s=s.replace('import androidx.compose.ui.Modifier','import androidx.compose.ui.Modifier\nimport androidx.compose.ui.platform.LocalClipboardManager\nimport androidx.compose.ui.text.AnnotatedString')
           s=s.replace('CONTROL CENTER • v0.5.3 RC • REGRESSION VALIDATED','GAMING TURBO • CONTROL CENTER • v0.5.5 RC • REALTIME 1s')
-          s=s.replace('Text("DJAEGER",fontWeight=FontWeight.Black,style=MaterialTheme.typography.headlineMedium);Text("GAMING TURBO','Text("⚡ DJAEGER",fontWeight=FontWeight.Black,style=MaterialTheme.typography.headlineMedium);Text("GAMING TURBO')
-
           old_ai='@Composable fun AI(s:RuntimeState){Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){BoxCard("AI SUMMARY",aiSummary(s));BoxCard("LOCAL BRAIN",s.brain.ifBlank{"No state published yet"});BoxCard("ADAPTIVE OPERATING ENVELOPE",s.envelope.ifBlank{"No envelope published yet"});BoxCard("GEMINI HTTP STATE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)}}'
           new_ai='''@Composable fun AI(s:RuntimeState){
               val retained=humanDecision(s)
               val brainText=if(s.brain.isBlank()) "No active Local Brain state file.\\nLAST SESSION / RETAINED STATE:\\n"+retained else s.brain
               Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
-                  BoxCard("AI SUMMARY • LIVE",aiSummary(s))
-                  BoxCard("LOCAL BRAIN • LIVE",brainText,true)
-                  BoxCard("ADAPTIVE OPERATING ENVELOPE • LIVE",s.envelope.ifBlank{"No envelope published yet"},true)
-                  BoxCard("GEMINI INTELLIGENCE • HUMAN VIEW",retained,true)
-                  BoxCard("GEMINI HTTP STATE • LIVE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true)
-                  BoxCard("GEMINI SERVER STATE • LIVE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)
+                  BoxCard("AI SUMMARY LIVE",aiSummary(s))
+                  BoxCard("LOCAL BRAIN LIVE",brainText,true)
+                  BoxCard("ADAPTIVE OPERATING ENVELOPE LIVE",s.envelope.ifBlank{"No envelope published yet"},true)
+                  BoxCard("GEMINI INTELLIGENCE HUMAN VIEW",retained,true)
+                  BoxCard("GEMINI HTTP STATE LIVE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true)
+                  BoxCard("GEMINI SERVER STATE LIVE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)
               }
           }'''
-          if old_ai not in s:
-              raise SystemExit('AI source not found')
+          if old_ai not in s: raise SystemExit('AI source not found')
           s=s.replace(old_ai,new_ai)
-
           old_box='@Composable fun BoxCard(title:String,text:String,mono:Boolean=false){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge);Spacer(Modifier.height(7.dp));Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)}}}'
           new_box='''@Composable fun BoxCard(title:String,text:String,mono:Boolean=false){
               val clipboard=LocalClipboardManager.current
@@ -85,62 +67,23 @@ jobs:
                   Column(Modifier.padding(14.dp)){
                       Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
                           Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge)
-                          TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER Control Center v0.5.5 RC\\n["+title+"]\\n"+text))}){ Text("COPY") }
+                          TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER Control Center v0.5.5 RC\\n["+title+"]\\n"+text))}) { Text("COPY") }
                       }
                       Spacer(Modifier.height(7.dp))
                       Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)
                   }
               }
           }'''
-          if old_box not in s:
-              raise SystemExit('BoxCard source not found')
+          if old_box not in s: raise SystemExit('BoxCard source not found')
           s=s.replace(old_box,new_box)
-
-          old_chart='@Composable fun LineChartCard(title:String,values:List<Float>,min:Float,max:Float,current:String){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold);Text(current,fontWeight=FontWeight.Bold)};Spacer(Modifier.height(10.dp));Canvas(Modifier.fillMaxWidth().height(120.dp)){if(values.size>1){val lo=min;val hi=max.coerceAtLeast(lo+1);val step=size.width/(values.size-1);fun y(v:Float)=size.height-(v.coerceIn(lo,hi)-lo)/(hi-lo)*size.height;for(i in 1 until values.size)drawLine(color=Green,start=Offset((i-1)*step,y(values[i-1])),end=Offset(i*step,y(values[i])),strokeWidth=3f)}}}}}'
-          new_chart='''@Composable fun LineChartCard(title:String,values:List<Float>,min:Float,max:Float,current:String){
-              val clipboard=LocalClipboardManager.current
-              Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
-                  Column(Modifier.padding(14.dp)){
-                      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
-                          Text(title,color=Green,fontWeight=FontWeight.Bold)
-                          Row{ Text(current,fontWeight=FontWeight.Bold); TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER Chart "+title+"\\nCurrent: "+current+"\\nSamples: "+values.joinToString(",")))}){Text("COPY")} }
-                      }
-                      Spacer(Modifier.height(10.dp))
-                      Canvas(Modifier.fillMaxWidth().height(120.dp)){
-                          if(values.size>1){
-                              val lo=min
-                              val hi=max.coerceAtLeast(lo+1)
-                              val step=size.width/(values.size-1)
-                              fun y(v:Float)=size.height-(v.coerceIn(lo,hi)-lo)/(hi-lo)*size.height
-                              for(i in 1 until values.size) drawLine(color=Green,start=Offset((i-1)*step,y(values[i-1])),end=Offset(i*step,y(values[i])),strokeWidth=3f)
-                          }
-                      }
-                  }
-              }
-          }'''
-          if old_chart not in s:
-              raise SystemExit('LineChartCard source not found')
-          s=s.replace(old_chart,new_chart)
-
-          # Foreground/lifecycle polling only; source values are never fabricated.
           s=s.replace('delay(2000)','delay(1000)').replace('delay(3000)','delay(1000)').replace('delay(5000)','delay(1000)')
           m.write_text(s)
-
-          # Original DJAEGER Gaming Turbo launcher mark: neon bolt / D shield motif.
-          res=Path('app/src/main/res/drawable')
-          res.mkdir(parents=True,exist_ok=True)
-          Path(res/'ic_djaeger_gaming_turbo.xml').write_text('''<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-              <path android:fillColor="#090B10" android:pathData="M12,8 L96,8 L104,20 L104,88 L92,100 L16,100 L4,88 L4,20 Z"/>
-              <path android:fillColor="#43E38A" android:pathData="M26,24 L62,24 C79,24 88,34 88,52 C88,70 78,82 59,82 L26,82 Z M40,37 L40,69 L58,69 C68,69 74,63 74,53 C74,43 68,37 58,37 Z"/>
-              <path android:fillColor="#FFC857" android:pathData="M59,14 L48,49 L61,49 L52,90 L81,43 L66,43 L78,14 Z"/>
-          </vector>''')
-
-          manifest=Path('app/src/main/AndroidManifest.xml')
-          ms=manifest.read_text()
-          ms=ms.replace('<application android:theme="@style/Theme.Djaeger"','<application android:icon="@drawable/ic_djaeger_gaming_turbo" android:theme="@style/Theme.Djaeger"')
+          res=Path('app/src/main/res/drawable'); res.mkdir(parents=True,exist_ok=True)
+          (res/'ic_djaeger_gaming_turbo.xml').write_text('''<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108"><path android:fillColor="#090B10" android:pathData="M12,8 L96,8 L104,20 L104,88 L92,100 L16,100 L4,88 L4,20 Z"/><path android:fillColor="#43E38A" android:pathData="M26,24 L62,24 C79,24 88,34 88,52 C88,70 78,82 59,82 L26,82 Z M40,37 L40,69 L58,69 C68,69 74,63 74,53 C74,43 68,37 58,37 Z"/><path android:fillColor="#FFC857" android:pathData="M59,14 L48,49 L61,49 L52,90 L81,43 L66,43 L78,14 Z"/></vector>''')
+          manifest=Path('app/src/main/AndroidManifest.xml'); ms=manifest.read_text()
+          if 'android:icon=' not in ms: ms=ms.replace('<application','<application android:icon="@drawable/ic_djaeger_gaming_turbo"',1)
           manifest.write_text(ms)
           PY
-
       - name: Pre-build source assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
@@ -148,23 +91,19 @@ jobs:
           grep -q 'LocalClipboardManager' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'ic_djaeger_gaming_turbo' app/src/main/AndroidManifest.xml
           grep -q 'delay(1000)' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
-
       - name: Build APK
         working-directory: project/DJAEGER_Control_Center
         run: gradle :app:assembleDebug --stacktrace
-
       - name: Static read-only audit
         working-directory: project/DJAEGER_Control_Center
         run: |
           ! grep -R -nE 'settings put|setprop|force-stop|android.permission.INTERNET' app/src/main || exit 1
           ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
           grep -R -nE 'cat |tail |sed |head |test -d|echo __' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt >/dev/null
-
       - name: Collect APK
         run: |
           mkdir -p output
@@ -172,7 +111,6 @@ jobs:
           test -n "$APK"
           cp "$APK" output/DJAEGER-Control-Center-v0.5.5-RC-GamingTurbo.apk
           sha256sum output/DJAEGER-Control-Center-v0.5.5-RC-GamingTurbo.apk > output/SHA256.txt
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
