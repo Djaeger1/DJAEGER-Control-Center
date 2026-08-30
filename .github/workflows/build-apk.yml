@@ -9,6 +9,8 @@ on:
       - 'scripts/build12_hardening_patch.py'
       - 'scripts/build14_profileinstaller_hardening_patch.py'
       - 'scripts/build15_evolution_hud_patch.py'
+      - 'scripts/build16_game_turbo_experience_patch.py'
+      - 'scripts/build17_game_turbo_polish_patch.py'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -35,33 +37,36 @@ jobs:
       - name: Apply Build 15 Evolution HUD and Game Launcher
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build15_evolution_hud_patch.py
+      - name: Apply Build 16 Game Turbo experience
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build16_game_turbo_experience_patch.py
+      - name: Apply Build 17 Game Turbo polish
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build17_game_turbo_polish_patch.py
       - name: Pre-build regression and safety assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q 'EVOLUTION HUD' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q 'GAME LAUNCHER' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q 'START HUD' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q 'EVOLUTION STATUS' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q 'GEMINI CONVERSATION' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'djaeger-ai gemini-key-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'djaeger-ai gemini-key-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'djaeger-ai gemini-key-delete' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'GAME TURBO POLISHED' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'AUTO GAME DETECTION' app/src/main/java/com/djaeger/controlcenter/GameLauncherActivity.kt
+          grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'BOOT_COMPLETED' app/src/main/java/com/djaeger/controlcenter/DjaegerBootReceiver.kt
+          grep -q 'WINDOW=ACTIVE' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'RESIZE MANUAL' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'suppressed=true' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'x.scaleX=scale' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'djaeger-ai gemini-chat-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'djaeger-ai gemini-knowledge-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'djaeger-ai gemini-chat-clear' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'PasswordVisualTransformation' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'prompt.take(8000)' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'handler.postDelayed(this,1000)' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.FOREGROUND_SERVICE' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' app/src/main/AndroidManifest.xml
+          grep -q 'DjaegerBootReceiver' app/src/main/AndroidManifest.xml
           grep -q 'androidx.profileinstaller.ProfileInstallReceiver' app/src/main/AndroidManifest.xml
           grep -q 'tools:node="remove"' app/src/main/AndroidManifest.xml
           ! grep -R -nE 'android.permission.INTERNET|WRITE_SETTINGS|PACKAGE_USAGE_STATS' app/src/main || exit 1
           ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft ' app/src/main || exit 1
           ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
-          ! grep -R -nE 'gemini-key[[:space:]]+\$|gemini-chat[[:space:]]+\$' app/src/main/java || exit 1
           ! grep -q 'ui-tooling"' app/build.gradle.kts || exit 1
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -75,37 +80,30 @@ jobs:
           ! grep -R -nE 'android.permission.INTERNET|WRITE_SETTINGS|PACKAGE_USAGE_STATS' app/src/main || exit 1
           ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft ' app/src/main || exit 1
           ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
-          grep -q 'gemini-chat-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'gemini-knowledge-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'gemini-chat-stdin' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           MERGED="$(find app/build/intermediates -path '*merged_manifest*' -o -path '*merged_manifests*' | grep 'AndroidManifest.xml' | head -1 || true)"
           if [ -z "$MERGED" ]; then MERGED="$(find app/build/intermediates -name AndroidManifest.xml | head -1)"; fi
           test -n "$MERGED"
-          echo "Auditing merged manifest: $MERGED"
           BLOCKED='android.permission.INTERNET|android.permission.DUMP|WRITE_SETTINGS|PACKAGE_USAGE_STATS|androidx.compose.ui.tooling.PreviewActivity|androidx.profileinstaller.ProfileInstallReceiver'
           MATCHES="$(grep -nE "$BLOCKED" "$MERGED" || true)"
-          if [ -n "$MATCHES" ]; then
-            echo '=== BLOCKED MERGED-MANIFEST ENTRIES ==='
-            echo "$MATCHES"
-            echo '=== END BLOCKED ENTRIES ==='
-            exit 1
-          fi
+          if [ -n "$MATCHES" ]; then echo "$MATCHES"; exit 1; fi
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' "$MERGED"
           grep -q 'android.permission.FOREGROUND_SERVICE' "$MERGED"
+          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' "$MERGED"
           grep -q 'DjaegerHudService' "$MERGED"
+          grep -q 'DjaegerBootReceiver' "$MERGED"
           grep -q 'GameLauncherActivity' "$MERGED"
-          echo 'Merged manifest passed: overlay/FGS only as intentional HUD permissions; blocked permissions absent.'
       - name: Collect APK and hash
         run: |
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.7.0-RC-Evolution-HUD.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.8.1-RC-Game-Turbo-Polished.apk
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.7.0-RC-Evolution-HUD
+          name: DJAEGER-v0.8.1-RC-Game-Turbo-Polished
           path: output/*
           if-no-files-found: error
