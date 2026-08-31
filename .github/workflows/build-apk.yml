@@ -73,12 +73,15 @@ jobs:
           test -n "$MERGED"
           grep -q 'android.intent.category.LAUNCHER' "$MERGED"
           ! grep -nE 'android.permission.INTERNET|android.permission.DUMP|WRITE_SETTINGS|QUERY_ALL_PACKAGES|SYSTEM_ALERT_WINDOW|PACKAGE_USAGE_STATS|RECEIVE_BOOT_COMPLETED|FOREGROUND_SERVICE|BIND_ACCESSIBILITY_SERVICE|androidx.compose.ui.tooling.PreviewActivity|androidx.profileinstaller.ProfileInstallReceiver' "$MERGED" || exit 1
-      - name: Collect APK and hash
+      - name: Collect APK, source snapshot and hash
         run: |
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
           cp "$APK" output/DJAEGER-Control-Center-v0.12.1-DJAEGER-AI-Sync.apk
+          cp project/DJAEGER_Control_Center/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt output/MainActivity.generated.kt
+          cp project/DJAEGER_Control_Center/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt output/DjaegerRepository.generated.kt
+          cp project/DJAEGER_Control_Center/app/src/main/AndroidManifest.xml output/AndroidManifest.generated.xml
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
