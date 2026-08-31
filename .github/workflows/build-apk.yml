@@ -45,6 +45,7 @@ jobs:
         run: |
           python3 ../../scripts/build38_monitoring_only_redesign.py
           python3 ../../scripts/build39_monitoring_repository_hardening.py
+          python3 ../../scripts/build40_monitoring_shell_literal_fix.py
       - name: Monitoring-only source audit
         working-directory: project/DJAEGER_Control_Center
         run: |
