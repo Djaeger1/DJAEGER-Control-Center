@@ -42,7 +42,9 @@ jobs:
           python3 ../../scripts/build23_hud_compile_fix.py
       - name: Convert to Monitoring Edition
         working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build38_monitoring_only_redesign.py
+        run: |
+          python3 ../../scripts/build38_monitoring_only_redesign.py
+          python3 ../../scripts/build39_monitoring_repository_hardening.py
       - name: Monitoring-only source audit
         working-directory: project/DJAEGER_Control_Center
         run: |
@@ -53,7 +55,7 @@ jobs:
           grep -q '/sys/class/thermal/cooling_device16/cur_state' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q '/data/adb/modules/djaeger_game_stabilizer/telemetry.csv' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'djaeger-ai gemini-status' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft |djaeger-ai mode |policy-intent |native_write_plan' app/src/main || exit 1
+          ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft |djaeger-ai mode |policy-intent |native_write_plan|TYPE_APPLICATION_OVERLAY|startForegroundService\(|startService\(' app/src/main || exit 1
           ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
           ! grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
           ! grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
