@@ -21,10 +21,7 @@ if new_decl not in s or new_call not in s: raise SystemExit('Build23: compile-sa
 p.write_text(s)
 print('Build 23 compile-safe single-flight HUD poll fix applied')
 
-for num, name in [
-    (24, 'build24_realtime_telemetry_multiwindow_patch.py'),
-    (25, 'build25_shell_literal_compile_fix.py'),
-]:
+for num, name in [(24, 'build24_realtime_telemetry_multiwindow_patch.py'), (25, 'build25_shell_literal_compile_fix.py')]:
     patch = Path('../../scripts') / name
     if not patch.is_file(): raise SystemExit(f'Build23: Build{num} patch missing')
     exec(compile(patch.read_text(), str(patch), 'exec'), {'__name__': '__main__'})
@@ -44,6 +41,7 @@ for num, name in [
     (31, 'build31_game_session_scene_phase5.py'),
     (32, 'build32_load_bottleneck_phase6.py'),
     (33, 'build33_local_ai_policy_phase7.py'),
+    (34, 'build34_policy_handshake_phase9.py'),
 ]:
     patch = Path('../../scripts') / name
     if not patch.is_file(): raise SystemExit(f'Build23: Build{num} patch missing')
