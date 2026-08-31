@@ -5,31 +5,7 @@ on:
     branches: [main, ui/miui-game-turbo-phase1-dev]
     paths:
       - '.github/workflows/build-apk.yml'
-      - 'scripts/build11_ai_bridge_patch.py'
-      - 'scripts/build12_hardening_patch.py'
-      - 'scripts/build14_profileinstaller_hardening_patch.py'
-      - 'scripts/build15_evolution_hud_patch.py'
-      - 'scripts/build16_game_turbo_experience_patch.py'
-      - 'scripts/build17_game_turbo_polish_patch.py'
-      - 'scripts/build18_game_turbo_compile_fix.py'
-      - 'scripts/build19_game_turbo_service_rewrite.py'
-      - 'scripts/build20_miui_game_turbo_authority_patch.py'
-      - 'scripts/build21_djaeger_ai_kernel_sync_patch.py'
-      - 'scripts/build22_hud_flicker_fix_patch.py'
-      - 'scripts/build23_hud_compile_fix.py'
-      - 'scripts/build24_realtime_telemetry_multiwindow_patch.py'
-      - 'scripts/build25_shell_literal_compile_fix.py'
-      - 'scripts/build26_miui_construction_rewrite.py'
-      - 'scripts/build27_miui_visual_phase1.py'
-      - 'scripts/build28_miui_panel_phase2.py'
-      - 'scripts/build29_miui_interaction_phase3.py'
-      - 'scripts/build30_miui_freeform_phase4.py'
-      - 'scripts/build31_game_session_scene_phase5.py'
-      - 'scripts/build32_load_bottleneck_phase6.py'
-      - 'scripts/build33_local_ai_policy_phase7.py'
-      - 'scripts/build34_policy_handshake_phase9.py'
-      - 'scripts/build35_verified_outcome_phase10.py'
-      - 'scripts/build36_stage12_maturity_fix.py'
+      - 'scripts/*.py'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -77,14 +53,14 @@ jobs:
       - name: Apply Build 22 persistent HUD flicker fix
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build22_hud_flicker_fix_patch.py
-      - name: Apply Build 23 chain through Build 36
+      - name: Apply Build 23 chain through Build 37
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build23_hud_compile_fix.py
-      - name: Stage 12 pre-build assertions
+      - name: Stage 13 hardware-overlay pre-build assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q 'v0.12.0 RC • STAGE 12 MATURITY • REALTIME 1s' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q '0.12.0-rc-stage12-maturity' app/build.gradle.kts
+          grep -q 'v0.12.1 RC • HARDWARE OVERLAY FIX • REALTIME 1s' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q '0.12.1-rc-hardware-overlay-fix' app/build.gradle.kts
           grep -q 'private enum class HudState { HANDLE, PANEL, EXTENDED }' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'private enum class FreeformState { FREEFORM, MINI_FREEFORM, FULLSCREEN, FAILED, UNSUPPORTED }' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'readFreeformState(pkg)' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
@@ -115,9 +91,19 @@ jobs:
           assert 'one(fps), one(frame), one(jank)' in s
           assert 'outcomePolls < 5' in s
           assert 'listOf("AUTO", "DINGIN", "SEDANG", "HANGAT", "PANAS")' in s
+          # Hardware validation regressions from v0.12.0.
+          show=s.split('private fun showOverlay()',1)[1].split('private fun rebuildOverlayKeepingPosition()',1)[0]
+          assert 'if (hudState != HudState.HANDLE) attachPanelDrag(view, params)' in show
+          assert 'x = if (hudState == HudState.HANDLE) 0 else dp(lastX)' in show
+          handle=s.split('private fun buildHandle()',1)[1].split('private fun attachHandleGesture',1)[0]
+          assert 'attachHandleGesture(handle)' in handle
+          assert 'minimumWidth = dp(28)' not in handle
+          session=s.split('private fun isGameSessionActive(state: RuntimeSnapshot)',1)[1].split('private fun parseSnapshot',1)[0]
+          assert 'mResumedActivity|topResumedActivity|ResumedActivity' in session
+          assert 'focused.contains(pkg)' in session
           for forbidden in ('settings put','setprop','force-stop','iptables','ip6tables','nft '):
               assert forbidden not in s, forbidden
-          print('Stage12 source invariants PASS')
+          print('Stage13 source invariants PASS')
           PY
           grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
@@ -147,11 +133,11 @@ jobs:
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.12.0-RC-Stage12-Maturity.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.12.1-RC-Hardware-Overlay-Fix.apk
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.12.0-RC-Stage12-Maturity
+          name: DJAEGER-v0.12.1-RC-Hardware-Overlay-Fix
           path: output/*
           if-no-files-found: error
