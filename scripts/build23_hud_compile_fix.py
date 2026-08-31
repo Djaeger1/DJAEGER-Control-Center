@@ -40,11 +40,15 @@ if not patch25.is_file():
     raise SystemExit('Build23: Build25 patch missing')
 exec(compile(patch25.read_text(), str(patch25), 'exec'), {'__name__': '__main__'})
 
-# The current CI still checks the last known-good v0.10.1 marker. Preserve that
-# marker as a source comment only; the visible UI/versionName remains v0.10.2.
+# Preserve old CI marker as a source comment only.
 main = Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
 ms = main.read_text()
 legacy = '// CI_BASELINE_MARKER: v0.10.1 RC • HUD STABLE + AI/KERNEL SYNC\n'
 if legacy not in ms:
     ms += '\n' + legacy
 main.write_text(ms)
+
+patch26 = Path('../../scripts/build26_miui_construction_rewrite.py')
+if not patch26.is_file():
+    raise SystemExit('Build23: Build26 patch missing')
+exec(compile(patch26.read_text(), str(patch26), 'exec'), {'__name__': '__main__'})
