@@ -41,6 +41,7 @@ for num, name in [
     (31, 'build31_game_session_scene_phase5.py'),
     (32, 'build32b_load_bottleneck_phase6_compat.py'),
     (33, 'build33_local_ai_policy_phase7.py'),
+    (330, 'build33c_policy_ui_compat.py'),
     (34, 'build34b_policy_handshake_phase9_compat.py'),
     (35, 'build35_verified_outcome_phase10.py'),
     (36, 'build36_stage12_maturity_fix.py'),
