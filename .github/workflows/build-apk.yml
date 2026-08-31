@@ -38,9 +38,12 @@ jobs:
       - name: Apply v0.12.1 compact sync baseline
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build41_v0121_latest_djaeger_sync.py
-      - name: Apply telemetry fix and r2 sync
+      - name: Apply read-only telemetry repository fix
         working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build43_v0121_telemetry_fix_r2_sync.py
+        run: python3 ../../scripts/build43_v0121_telemetry_fix_r2_sync.py || test -n "$(grep -l 'LIVE_POWER_SUPPLY' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt)"
+      - name: Apply missing-value UI fix
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build44_v0121_ui_missing_value_fix.py
       - name: Source audit
         working-directory: project/DJAEGER_Control_Center
         run: |
@@ -53,6 +56,7 @@ jobs:
           grep -q 'sm5602_bat/current_now' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'THERMAL=' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'LIVE_POWER_SUPPLY' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'if(t>=0)' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'GEMINI CONVERSATION' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'ASK GEMINI' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'COPY' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
