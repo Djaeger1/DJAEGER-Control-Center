@@ -154,7 +154,9 @@ jobs:
           }
           if used_permissions:
               dynamic = 'com.djaeger.controlcenter.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
-              assert declared.get(dynamic) == 'signature'
+              protection = declared.get(dynamic, '')
+              print('DYNAMIC_PERMISSION_PROTECTION=' + protection)
+              assert protection in {'signature', '2', '0x2', '0x00000002'}
           assert app.attrib.get(ns + 'debuggable', 'false') != 'true'
           print('EXACT_APK_MANIFEST=PASS')
           PY
