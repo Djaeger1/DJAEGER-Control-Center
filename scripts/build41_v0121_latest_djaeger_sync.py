@@ -19,6 +19,12 @@ s = s.replace('GAMING TURBO • v0.12.1 RC • HARDWARE OVERLAY FIX • REALTIME
 s = s.replace('DJAEGER v0.12.1 RC', 'DJAEGER v0.12.1 • AI SYNC')
 s = re.sub(r'val supported\s*=\s*[^;\n]+;', 'val supported=s.moduleVersion.contains("12.9.50");', s, count=1)
 
+# Remove historical auto-start of HUD from MainActivity.
+s = re.sub(
+    r'\n\s*val monitor\s*=\s*android\.content\.Intent\(this,\s*DjaegerHudService::class\.java\)\s*\n\s*try\s*\{.*?\}\s*catch\s*\(_:\s*Exception\)\s*\{\s*\}\s*',
+    '\n', s, count=1, flags=re.S
+)
+
 start = s.find('        val ccContext=androidx.compose.ui.platform.LocalContext.current')
 end_marker = '        BoxCard("GEMINI KNOWLEDGE + EVOLUTION",knowledgeStatus,true)'
 if start >= 0:
@@ -34,9 +40,9 @@ elif any(x in s for x in ('GAME LAUNCHER','START HUD','STOP HUD','EVOLUTION STAT
 s = re.sub(r'\s*var knowledgeStatus by remember\{mutableStateOf\("Knowledge status not loaded yet\."\)\}', '', s, count=1)
 s = re.sub(r'\n\s*"KNOWLEDGE"->\{val r=repo\.geminiKnowledgeStatus\(\);knowledgeStatus=r\.second\.ifBlank\{"KNOWLEDGE_STATUS=EMPTY"\}\}', '', s, count=1)
 
-for retired in ('GAME LAUNCHER','START HUD','STOP HUD','EVOLUTION STATUS'):
+for retired in ('GAME LAUNCHER','START HUD','STOP HUD','EVOLUTION STATUS','DjaegerHudService','GameLauncherActivity'):
     if retired in s:
-        raise SystemExit(f'Build41: retired feature remains: {retired}')
+        raise SystemExit(f'Build41: retired feature remains in MainActivity: {retired}')
 for required in ('COPY', 'GEMINI CONVERSATION', 'ASK GEMINI'):
     if required not in s:
         raise SystemExit(f'Build41 regression: UI feature missing: {required}')
@@ -56,7 +62,7 @@ for required in (
 if re.search(r'(echo\s+[^\n]*>\s*/sys/|tee\s+/sys/|settings put|setprop|force-stop|iptables|ip6tables|nft )', rs):
     raise SystemExit('Build41: repository mutation path detected')
 
-for dead in ('GameLauncherActivity.kt', 'DjaegerHudService.kt'):
+for dead in ('GameLauncherActivity.kt', 'DjaegerHudService.kt', 'DjaegerBootReceiver.kt'):
     p = pkg / dead
     if p.exists():
         p.unlink()
@@ -87,10 +93,10 @@ for child in list(root):
 
 tree.write(manifest, encoding='unicode', xml_declaration=True)
 ms = manifest.read_text()
-for forbidden in ('SYSTEM_ALERT_WINDOW','PACKAGE_USAGE_STATS','RECEIVE_BOOT_COMPLETED','FOREGROUND_SERVICE','GameLauncherActivity','DjaegerHudService'):
+for forbidden in ('SYSTEM_ALERT_WINDOW','PACKAGE_USAGE_STATS','RECEIVE_BOOT_COMPLETED','FOREGROUND_SERVICE','GameLauncherActivity','DjaegerHudService','BootReceiver'):
     if forbidden in ms:
         raise SystemExit(f'Build41 manifest regression: {forbidden}')
 if 'android.intent.category.LAUNCHER' not in ms:
     raise SystemExit('Build41: main launcher activity missing')
 
-print('Build 41 applied: v0.12.1 compact UI + latest DJAEGER-AI sync; launcher/HUD/evolution controls removed')
+print('Build 41 applied: v0.12.1 compact UI + DJAEGER-AI v12.9.50-r1 sync; launcher/HUD/evolution paths removed')
