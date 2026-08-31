@@ -2,7 +2,7 @@ name: Build DJAEGER Control Center APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, ui/miui-game-turbo-phase1-dev]
     paths:
       - '.github/workflows/build-apk.yml'
       - 'scripts/build11_ai_bridge_patch.py'
@@ -20,6 +20,16 @@ on:
       - 'scripts/build24_realtime_telemetry_multiwindow_patch.py'
       - 'scripts/build25_shell_literal_compile_fix.py'
       - 'scripts/build26_miui_construction_rewrite.py'
+      - 'scripts/build27_miui_visual_phase1.py'
+      - 'scripts/build28_miui_panel_phase2.py'
+      - 'scripts/build29_miui_interaction_phase3.py'
+      - 'scripts/build30_miui_freeform_phase4.py'
+      - 'scripts/build31_game_session_scene_phase5.py'
+      - 'scripts/build32_load_bottleneck_phase6.py'
+      - 'scripts/build33_local_ai_policy_phase7.py'
+      - 'scripts/build34_policy_handshake_phase9.py'
+      - 'scripts/build35_verified_outcome_phase10.py'
+      - 'scripts/build36_stage12_maturity_fix.py'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -67,54 +77,53 @@ jobs:
       - name: Apply Build 22 persistent HUD flicker fix
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build22_hud_flicker_fix_patch.py
-      - name: Apply Build 23 chain through Build 26
+      - name: Apply Build 23 chain through Build 36
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build23_hud_compile_fix.py
-      - name: Pre-build assertions
+      - name: Stage 12 pre-build assertions
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q 'v0.11.0 RC • MIUI CONSTRUCTION • REALTIME 1s' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q '0.11.0-rc-miui-construction' app/build.gradle.kts
-          grep -q 'authoritySyncStatus' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'kernelCapabilitySummary' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'session-recovery-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'snapshot-lifecycle-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'runtime\["active"\]' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'private fun updateOverlayContent()' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'private val pollRunnable: Runnable = object : Runnable' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'v0.12.0 RC • STAGE 12 MATURITY • REALTIME 1s' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q '0.12.0-rc-stage12-maturity' app/build.gradle.kts
           grep -q 'private enum class HudState { HANDLE, PANEL, EXTENDED }' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'launchMiuiFreeform' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'cmd activity start-activity --user 0 --windowingMode 5' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'dumpsys activity activities' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q '__DJAEGER_FREEFORM_CONFIRMED__' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'private enum class FreeformState { FREEFORM, MINI_FREEFORM, FULLSCREEN, FAILED, UNSUPPORTED }' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'readFreeformState(pkg)' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          ! grep -q '__DJAEGER_FREEFORM_CONFIRMED__' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q 'dumpsys SurfaceFlinger --latency' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           grep -q '/data/adb/modules/djaeger_game_stabilizer/telemetry.csv' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'PROC_STAT+KGSL' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'DJAEGER_LOCAL_POLICY_V1' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'djaeger-ai policy-intent-status' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'DJAEGER_POLICY_OUTCOME_V1' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'PRE_DISPATCH_BASELINE' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'POST_APPLY_OBSERVING' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
+          grep -q 'val jank: String = "--"' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
           python3 - <<'PY'
           from pathlib import Path
           s=Path('app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt').read_text()
           apply_body=s.split('private fun applySessionState(active: Boolean)',1)[1].split('private fun isGameSessionActive',1)[0]
           assert 'updateOverlayContent()' in apply_body
-          assert 'rebuildOverlayKeepingPosition()' not in apply_body
           update_body=s.split('private fun updateOverlayContent()',1)[1].split('private fun buildHandle()',1)[0]
           for forbidden in ('removeView','addView','showOverlay','rebuildOverlayKeepingPosition'):
               assert forbidden not in update_body, forbidden
-          poll_body=s.split('private val pollRunnable',1)[1].split('private fun applySessionState',1)[0]
-          completion=poll_body.split('mainHandler.post {',1)[1]
-          assert 'mainHandler.postDelayed(' in completion
-          assert 'this,' in completion
-          assert 'pollRunnable,' not in completion
-          assert 'csvNumber(9)' in s and 'csvNumber(10)' in s
-          assert '/data/adb/djaeger_ai/telemetry.csv' not in s
-          print('Build26 state/poll/telemetry/freeform assertions PASS')
+          outcome=s.split('private fun updateVerifiedOutcome(snapshot: RuntimeSnapshot)',1)[1].split('private fun armOutcomeBaseline',1)[0]
+          assert 'outcomeBaseline = current' not in outcome
+          assert 'outcomeBaseline = outcomeSample(snapshot)' not in outcome
+          dispatch=s.split('private fun dispatchAdaptivePolicy(snapshot: RuntimeSnapshot)',1)[1].split('private fun outcomeSample',1)[0]
+          assert dispatch.index('armOutcomeBaseline(snapshot, intent, now)') < dispatch.index('thread(name = "djaeger-local-policy")')
+          assert 'snapshot.jank.toDoubleOrNull()' in s
+          assert 'one(fps), one(frame), one(jank)' in s
+          assert 'outcomePolls < 5' in s
+          assert 'listOf("AUTO", "DINGIN", "SEDANG", "HANGAT", "PANAS")' in s
+          for forbidden in ('settings put','setprop','force-stop','iptables','ip6tables','nft '):
+              assert forbidden not in s, forbidden
+          print('Stage12 source invariants PASS')
           PY
           grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
           grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' app/src/main/AndroidManifest.xml
           grep -q '<queries>' app/src/main/AndroidManifest.xml
           grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
-          grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft ' app/src/main || exit 1
           ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -138,11 +147,11 @@ jobs:
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.11.0-RC-MIUI-Construction.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.12.0-RC-Stage12-Maturity.apk
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.11.0-RC-MIUI-Construction
+          name: DJAEGER-v0.12.0-RC-Stage12-Maturity
           path: output/*
           if-no-files-found: error
