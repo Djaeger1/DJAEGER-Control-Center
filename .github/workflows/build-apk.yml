@@ -6,6 +6,11 @@ on:
     paths:
       - '.github/workflows/build-apk.yml'
       - 'scripts/*.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-apk.yml'
+      - 'scripts/*.py'
 jobs:
   build:
     runs-on: ubuntu-latest
