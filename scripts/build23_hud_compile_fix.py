@@ -49,3 +49,5 @@ for num, name in [
     patch = Path('../../scripts') / name
     if not patch.is_file(): raise SystemExit(f'Build23: Build{num} patch missing')
     exec(compile(patch.read_text(), str(patch), 'exec'), {'__name__': '__main__'})
+
+# Stage12 chain intentionally fail-closed on every compatibility gate.
