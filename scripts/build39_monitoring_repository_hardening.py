@@ -1,32 +1,46 @@
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 pkg = Path('app/src/main/java/com/djaeger/controlcenter')
 
-# Monitoring Edition does not expose any control repository. Keep a tiny class
-# for source compatibility with historical files, with zero commands.
-r = pkg / 'DjaegerRepository.kt'
-r.write_text(r'''package com.djaeger.controlcenter
-
-/** Monitoring Edition compatibility shell. Hardware/control APIs are removed. */
-class DjaegerRepository
-''')
-
-# Legacy boot receivers from earlier Game Turbo stages are made inert even if
-# their source remains in the archive. Build38 also removes receiver declarations
-# from the manifest, so there is no boot-triggered behavior.
-for b in pkg.glob('*BootReceiver.kt'):
-    class_name = b.stem
-    b.write_text(f'''package com.djaeger.controlcenter\n\nimport android.content.BroadcastReceiver\nimport android.content.Context\nimport android.content.Intent\n\n/** Monitoring Edition: intentionally inert. */\nclass {class_name} : BroadcastReceiver() {{\n    override fun onReceive(context: Context?, intent: Intent?) = Unit\n}}\n''')
-
-# Static audit over final Kotlin sources: no resource/control mutation APIs.
+# Monitoring Edition is intentionally a single-activity application. Remove all
+# historical Game Turbo/HUD/control Kotlin classes so no dormant code path can
+# start services, launch games, change modes, or mutate hardware.
 for f in pkg.glob('*.kt'):
-    s = f.read_text()
-    for forbidden in [
-        'djaeger-ai mode ', 'djaeger-ai policy-intent', 'native_write_plan',
-        'settings put', 'setprop', 'force-stop', 'iptables', 'ip6tables', 'nft ',
-        'TYPE_APPLICATION_OVERLAY', 'startForegroundService(', 'startService('
-    ]:
-        if forbidden in s:
-            raise SystemExit(f'Build39 monitoring-only violation in {f.name}: {forbidden}')
+    if f.name != 'MainActivity.kt':
+        f.unlink()
 
-print('Build 39 monitoring repository hardening applied')
+# Keep only MainActivity as an app component. This removes every legacy service,
+# receiver, provider and launcher activity inherited from the old gaming branch.
+manifest = Path('app/src/main/AndroidManifest.xml')
+ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+tree = ET.parse(manifest)
+root = tree.getroot()
+android_name = '{http://schemas.android.com/apk/res/android}name'
+app = root.find('application')
+if app is None:
+    raise SystemExit('Build39: manifest application missing')
+for child in list(app):
+    tag = child.tag.split('}')[-1]
+    if tag in {'activity','activity-alias','service','receiver','provider'}:
+        name = child.attrib.get(android_name, '')
+        keep = tag == 'activity' and name in {'.MainActivity','com.djaeger.controlcenter.MainActivity'}
+        if not keep:
+            app.remove(child)
+tree.write(manifest, encoding='unicode', xml_declaration=True)
+
+# Final source audit: single activity, read-only telemetry only.
+files = list(pkg.glob('*.kt'))
+if [f.name for f in files] != ['MainActivity.kt']:
+    raise SystemExit('Build39: unexpected Kotlin source set')
+s = files[0].read_text()
+for forbidden in [
+    'djaeger-ai mode ', 'djaeger-ai policy-intent', 'native_write_plan',
+    'settings put', 'setprop', 'force-stop', 'iptables', 'ip6tables', 'nft ',
+    'TYPE_APPLICATION_OVERLAY', 'startForegroundService(', 'startService(',
+    'WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY', 'echo 0 >', 'echo 1 >'
+]:
+    if forbidden in s:
+        raise SystemExit(f'Build39 monitoring-only violation: {forbidden}')
+
+print('Build 39 single-activity monitoring hardening applied')
