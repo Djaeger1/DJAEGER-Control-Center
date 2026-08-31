@@ -5,8 +5,7 @@ s = p.read_text()
 
 old_decl = '    private val pollRunnable = object : Runnable {'
 new_decl = '    private val pollRunnable: Runnable = object : Runnable {'
-if old_decl not in s:
-    raise SystemExit('Build23: pollRunnable declaration not found')
+if old_decl not in s: raise SystemExit('Build23: pollRunnable declaration not found')
 s = s.replace(old_decl, new_decl, 1)
 old_call = '''                    mainHandler.postDelayed(
                         pollRunnable,
@@ -16,11 +15,9 @@ new_call = '''                    mainHandler.postDelayed(
                         this,
                         if (gameSessionActive) ACTIVE_POLL_MS else IDLE_POLL_MS
                     )'''
-if old_call not in s:
-    raise SystemExit('Build23: self-reschedule call not found')
+if old_call not in s: raise SystemExit('Build23: self-reschedule call not found')
 s = s.replace(old_call, new_call, 1)
-if new_decl not in s or new_call not in s:
-    raise SystemExit('Build23: compile-safe single-flight poll fix not applied')
+if new_decl not in s or new_call not in s: raise SystemExit('Build23: compile-safe single-flight poll fix not applied')
 p.write_text(s)
 print('Build 23 compile-safe single-flight HUD poll fix applied')
 
@@ -45,6 +42,7 @@ for num, name in [
     (29, 'build29_miui_interaction_phase3.py'),
     (30, 'build30_miui_freeform_phase4.py'),
     (31, 'build31_game_session_scene_phase5.py'),
+    (32, 'build32_load_bottleneck_phase6.py'),
 ]:
     patch = Path('../../scripts') / name
     if not patch.is_file(): raise SystemExit(f'Build23: Build{num} patch missing')
