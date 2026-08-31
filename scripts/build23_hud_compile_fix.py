@@ -52,3 +52,8 @@ patch26 = Path('../../scripts/build26_miui_construction_rewrite.py')
 if not patch26.is_file():
     raise SystemExit('Build23: Build26 patch missing')
 exec(compile(patch26.read_text(), str(patch26), 'exec'), {'__name__': '__main__'})
+
+patch27 = Path('../../scripts/build27_miui_visual_phase1.py')
+if not patch27.is_file():
+    raise SystemExit('Build23: Build27 patch missing')
+exec(compile(patch27.read_text(), str(patch27), 'exec'), {'__name__': '__main__'})
