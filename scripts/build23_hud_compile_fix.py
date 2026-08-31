@@ -43,6 +43,7 @@ for num, name in [
     (33, 'build33_local_ai_policy_phase7.py'),
     (34, 'build34_policy_handshake_phase9.py'),
     (35, 'build35_verified_outcome_phase10.py'),
+    (36, 'build36_stage12_maturity_fix.py'),
 ]:
     patch = Path('../../scripts') / name
     if not patch.is_file(): raise SystemExit(f'Build23: Build{num} patch missing')
