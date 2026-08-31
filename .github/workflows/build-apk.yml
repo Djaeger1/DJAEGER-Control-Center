@@ -40,7 +40,7 @@ jobs:
         run: python3 ../../scripts/build41_v0121_latest_djaeger_sync.py
       - name: Apply telemetry fix and r2 sync
         working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build42_v0121_telemetry_fix_r2_sync.py
+        run: python3 ../../scripts/build43_v0121_telemetry_fix_r2_sync.py
       - name: Source audit
         working-directory: project/DJAEGER_Control_Center
         run: |
