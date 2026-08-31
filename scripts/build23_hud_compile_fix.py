@@ -36,7 +36,7 @@ for num, name in [
     (26, 'build26_miui_construction_rewrite.py'),
     (27, 'build27b_miui_visual_phase1_compat.py'),
     (28, 'build28_miui_panel_phase2.py'),
-    (29, 'build29_miui_interaction_phase3.py'),
+    (29, 'build29b_miui_interaction_phase3_compat.py'),
     (30, 'build30_miui_freeform_phase4.py'),
     (31, 'build31_game_session_scene_phase5.py'),
     (32, 'build32_load_bottleneck_phase6.py'),
