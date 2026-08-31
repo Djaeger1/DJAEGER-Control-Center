@@ -35,15 +35,24 @@ jobs:
           python3 ../../scripts/build21_djaeger_ai_kernel_sync_patch.py
           python3 ../../scripts/build22_hud_flicker_fix_patch.py
           python3 ../../scripts/build23_hud_compile_fix.py
-      - name: Apply latest DJAEGER-AI sync
+      - name: Apply v0.12.1 compact sync baseline
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build41_v0121_latest_djaeger_sync.py
+      - name: Apply telemetry fix and r2 sync
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build42_v0121_telemetry_fix_r2_sync.py
       - name: Source audit
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q '0.12.1-djaeger-ai-12.9.50-r1-sync' app/build.gradle.kts
-          grep -q 'DJAEGER-AI v12.9.50-r1 SYNC' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q 'Target module: v12.9.50-r1' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q '0.12.1-r1-djaeger-ai-12.9.50-r2-sync' app/build.gradle.kts
+          grep -q 'DJAEGER-AI v12.9.50-r2 SYNC' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'Target module: v12.9.50-r2' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'LITTLE_KHZ=' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'GPU_HZ=' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'BAT_TEMP_RAW=' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'sm5602_bat/current_now' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'THERMAL=' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'LIVE_POWER_SUPPLY' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'GEMINI CONVERSATION' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'ASK GEMINI' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'COPY' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
@@ -78,7 +87,7 @@ jobs:
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.12.1-DJAEGER-AI-Sync.apk
+          cp "$APK" output/DJAEGER-Control-Center-v0.12.1-r1-DJAEGER-AI-r2-Sync.apk
           cp project/DJAEGER_Control_Center/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt output/MainActivity.generated.kt
           cp project/DJAEGER_Control_Center/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt output/DjaegerRepository.generated.kt
           cp project/DJAEGER_Control_Center/app/src/main/AndroidManifest.xml output/AndroidManifest.generated.xml
@@ -86,6 +95,6 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.12.1-DJAEGER-AI-Sync
+          name: DJAEGER-v0.12.1-r1-Telemetry-Fix-r2-Sync
           path: output/*
           if-no-files-found: error
