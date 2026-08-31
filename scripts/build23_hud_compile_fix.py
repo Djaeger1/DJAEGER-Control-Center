@@ -45,9 +45,10 @@ for num, name in [
     (34, 'build34b_policy_handshake_phase9_compat.py'),
     (35, 'build35_verified_outcome_phase10.py'),
     (36, 'build36_stage12_maturity_fix.py'),
+    (37, 'build37_hardware_overlay_fix.py'),
 ]:
     patch = Path('../../scripts') / name
     if not patch.is_file(): raise SystemExit(f'Build23: Build{num} patch missing')
     exec(compile(patch.read_text(), str(patch), 'exec'), {'__name__': '__main__'})
 
-# Stage12 chain intentionally fail-closed on every compatibility gate.
+# Hardware-validation chain remains fail-closed on every compatibility gate.
