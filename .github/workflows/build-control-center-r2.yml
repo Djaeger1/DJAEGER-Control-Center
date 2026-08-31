@@ -139,11 +139,22 @@ jobs:
           assert not app.findall('service')
           assert not app.findall('receiver')
           assert not app.findall('provider')
-          print('EXACT_PERMISSIONS=' + ','.join(
+          used_permissions = {
               item.attrib.get(ns + 'name', 'UNKNOWN')
               for item in root.findall('uses-permission')
-          ))
-          assert not root.findall('uses-permission')
+          }
+          allowed_permissions = {
+              'com.djaeger.controlcenter.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+          }
+          print('EXACT_PERMISSIONS=' + ','.join(sorted(used_permissions)))
+          assert used_permissions <= allowed_permissions
+          declared = {
+              item.attrib.get(ns + 'name'): item.attrib.get(ns + 'protectionLevel')
+              for item in root.findall('permission')
+          }
+          if used_permissions:
+              dynamic = 'com.djaeger.controlcenter.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+              assert declared.get(dynamic) == 'signature'
           assert app.attrib.get(ns + 'debuggable', 'false') != 'true'
           print('EXACT_APK_MANIFEST=PASS')
           PY
