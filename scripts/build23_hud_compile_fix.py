@@ -44,6 +44,7 @@ for num, name in [
     (28, 'build28_miui_panel_phase2.py'),
     (29, 'build29_miui_interaction_phase3.py'),
     (30, 'build30_miui_freeform_phase4.py'),
+    (31, 'build31_game_session_scene_phase5.py'),
 ]:
     patch = Path('../../scripts') / name
     if not patch.is_file(): raise SystemExit(f'Build23: Build{num} patch missing')
