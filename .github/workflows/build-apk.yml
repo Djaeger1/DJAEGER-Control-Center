@@ -41,6 +41,9 @@ jobs:
       - name: Apply compile-safe live telemetry bridge
         working-directory: project/DJAEGER_Control_Center
         run: python3 ../../scripts/build45_v0121_live_telemetry_safe.py
+      - name: Harden missing telemetry rendering
+        working-directory: project/DJAEGER_Control_Center
+        run: python3 ../../scripts/build46_v0121_missing_telemetry_semantics.py
       - name: Source audit
         working-directory: project/DJAEGER_Control_Center
         run: |
@@ -54,6 +57,7 @@ jobs:
           grep -q 'sm5602_bat/current_now' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'THERMAL=' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'LIVE_POWER_SUPPLY' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'if(t>=0)' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'GEMINI CONVERSATION' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'ASK GEMINI' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'COPY' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
