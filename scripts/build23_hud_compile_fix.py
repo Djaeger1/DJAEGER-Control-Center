@@ -40,7 +40,6 @@ if not patch25.is_file():
     raise SystemExit('Build23: Build25 patch missing')
 exec(compile(patch25.read_text(), str(patch25), 'exec'), {'__name__': '__main__'})
 
-# Preserve old CI marker as a source comment only.
 main = Path('app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
 ms = main.read_text()
 legacy = '// CI_BASELINE_MARKER: v0.10.1 RC • HUD STABLE + AI/KERNEL SYNC\n'
@@ -48,17 +47,13 @@ if legacy not in ms:
     ms += '\n' + legacy
 main.write_text(ms)
 
-patch26 = Path('../../scripts/build26_miui_construction_rewrite.py')
-if not patch26.is_file():
-    raise SystemExit('Build23: Build26 patch missing')
-exec(compile(patch26.read_text(), str(patch26), 'exec'), {'__name__': '__main__'})
-
-patch27 = Path('../../scripts/build27_miui_visual_phase1.py')
-if not patch27.is_file():
-    raise SystemExit('Build23: Build27 patch missing')
-exec(compile(patch27.read_text(), str(patch27), 'exec'), {'__name__': '__main__'})
-
-patch28 = Path('../../scripts/build28_miui_panel_phase2.py')
-if not patch28.is_file():
-    raise SystemExit('Build23: Build28 patch missing')
-exec(compile(patch28.read_text(), str(patch28), 'exec'), {'__name__': '__main__'})
+for num, name in [
+    (26, 'build26_miui_construction_rewrite.py'),
+    (27, 'build27_miui_visual_phase1.py'),
+    (28, 'build28_miui_panel_phase2.py'),
+    (29, 'build29_miui_interaction_phase3.py'),
+]:
+    patch = Path('../../scripts') / name
+    if not patch.is_file():
+        raise SystemExit(f'Build23: Build{num} patch missing')
+    exec(compile(patch.read_text(), str(patch), 'exec'), {'__name__': '__main__'})
