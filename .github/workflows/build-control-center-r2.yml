@@ -1,0 +1,182 @@
+name: Build DJAEGER Control Center v0.12.1-r2 Candidate
+
+on:
+  push:
+    branches:
+      - codex/v0.12.1-r2-control-center
+    paths:
+      - ".github/workflows/build-control-center-r2.yml"
+      - "control-center-r2/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-control-center-r2-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Static source audit
+        working-directory: control-center-r2
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          python3 scripts/static_audit.py | tee "$GITHUB_WORKSPACE/output/STATIC_AUDIT.txt"
+
+      - name: Unit regression tests
+        working-directory: control-center-r2
+        run: |
+          set -euo pipefail
+          gradle :app:testReleaseUnitTest --stacktrace
+          printf 'UNIT_TESTS=PASS\n' > "$GITHUB_WORKSPACE/output/UNIT_TESTS.txt"
+
+      - name: Build non-debuggable release APK
+        working-directory: control-center-r2
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Create dedicated candidate signing identity
+        env:
+          SIGNING_ALIAS: djaeger-control-center-v1
+        run: |
+          set -euo pipefail
+          SIGNING_DIR="$RUNNER_TEMP/djaeger-signing"
+          mkdir -p "$SIGNING_DIR"
+          SIGNING_PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$SIGNING_PASSWORD"
+          printf '%s\n' "$SIGNING_PASSWORD" > "$SIGNING_DIR/SIGNING_PASSWORD.txt"
+          printf '%s\n' "$SIGNING_ALIAS" > "$SIGNING_DIR/SIGNING_ALIAS.txt"
+          keytool -genkeypair -noprompt \
+            -storetype PKCS12 \
+            -keystore "$SIGNING_DIR/DJAEGER-Control-Center-Signing-v1.p12" \
+            -storepass "$SIGNING_PASSWORD" \
+            -keypass "$SIGNING_PASSWORD" \
+            -alias "$SIGNING_ALIAS" \
+            -keyalg RSA -keysize 4096 -validity 9125 \
+            -dname "CN=DJAEGER Control Center, OU=DJAEGER, O=DJAEGER, L=Indonesia, C=ID"
+          keytool -exportcert -rfc \
+            -keystore "$SIGNING_DIR/DJAEGER-Control-Center-Signing-v1.p12" \
+            -storepass "$SIGNING_PASSWORD" \
+            -alias "$SIGNING_ALIAS" \
+            > "$SIGNING_DIR/SIGNING_CERTIFICATE.pem"
+          printf '%s\n' \
+            'DJAEGER Control Center signing identity v1.' \
+            'Keep this archive private and retain it for every future APK update.' \
+            'Loss of this identity requires uninstalling the installed APK before replacement.' \
+            > "$SIGNING_DIR/README.txt"
+
+      - name: Align and sign exact candidate APK
+        run: |
+          set -euo pipefail
+          SIGNING_DIR="$RUNNER_TEMP/djaeger-signing"
+          SIGNING_PASSWORD="$(tr -d '\r\n' < "$SIGNING_DIR/SIGNING_PASSWORD.txt")"
+          SIGNING_ALIAS="$(tr -d '\r\n' < "$SIGNING_DIR/SIGNING_ALIAS.txt")"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -x "$BUILD_TOOLS/zipalign"
+          test -x "$BUILD_TOOLS/apksigner"
+          UNSIGNED="$(find control-center-r2/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n 1)"
+          test -n "$UNSIGNED"
+          ALIGNED="$RUNNER_TEMP/DJAEGER-Control-Center-v0.12.1-r2-aligned.apk"
+          SIGNED="$GITHUB_WORKSPACE/output/DJAEGER-Control-Center-v0.12.1-r2-Live-Telemetry-DJAEGER-r3.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$SIGNING_DIR/DJAEGER-Control-Center-Signing-v1.p12" \
+            --ks-type PKCS12 \
+            --ks-key-alias "$SIGNING_ALIAS" \
+            --ks-pass "pass:$SIGNING_PASSWORD" \
+            --key-pass "pass:$SIGNING_PASSWORD" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$SIGNED" \
+            "$ALIGNED"
+
+      - name: Audit exact signed APK
+        run: |
+          set -euo pipefail
+          SIGNED="$GITHUB_WORKSPACE/output/DJAEGER-Control-Center-v0.12.1-r2-Live-Telemetry-DJAEGER-r3.apk"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | sort -V | tail -n 1)"
+          test -x "$APKANALYZER"
+          unzip -t "$SIGNED" | tee "$GITHUB_WORKSPACE/output/APK_ZIP_TEST.txt"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED" | tee "$GITHUB_WORKSPACE/output/APKSIGNER_VERIFY.txt"
+          grep -q 'Verified using v2 scheme.*true' "$GITHUB_WORKSPACE/output/APKSIGNER_VERIFY.txt"
+          grep -q 'Verified using v3 scheme.*true' "$GITHUB_WORKSPACE/output/APKSIGNER_VERIFY.txt"
+          ! grep -qi 'Android Debug' "$GITHUB_WORKSPACE/output/APKSIGNER_VERIFY.txt"
+          "$APKANALYZER" manifest print "$SIGNED" > "$GITHUB_WORKSPACE/output/EXACT_APK_MANIFEST.xml"
+          "$APKANALYZER" manifest debuggable "$SIGNED" > "$GITHUB_WORKSPACE/output/APK_DEBUGGABLE.txt"
+          grep -qx 'false' "$GITHUB_WORKSPACE/output/APK_DEBUGGABLE.txt"
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          manifest = Path('output/EXACT_APK_MANIFEST.xml')
+          root = ET.parse(manifest).getroot()
+          app = root.find('application')
+          assert app is not None
+          ns = '{http://schemas.android.com/apk/res/android}'
+          activities = app.findall('activity')
+          assert len(activities) == 1
+          assert activities[0].attrib.get(ns + 'name') == 'com.djaeger.controlcenter.MainActivity'
+          assert not app.findall('service')
+          assert not app.findall('receiver')
+          assert not app.findall('provider')
+          assert not root.findall('uses-permission')
+          assert app.attrib.get(ns + 'debuggable', 'false') != 'true'
+          print('EXACT_APK_MANIFEST=PASS')
+          PY
+          unzip -p "$SIGNED" 'classes*.dex' | strings > "$GITHUB_WORKSPACE/output/DEX_STRINGS.txt"
+          grep -q 'v0.12.1-r2' "$GITHUB_WORKSPACE/output/DEX_STRINGS.txt"
+          grep -q 'v12.9.50-r3' "$GITHUB_WORKSPACE/output/DEX_STRINGS.txt"
+          ! grep -Eq 'GameTurboOverlayService|DjaegerHudService|START HUD|STOP HUD|canDrawOverlays|TYPE_APPLICATION_OVERLAY' "$GITHUB_WORKSPACE/output/DEX_STRINGS.txt"
+          printf 'EXACT_APK_AUDIT=PASS\n' > "$GITHUB_WORKSPACE/output/EXACT_APK_AUDIT.txt"
+
+      - name: Package source, signing identity, and checksums
+        run: |
+          set -euo pipefail
+          git archive --format=zip \
+            --output "$GITHUB_WORKSPACE/output/DJAEGER-Control-Center-v0.12.1-r2-Source.zip" \
+            HEAD control-center-r2
+          SIGNING_DIR="$RUNNER_TEMP/djaeger-signing"
+          (
+            cd "$SIGNING_DIR"
+            zip -q "$GITHUB_WORKSPACE/output/DJAEGER-Control-Center-Signing-Identity-v1.zip" \
+              DJAEGER-Control-Center-Signing-v1.p12 \
+              SIGNING_PASSWORD.txt \
+              SIGNING_ALIAS.txt \
+              SIGNING_CERTIFICATE.pem \
+              README.txt
+          )
+          (
+            cd "$GITHUB_WORKSPACE/output"
+            sha256sum \
+              DJAEGER-Control-Center-v0.12.1-r2-Live-Telemetry-DJAEGER-r3.apk \
+              DJAEGER-Control-Center-v0.12.1-r2-Source.zip \
+              DJAEGER-Control-Center-Signing-Identity-v1.zip \
+              > SHA256SUMS.txt
+          )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r2-Candidate
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30
