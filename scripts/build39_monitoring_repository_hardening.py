@@ -12,11 +12,18 @@ for f in pkg.glob('*.kt'):
 
 # Keep only MainActivity as an app component. This removes every legacy service,
 # receiver, provider and launcher activity inherited from the old gaming branch.
+# ProfileInstaller's receiver is also explicitly removed at manifest-merge time;
+# it is unnecessary for this tiny monitoring dashboard and otherwise carries the
+# android.permission.DUMP receiver permission into the merged manifest.
 manifest = Path('app/src/main/AndroidManifest.xml')
-ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+ANDROID = 'http://schemas.android.com/apk/res/android'
+TOOLS = 'http://schemas.android.com/tools'
+ET.register_namespace('android', ANDROID)
+ET.register_namespace('tools', TOOLS)
 tree = ET.parse(manifest)
 root = tree.getroot()
-android_name = '{http://schemas.android.com/apk/res/android}name'
+root.set('xmlns:tools', TOOLS)
+android_name = '{%s}name' % ANDROID
 app = root.find('application')
 if app is None:
     raise SystemExit('Build39: manifest application missing')
@@ -27,6 +34,10 @@ for child in list(app):
         keep = tag == 'activity' and name in {'.MainActivity','com.djaeger.controlcenter.MainActivity'}
         if not keep:
             app.remove(child)
+ET.SubElement(app, 'receiver', {
+    android_name: 'androidx.profileinstaller.ProfileInstallReceiver',
+    '{%s}node' % TOOLS: 'remove'
+})
 tree.write(manifest, encoding='unicode', xml_declaration=True)
 
 # Final source audit: single activity, read-only telemetry only.
