@@ -34,7 +34,7 @@ main.write_text(ms)
 
 for num, name in [
     (26, 'build26_miui_construction_rewrite.py'),
-    (27, 'build27_miui_visual_phase1.py'),
+    (27, 'build27b_miui_visual_phase1_compat.py'),
     (28, 'build28_miui_panel_phase2.py'),
     (29, 'build29_miui_interaction_phase3.py'),
     (30, 'build30_miui_freeform_phase4.py'),
