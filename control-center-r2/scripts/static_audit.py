@@ -52,6 +52,7 @@ for permission in (
 require(MANIFEST.count("<activity") == 1, "single-activity-source-manifest")
 require('android:name=".MainActivity"' in MANIFEST, "launcher-main-activity")
 require('android:debuggable="true"' not in MANIFEST, "debuggable-not-enabled")
+require('android:name="android.permission.DUMP"' in MANIFEST and 'tools:node="remove"' in MANIFEST, "dump-permission-removal")
 require("androidx.startup.InitializationProvider" in MANIFEST and 'tools:node="remove"' in MANIFEST, "startup-provider-removal")
 require("androidx.profileinstaller.ProfileInstallReceiver" in MANIFEST, "profile-receiver-removal")
 

@@ -139,6 +139,10 @@ jobs:
           assert not app.findall('service')
           assert not app.findall('receiver')
           assert not app.findall('provider')
+          print('EXACT_PERMISSIONS=' + ','.join(
+              item.attrib.get(ns + 'name', 'UNKNOWN')
+              for item in root.findall('uses-permission')
+          ))
           assert not root.findall('uses-permission')
           assert app.attrib.get(ns + 'debuggable', 'false') != 'true'
           print('EXACT_APK_MANIFEST=PASS')
