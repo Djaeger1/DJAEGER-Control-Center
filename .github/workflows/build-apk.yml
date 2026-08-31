@@ -46,6 +46,7 @@ jobs:
           python3 ../../scripts/build38_monitoring_only_redesign.py
           python3 ../../scripts/build39_monitoring_repository_hardening.py
           python3 ../../scripts/build40_monitoring_shell_literal_fix.py
+          python3 ../../scripts/build41_monitoring_minimal_runtime.py
       - name: Monitoring-only source audit
         working-directory: project/DJAEGER_Control_Center
         run: |
@@ -58,9 +59,10 @@ jobs:
           grep -q 'djaeger-ai gemini-status' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft |djaeger-ai mode |policy-intent |native_write_plan|TYPE_APPLICATION_OVERLAY|startForegroundService\(|startService\(' app/src/main || exit 1
           ! grep -R -nE 'echo[[:space:]].*>[[:space:]]*/sys/|tee[[:space:]]+/sys/' app/src/main || exit 1
-          ! grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
-          ! grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
-          ! grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' app/src/main/AndroidManifest.xml
+          ! grep -q '<uses-permission' app/src/main/AndroidManifest.xml
+          ! grep -q '<service' app/src/main/AndroidManifest.xml
+          ! grep -q '<receiver' app/src/main/AndroidManifest.xml
+          ! grep -q '<provider' app/src/main/AndroidManifest.xml
           grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -74,7 +76,7 @@ jobs:
           MERGED="$(find app/build/intermediates -name AndroidManifest.xml | head -1)"
           test -n "$MERGED"
           grep -q 'android.intent.category.LAUNCHER' "$MERGED"
-          ! grep -nE 'android.permission.INTERNET|android.permission.DUMP|WRITE_SETTINGS|QUERY_ALL_PACKAGES|SYSTEM_ALERT_WINDOW|PACKAGE_USAGE_STATS|RECEIVE_BOOT_COMPLETED|BIND_ACCESSIBILITY_SERVICE|androidx.compose.ui.tooling.PreviewActivity|androidx.profileinstaller.ProfileInstallReceiver' "$MERGED" || exit 1
+          ! grep -nE '<uses-permission|<service|<receiver|<provider|android.permission.INTERNET|android.permission.DUMP|WRITE_SETTINGS|QUERY_ALL_PACKAGES|SYSTEM_ALERT_WINDOW|PACKAGE_USAGE_STATS|RECEIVE_BOOT_COMPLETED|FOREGROUND_SERVICE' "$MERGED" || exit 1
       - name: Collect APK and hash
         run: |
           mkdir output
