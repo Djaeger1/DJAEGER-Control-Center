@@ -42,13 +42,22 @@ jobs:
         working-directory: battery-ui-sync
         run: gradle --no-daemon :app:assembleRelease
 
-      - name: Verify APK exists
-        run: test -f battery-ui-sync/app/build/outputs/apk/release/app-release.apk
+      - name: Locate and verify APK
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find battery-ui-sync/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          test -s "$APK"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          ls -lh "$APK"
+          sha256sum "$APK"
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
           name: DJAEGER-Battery-UI-Sync-v1.0.0
-          path: battery-ui-sync/app/build/outputs/apk/release/app-release.apk
+          path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 30
