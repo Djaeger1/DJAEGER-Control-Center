@@ -13,14 +13,19 @@ if 'val bugHealth:BugHealthState=BugHealthState()' not in r:
     declaration=m.group(0)
     patched=declaration[:-1]+',val bugHealth:BugHealthState=BugHealthState())'
     r=r[:m.start()]+patched+r[m.end():]
-anchor='            latestPlan=parsePlan(mapped.plans)\n'
-if anchor not in r: raise SystemExit('R9_BUG_UI_FAIL=cutover-not-applied-before-ui')
-r=r.replace(anchor,'            latestPlan=parsePlan(mapped.plans),\n            bugHealth=mapped.bugHealth\n',1)
+
+# The r9 cutover intentionally keeps NetworkState as the final named argument.
+# Insert BugHealth next to the mapped snapshot fields without depending on
+# argument order, so network preservation and BugHealth integration coexist.
+if 'bugHealth=mapped.bugHealth' not in r:
+    anchor='            network=network\n'
+    if anchor not in r:
+        raise SystemExit('R9_BUG_UI_FAIL=cutover-network-anchor')
+    r=r.replace(anchor,'            network=network,\n            bugHealth=mapped.bugHealth\n',1)
 repo.write_text(r)
 
 p=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
 s=p.read_text()
-# Android 13 runtime permission import; fully qualified launcher avoids import churn.
 if 'import android.Manifest' not in s:
     s=s.replace('import android.os.Bundle\n','import android.os.Bundle\nimport android.Manifest\nimport android.os.Build\n')
 
