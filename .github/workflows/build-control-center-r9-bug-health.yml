@@ -1,5 +1,6 @@
 name: Build DJAEGER Control Center v0.12.1-r9 Bug Health
 
+# r9 consolidation: atomic snapshot + network preservation + Bug Health
 on:
   push:
     branches:
