@@ -6,14 +6,20 @@ root=Path('control-center-r2'); b=root/'app/build.gradle.kts'; m=root/'app/src/m
 bs=b.read_text(); bs=re.sub(r'versionCode\s*=\s*\d+','versionCode = 12140',bs,count=1); bs=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "0.12.1-r14"',bs,count=1); b.write_text(bs)
 ms=m.read_text()
 ms=ms.replace('CONTROL CENTER • v0.12.1-r13 • COMPLETE USER DESIGN • REALTIME 1s','CONTROL CENTER • v0.12.1-r14 • REALTIME 1s')
-ms=re.sub(r'Text\("DJAEGER"\s*,\s*fontWeight\s*=\s*FontWeight\.Black\s*,\s*fontSize\s*=\s*32\.sp\s*\)', 'Text("DJAEGER",fontWeight=FontWeight.Black,fontSize=32.sp,color=MaterialTheme.colorScheme.onBackground)', ms, count=1)
-if 'Text("DJAEGER",fontWeight=FontWeight.Black,fontSize=32.sp,color=' not in ms: ms=ms.replace('Text("DJAEGER",fontWeight=FontWeight.Black,fontSize=32.sp)', 'Text("DJAEGER",fontWeight=FontWeight.Black,fontSize=32.sp,color=MaterialTheme.colorScheme.onBackground)',1)
+# Generated baseline uses a different argument order across revisions: patch the whole single-line title call.
+def title_fix(match):
+    call=match.group(0)
+    if 'color=' in call: return call
+    return call[:-1]+',color=MaterialTheme.colorScheme.onBackground)'
+ms,n=re.subn(r'Text\("DJAEGER"[^\n]*?\)',title_fix,ms,count=1)
+assert n==1,'DJAEGER title call not found'
 old='"Module: ${s.moduleVersion}\\nGovernor: ${s.governorStatus}\\nGame: ${s.game}\\nWindow: ${s.windowState}\\nProfile: ${s.profile}\\nLast sample: ${s.lastSample}\\nController PID: ${s.controllerPid} • Predictor PID: ${s.predictorPid}"'
 new='"Module: ${s.moduleVersion}" + (if(s.moduleVersion.contains("r78",ignoreCase=true)) "  [LEGACY INSTALLED]" else "") + "\\nGovernor: ${s.governorStatus}\\nGame: ${s.game}\\nWindow: ${s.windowState}\\nProfile: ${s.profile}\\nLast sample: ${s.lastSample}\\nController PID: ${s.controllerPid} • Predictor PID: ${s.predictorPid}"'
 if old in ms: ms=ms.replace(old,new,1)
 assert 'CONTROL CENTER • v0.12.1-r14 • REALTIME 1s' in ms
 assert 'COMPLETE USER DESIGN • REALTIME 1s' not in ms
 assert 'R78 SYNC' not in ms
+assert 'color=MaterialTheme.colorScheme.onBackground' in ms
 m.write_text(ms)
 print('R14_FIX=HIGH_CONTRAST_WORDMARK')
 print('R14_FIX=COMPACT_NARROW_HEADER')
