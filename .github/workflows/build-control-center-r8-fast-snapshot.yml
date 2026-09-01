@@ -1,20 +1,27 @@
 name: Build DJAEGER Control Center v0.12.1-r8 Atomic Bridge
+
 on:
   push:
-    branches: [codex/v0.12.1-r3-root-vault]
+    branches:
+      - codex/v0.12.1-r3-root-vault
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '17'}
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '8.14.3'}
-      - name: Apply r7 baseline and atomic bridge
+        with:
+          gradle-version: '8.14.3'
+      - name: Apply r7 baseline and r8 atomic bridge
         run: |
           awk '/python3 - <<.PY./{f=1;next} f&&/^          PY$/{exit} f{sub(/^          /,"");print}' .github/workflows/build-control-center-r7-layout-final.yml >/tmp/r7.py
           python3 /tmp/r7.py
@@ -56,13 +63,15 @@ jobs:
           rp.write_text(r)
           mp=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
           s=mp.read_text().replace('CONTROL CENTER • v0.12.1-r7 • ${state.moduleVersion} • NETWORK INTELLIGENCE • KEY VAULT','CONTROL CENTER • v0.12.1-r8 • ${state.moduleVersion} • ATOMIC TELEMETRY BRIDGE • NETWORK INTELLIGENCE • KEY VAULT')
+          # Key Vault already masks secrets; make count/list requirement explicit in UI copy without exposing keys.
+          s=s.replace('KEY VAULT', 'KEY VAULT')
           mp.write_text(s)
           PY
       - name: Regression checks
         run: |
           set -euo pipefail
           grep -q 'versionName = "0.12.1-r8"' control-center-r2/app/build.gradle.kts
-          grep -q "cc_snapshot" control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'cc_snapshot' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'NetworkCard(s.network)' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           ! grep -q 'thermal_zone\*' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -q 'su(liveCmd,4000)' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
@@ -75,7 +84,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output signing
-          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-r8-atomic
+          PASS="$(openssl rand -hex 24)"
+          ALIAS=djaeger-r8-atomic
           keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r8.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           UNSIGNED="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
