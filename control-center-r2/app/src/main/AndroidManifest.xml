@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Required only for user-visible DJAEGER Bug & Health notifications on Android 13+.
+         Telemetry remains functional if the user denies this permission. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <uses-permission
         android:name="android.permission.DUMP"
         tools:node="remove" />
