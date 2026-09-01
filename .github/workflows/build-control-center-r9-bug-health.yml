@@ -25,16 +25,15 @@ jobs:
           awk '/python3 - <<.PY./{f=1;next} f&&/^          PY$/{exit} f{sub(/^          /,"");print}' .github/workflows/build-control-center-r7-layout-final.yml >/tmp/r7.py
           python3 /tmp/r7.py
 
-      - name: Apply r9 consolidated repository cutover
+      - name: Apply r9 atomic cutover and Bug Health integration
         run: |
           set -euo pipefail
           python3 scripts/r9_cutover_repository.py
+          python3 scripts/r9_integrate_bug_health.py
           python3 - <<'PY'
           from pathlib import Path
           p=Path('control-center-r2/app/build.gradle.kts')
-          s=p.read_text()
-          s=s.replace('versionCode = 12107','versionCode = 12109')
-          s=s.replace('versionName = "0.12.1-r7"','versionName = "0.12.1-r9"')
+          s=p.read_text().replace('versionCode = 12107','versionCode = 12109').replace('versionName = "0.12.1-r7"','versionName = "0.12.1-r9"')
           p.write_text(s)
           m=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
           x=m.read_text().replace('CONTROL CENTER • v0.12.1-r7', 'CONTROL CENTER • v0.12.1-r9')
@@ -45,22 +44,20 @@ jobs:
         run: |
           set -euo pipefail
           R=control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          M=control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'versionName = "0.12.1-r9"' control-center-r2/app/build.gradle.kts
           grep -q 'ConsolidatedSnapshotReader' "$R"
           grep -q 'ConsolidatedRuntimeMapper' "$R"
-          grep -q 'NetworkCard(s.network)' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'bugHealth=mapped.bugHealth' "$R"
+          grep -q 'NetworkCard(s.network)' "$M"
+          grep -q 'Bug & Health' "$M"
+          grep -q 'BugNotifier' "$M"
           grep -q 'POST_NOTIFICATIONS' control-center-r2/app/src/main/AndroidManifest.xml
-          test -f control-center-r2/app/src/main/java/com/djaeger/controlcenter/AtomicSnapshot.kt
-          test -f control-center-r2/app/src/main/java/com/djaeger/controlcenter/BugHealth.kt
-          test -f control-center-r2/app/src/main/java/com/djaeger/controlcenter/BugNotificationGate.kt
-          test -f control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
-          test -f control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt
+          for f in AtomicSnapshot.kt BugHealth.kt BugNotificationGate.kt BugNotifier.kt ConsolidatedSnapshotReader.kt ConsolidatedRuntimeMapper.kt; do test -f "control-center-r2/app/src/main/java/com/djaeger/controlcenter/$f"; done
           python3 - <<'PY'
           from pathlib import Path
           s=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
-          a=s.index('    suspend fun snapshot():RuntimeState')
-          b=s.index('    suspend fun setUserMode',a)
-          snap=s[a:b]
+          a=s.index('    suspend fun snapshot():RuntimeState'); b=s.index('    suspend fun setUserMode',a); snap=s[a:b]
           forbidden=['/sys/','thermal_zone','scaling_cur_freq','kgsl-3d0','iptables','nft ','ip route','setprop net.']
           bad=[x for x in forbidden if x in snap]
           if bad: raise SystemExit('FORBIDDEN_RECURRING_SNAPSHOT='+','.join(bad))
@@ -80,8 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output signing
-          PASS="$(openssl rand -hex 24)"
-          ALIAS=djaeger-r9-bug-health
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-r9-bug-health
           keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r9.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           UNSIGNED="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
