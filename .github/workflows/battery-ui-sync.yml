@@ -42,22 +42,36 @@ jobs:
         working-directory: battery-ui-sync
         run: gradle --no-daemon :app:assembleRelease
 
-      - name: Locate and verify APK
+      - name: Sign APK with ephemeral build key
         id: apk
         shell: bash
         run: |
           set -euo pipefail
-          APK="$(find battery-ui-sync/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-          test -n "$APK"
-          test -s "$APK"
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
-          ls -lh "$APK"
-          sha256sum "$APK"
+          UNSIGNED="$(find battery-ui-sync/app/build/outputs/apk/release -maxdepth 1 -type f -name '*unsigned.apk' | head -n 1)"
+          test -n "$UNSIGNED"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -x "$BUILD_TOOLS/zipalign"
+          test -x "$BUILD_TOOLS/apksigner"
+          KEYSTORE="$RUNNER_TEMP/djaeger-battery-ui-sync.jks"
+          PASS="djaeger-battery-ui-sync-${GITHUB_RUN_ID}"
+          keytool -genkeypair -noprompt -keystore "$KEYSTORE" -storepass "$PASS" -keypass "$PASS" -alias djaeger -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=DJAEGER Battery UI Sync,O=DJAEGER,C=ID"
+          ALIGNED="$RUNNER_TEMP/DJAEGER-Battery-UI-Sync-v1.0.0-aligned.apk"
+          SIGNED="$GITHUB_WORKSPACE/DJAEGER-Battery-UI-Sync-v1.0.0.apk"
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$UNSIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-key-alias djaeger --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out "$SIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED"
+          test -s "$SIGNED"
+          echo "path=$SIGNED" >> "$GITHUB_OUTPUT"
+          ls -lh "$SIGNED"
+          sha256sum "$SIGNED" | tee "$GITHUB_WORKSPACE/DJAEGER-Battery-UI-Sync-v1.0.0.sha256"
 
-      - name: Upload installable APK
+      - name: Upload signed installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-Battery-UI-Sync-v1.0.0
-          path: ${{ steps.apk.outputs.path }}
+          name: DJAEGER-Battery-UI-Sync-v1.0.0-SIGNED
+          path: |
+            ${{ steps.apk.outputs.path }}
+            DJAEGER-Battery-UI-Sync-v1.0.0.sha256
           if-no-files-found: error
           retention-days: 30
