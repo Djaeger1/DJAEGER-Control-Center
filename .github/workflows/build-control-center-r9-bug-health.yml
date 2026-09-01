@@ -29,7 +29,20 @@ jobs:
       - name: Apply r7 generated baseline
         run: |
           set -euo pipefail
-          awk '/python3 - <<.PY./{f=1;next} f&&/^          PY$/{exit} f{sub(/^          /,"");print}' .github/workflows/build-control-center-r7-layout-final.yml >/tmp/r7.py
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines()
+          marker = "          python3 - <<'PY'"
+          try:
+              start = next(i + 1 for i, line in enumerate(src) if line == marker)
+              end = next(i for i in range(start, len(src)) if src[i] == '          PY')
+          except StopIteration as exc:
+              raise SystemExit('R7_BASELINE_HEREDOC_NOT_FOUND') from exc
+          body = '\n'.join(line[10:] if line.startswith('          ') else line for line in src[start:end]) + '\n'
+          compile(body, '/tmp/r7.py', 'exec')
+          Path('/tmp/r7.py').write_text(body)
+          print('R7_BASELINE_EXTRACT=PASS')
+          PY
           python3 /tmp/r7.py
 
       - name: Apply r9 atomic cutover and Bug Health integration
