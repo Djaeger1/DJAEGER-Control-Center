@@ -8,6 +8,12 @@ on:
     paths:
       - 'battery-ui-sync/**'
       - '.github/workflows/battery-ui-sync.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'battery-ui-sync/**'
+      - '.github/workflows/battery-ui-sync.yml'
 
 permissions:
   contents: read
