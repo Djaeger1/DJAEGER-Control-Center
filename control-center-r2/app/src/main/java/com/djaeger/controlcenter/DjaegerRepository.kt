@@ -142,6 +142,22 @@ class DjaegerRepository {
     suspend fun deleteGeminiKey():Pair<Boolean,String> = withContext(Dispatchers.IO){
         val (rc,out)=su("djaeger-ai gemini-key-delete",5000); Pair(rc==0,out.trim())
     }
+    suspend fun geminiKeyVaultStatus():Pair<Boolean,String> = withContext(Dispatchers.IO){
+        val (rc,out)=su("djaeger-ai gemini-key-vault-status",5000); Pair(rc==0,out.trim())
+    }
+    suspend fun addGeminiKeyToVault(key:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
+        if(key.isBlank()) return@withContext Pair(false,"KEY_REJECTED=EMPTY")
+        val (rc,out)=suStdin("djaeger-ai gemini-key-add-stdin",key); Pair(rc==0,out.trim())
+    }
+    suspend fun selectGeminiKey(index:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
+        if(index.toIntOrNull()==null) return@withContext Pair(false,"KEY_SELECT_REJECTED=INDEX")
+        val (rc,out)=su("djaeger-ai gemini-key-select $index",5000); Pair(rc==0,out.trim())
+    }
+    suspend fun removeGeminiKey(index:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
+        if(index.toIntOrNull()==null) return@withContext Pair(false,"KEY_REMOVE_REJECTED=INDEX")
+        val (rc,out)=su("djaeger-ai gemini-key-remove $index",5000); Pair(rc==0,out.trim())
+    }
+
     suspend fun geminiChat(prompt:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
         if(prompt.isBlank()) return@withContext Pair(false,"CHAT_ERROR=EMPTY_PROMPT")
         val (rc,out)=suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000)); Pair(rc==0,out.trim())
@@ -175,15 +191,7 @@ class DjaegerRepository {
     fun field(i: Int): String = c.getOrNull(i)?.trim().orEmpty()
     return Telemetry(field(0).toLongOrNull()?:0,field(1).toIntOrNull()?:-1,field(2).toIntOrNull()?:-1,field(3).toIntOrNull()?:-1,field(4).toIntOrNull()?:-1,field(5).toLongOrNull()?:-1,field(6).toLongOrNull()?:-1,field(7).toLongOrNull()?:-1,field(8),field(9).toDoubleOrNull()?:0.0,field(10).toDoubleOrNull()?:0.0,field(11).toDoubleOrNull()?:0.0,field(12).toDoubleOrNull()?:0.0,field(13).toDoubleOrNull()?:0.0,field(15),field(16).toLongOrNull()?:0,field(17).toLongOrNull()?:0,field(18).toDoubleOrNull()?:0.0,field(19),field(20),field(22))
 }
-    private fun parseDecision(text:String):DecisionRecord?{val l=text.lineSequence().filter{it.isNotBlank()&&!it.startsWith("decision_id,")}.lastOrNull()?:return null;val c=parseCsv(l);if(c.size<18)return null;return DecisionRecord(c[0],c[1],c[2],c[3],c[4],c[5],c[6],c[8],c[9],c[10],c[11],c[12],c[17])}
-    private fun parsePlan(text:String):PlanRecord?{val l=text.lineSequence().filter{it.isNotBlank()&&!it.startsWith("epoch,")}.lastOrNull()?:return null;val c=parseCsv(l);if(c.size<12)return null;return PlanRecord(c[1],c[2],c[3],c[4],c[5],c[6],c[7],c[8],c[9],c[10],c[11])}
-    private fun parseCsv(line:String):List<String>{
-        val out=mutableListOf<String>(); val cell=StringBuilder(); var quoted=false; var i=0
-        while(i<line.length){ val ch=line[i]; when {
-            ch=='"' -> if(quoted && i+1<line.length && line[i+1]=='"'){cell.append('"');i++} else quoted=!quoted
-            ch==',' && !quoted -> {out.add(cell.toString().trim());cell.clear()}
-            else -> cell.append(ch)
-        }; i++ }; out.add(cell.toString().trim()); return out
-    }
-
+    private fun parseDecision(text:String):DecisionRecord?{val l=text.lineSequence().filter{it.isNotBlank()&&!it.startsWith("decision_id,")}.lastOrNull()?:return null;val c=parseCsv(l);if(c.size<16)return null;return DecisionRecord(c[0],c[2],c[3],c[4],c[5],c[6],c[7],c[8],c[9],c[10],c[11],c[12],c[15])}
+    private fun parsePlan(text:String):PlanRecord?{val l=text.lineSequence().filter{it.isNotBlank()&&!it.startsWith("state,")}.lastOrNull()?:return null;val c=parseCsv(l);if(c.size<12)return null;return PlanRecord(c[0],c[1],c[2],c[3],c[4],c[5],c[6],c[7],c[8],c[9],c[10])}
+    private fun parseCsv(line:String):List<String>{val out=mutableListOf<String>();val cur=StringBuilder();var q=false;var i=0;while(i<line.length){val ch=line[i];if(ch=='"'){if(q&&i+1<line.length&&line[i+1]=='"'){cur.append('"');i++}else q=!q}else if(ch==','&&!q){out.add(cur.toString());cur.setLength(0)}else cur.append(ch);i++};out.add(cur.toString());return out}
 }
