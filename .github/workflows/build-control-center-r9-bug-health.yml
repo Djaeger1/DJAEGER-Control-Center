@@ -52,12 +52,21 @@ jobs:
           python3 scripts/r9_integrate_bug_health.py
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p=Path('control-center-r2/app/build.gradle.kts')
-          s=p.read_text().replace('versionCode = 12107','versionCode = 12109').replace('versionName = "0.12.1-r7"','versionName = "0.12.1-r9"')
+          s=p.read_text()
+          s,n_code=re.subn(r'versionCode\s*=\s*\d+', 'versionCode = 12109', s, count=1)
+          s,n_name=re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "0.12.1-r9"', s, count=1)
+          if n_code != 1 or n_name != 1:
+              raise SystemExit(f'R9_VERSION_STAMP_FAIL=code:{n_code},name:{n_name}')
           p.write_text(s)
           m=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
-          x=m.read_text().replace('CONTROL CENTER • v0.12.1-r7', 'CONTROL CENTER • v0.12.1-r9')
+          x=m.read_text()
+          x,n_ui=re.subn(r'CONTROL CENTER • v0\.12\.1-r\d+', 'CONTROL CENTER • v0.12.1-r9', x, count=1)
+          if n_ui != 1:
+              raise SystemExit(f'R9_UI_VERSION_STAMP_FAIL={n_ui}')
           m.write_text(x)
+          print('R9_VERSION_STAMP=PASS')
           PY
 
       - name: Architecture and regression gates
@@ -66,6 +75,8 @@ jobs:
           R=control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           M=control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'versionName = "0.12.1-r9"' control-center-r2/app/build.gradle.kts
+          grep -q 'versionCode = 12109' control-center-r2/app/build.gradle.kts
+          grep -q 'CONTROL CENTER • v0.12.1-r9' "$M"
           grep -q 'ConsolidatedSnapshotReader' "$R"
           grep -q 'ConsolidatedRuntimeMapper' "$R"
           grep -q 'bugHealth=mapped.bugHealth' "$R"
