@@ -1,0 +1,97 @@
+name: Build DJAEGER Control Center v0.12.1-r10.2 Freshness
+on:
+  push:
+    branches: [codex/v0.12.1-r3-root-vault]
+    paths:
+      - '.github/workflows/build-control-center-r10-2-freshness.yml'
+      - 'control-center-r2/**'
+      - 'scripts/r9_*.py'
+      - 'scripts/r10_*.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Apply generated baseline through r10.2
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          body='\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n'; compile(body,'/tmp/r7.py','exec'); Path('/tmp/r7.py').write_text(body)
+          PY
+          python3 /tmp/r7.py
+          python3 scripts/r9_cutover_repository.py
+          python3 scripts/r9_integrate_bug_health.py
+          python3 scripts/r10_integrate_manual_refresh.py
+          python3 scripts/r10_1_idle_semantics.py
+          python3 scripts/r10_2_freshness_semantics.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('control-center-r2/app/build.gradle.kts'); s=p.read_text(); s,n1=re.subn(r'versionCode\s*=\s*\d+','versionCode = 12112',s,count=1); s,n2=re.subn(r'versionName\s*=\s*"[^"]+"','versionName = "0.12.1-r10.2"',s,count=1)
+          if n1!=1 or n2!=1: raise SystemExit('R10_2_VERSION_FAIL')
+          p.write_text(s)
+          PY
+      - name: Deep regression gates
+        run: |
+          set -euo pipefail
+          M=control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          R=control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'versionName = "0.12.1-r10.2"' control-center-r2/app/build.gradle.kts
+          grep -q 'versionCode = 12112' control-center-r2/app/build.gradle.kts
+          grep -q 'val stale=if(s.active=="1") !s.sampleFresh else runtimeStale' "$M"
+          grep -q 's.active=="1"&&s.sampleFresh&&s.telemetry.jank>=0' "$M"
+          grep -q 'if(n.fresh)n.quality else "INACTIVE"' "$M"
+          grep -q 'manualRefresh++' "$M"
+          grep -q 'NetworkCard(s.network)' "$M"
+          grep -q 'ConsolidatedSnapshotReader' "$R"
+          python3 - <<'PY'
+          from pathlib import Path
+          m=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text(); r=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          # Active freshness must be tied to telemetry sample freshness; idle remains runtime publisher freshness.
+          if 'val stale=if(s.active=="1") !s.sampleFresh else runtimeStale' not in m: raise SystemExit('R10_2_ACTIVE_STALE_SEMANTICS_FAIL')
+          # Manual refresh remains local/read-only.
+          a=m.index('LaunchedEffect(manualRefresh)'); b=m.index('MaterialTheme(',a); block=m[a:b]
+          for x in ['repo.snapshot()','state=fresh','refreshBusy=true','refreshBusy=false']:
+              if x not in block: raise SystemExit('R10_2_REFRESH_MISSING='+x)
+          bad=[x for x in ['setUserMode','/sys/','iptables','nft ','ip route','authoritySync','kernelCapability','geminiChat','saveGeminiKey','deleteGeminiKey'] if x in block]
+          if bad: raise SystemExit('R10_2_REFRESH_SIDE_EFFECT='+','.join(bad))
+          a=r.index('    suspend fun snapshot():RuntimeState'); b=r.index('    suspend fun setUserMode',a); snap=r[a:b]
+          bad=[x for x in ['/sys/','thermal_zone','scaling_cur_freq','kgsl-3d0','iptables','nft ','ip route','setprop net.'] if x in snap]
+          if bad: raise SystemExit('FORBIDDEN_RECURRING_SNAPSHOT='+','.join(bad))
+          print('R10_2_FRESHNESS_REGRESSION_GATE=PASS')
+          PY
+          ! grep -R -E 'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}' control-center-r2/app/src control-center-r2/app/build.gradle.kts
+      - name: Test and build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign verify and audit
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-r10-2-freshness
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r10-2.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"; UNSIGNED="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" output/aligned.apk
+          "$BT/apksigner" sign --ks signing/r10-2.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r10.2-Freshness.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose output/DJAEGER-Control-Center-v0.12.1-r10.2-Freshness.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r10.2-Freshness.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r10.2-Freshness.apk > output/SHA256SUMS.txt
+          rm output/aligned.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r10.2-Freshness
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30
