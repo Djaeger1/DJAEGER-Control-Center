@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 
 repo=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt')
 r=repo.read_text()
-old='data class RuntimeState(val root:Boolean=false,val sampleFresh:Boolean=false,val installed:Boolean=false,val active:String="0",val game:String="NA",val window:String="INACTIVE",val controllerPid:String="",val predictorPid:String="",val updated:Long=0,val userMode:String="AUTO",val moduleVersion:String="unknown",val telemetry:Telemetry=Telemetry(),val brain:String="",val envelope:String="",val geminiHttp:String="",val geminiServer:String="",val decisions:String="",val plans:String="",val frameIntel:String="",val log:String="",val latestDecision:DecisionRecord?=null,val latestPlan:PlanRecord?=null,val error:String="")'
-new=old[:-1]+',val bugHealth:BugHealthState=BugHealthState())'
-if old not in r: raise SystemExit('R9_BUG_UI_FAIL=RuntimeState-anchor')
-r=r.replace(old,new,1)
+# r7 adds NetworkState to RuntimeState, so anchor on the data-class declaration
+# instead of an exact pre-r7 string. This preserves all established fields.
+if 'val bugHealth:BugHealthState=BugHealthState()' not in r:
+    m=re.search(r'^data class RuntimeState\((.*)\)$', r, re.MULTILINE)
+    if not m:
+        raise SystemExit('R9_BUG_UI_FAIL=RuntimeState-anchor')
+    declaration=m.group(0)
+    patched=declaration[:-1]+',val bugHealth:BugHealthState=BugHealthState())'
+    r=r[:m.start()]+patched+r[m.end():]
 anchor='            latestPlan=parsePlan(mapped.plans)\n'
 if anchor not in r: raise SystemExit('R9_BUG_UI_FAIL=cutover-not-applied-before-ui')
 r=r.replace(anchor,'            latestPlan=parsePlan(mapped.plans),\n            bugHealth=mapped.bugHealth\n',1)
