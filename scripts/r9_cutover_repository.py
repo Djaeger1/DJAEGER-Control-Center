@@ -33,6 +33,22 @@ replacement = r'''    suspend fun snapshot():RuntimeState=withContext(Dispatcher
         val age = if(tel.epoch > 0) now - tel.epoch else Long.MAX_VALUE
         val fresh = tel.epoch > 0 && age in 0..5
 
+        // Preserve r7 Network Intelligence while keeping r9's single atomic read.
+        // NETWORK is already published by DJAEGER inside cc_snapshot; no network
+        // commands, sysfs reads, or game traffic changes are performed here.
+        val nkv = AtomicSnapshot.keyValues(mapped.network)
+        val netAt = nkv["UPDATED_AT"]?.toLongOrNull() ?: 0L
+        val netFresh = nkv["SESSION_ACTIVE"] == "1" && netAt > 0 && (now-netAt) in 0..30
+        val network = if(netFresh) NetworkState(
+            ping=nkv["PING_CURRENT_MS"] ?: "—",
+            avg=nkv["PING_AVG_MS"] ?: "—",
+            p95=nkv["PING_P95_MS"] ?: "—",
+            jitter=nkv["JITTER_MS"] ?: "—",
+            loss=nkv["PACKET_LOSS_PCT"] ?: "—",
+            quality=nkv["QUALITY"] ?: "UNKNOWN",
+            fresh=true
+        ) else NetworkState()
+
         RuntimeState(
             root=true,
             sampleFresh=fresh,
@@ -55,7 +71,8 @@ replacement = r'''    suspend fun snapshot():RuntimeState=withContext(Dispatcher
             frameIntel=mapped.frameIntel,
             log=mapped.log,
             latestDecision=parseDecision(mapped.decisions),
-            latestPlan=parsePlan(mapped.plans)
+            latestPlan=parsePlan(mapped.plans),
+            network=network
         )
     }
 
@@ -63,7 +80,7 @@ replacement = r'''    suspend fun snapshot():RuntimeState=withContext(Dispatcher
 
 s2 = s[:start] + replacement + s[end:]
 
-# Recurring repository snapshot must no longer contain direct hardware reads.
+# Recurring repository snapshot must no longer contain direct hardware/network reads.
 new_start = s2.find(start_marker)
 new_end = s2.find(end_marker, new_start + 1)
 new_snapshot = s2[new_start:new_end]
@@ -74,7 +91,6 @@ for forbidden in [
     if forbidden in new_snapshot:
         raise SystemExit('R9_CUTOVER_FAIL=forbidden-in-snapshot:' + forbidden)
 
-# Ensure typed bridges and legacy parsers outside snapshot survived untouched.
 for required in [
     'geminiKeyVaultStatus', 'addGeminiKeyToVault', 'selectGeminiKey',
     'removeGeminiKey', 'geminiChat', 'authoritySyncStatus',
@@ -84,7 +100,14 @@ for required in [
     if required not in s2:
         raise SystemExit('R9_CUTOVER_FAIL=lost-required-symbol:' + required)
 
+# Semantic regression guard: r7 NetworkState must be populated from the
+# consolidated NETWORK section instead of silently falling back to defaults.
+for required in ['AtomicSnapshot.keyValues(mapped.network)', 'network=network']:
+    if required not in new_snapshot:
+        raise SystemExit('R9_CUTOVER_FAIL=network-regression:' + required)
+
 p.write_text(s2)
 print('R9_CUTOVER=PASS')
+print('R9_NETWORK_PRESERVATION=PASS')
 print('RECURRING_ROOT_READ=cc_snapshot_only')
 print('DIRECT_SYSFS_IN_SNAPSHOT=NO')
