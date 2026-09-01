@@ -1,6 +1,13 @@
 name: Build DJAEGER Control Center v0.12.1-r9 Bug Health
 
 on:
+  push:
+    branches:
+      - codex/v0.12.1-r3-root-vault
+    paths:
+      - '.github/workflows/build-control-center-r9-bug-health.yml'
+      - 'control-center-r2/**'
+      - 'scripts/r9_*.py'
   workflow_dispatch:
 
 permissions:
