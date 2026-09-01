@@ -44,7 +44,7 @@ jobs:
           assert 'CONTROL CENTER • v0.12.1-r14 • REALTIME 1s' in M
           assert 'color=MaterialTheme.colorScheme.onBackground' in M
           assert 'STALE SNAPSHOT' in M
-          assert 'staleSnapshot' in R
+          for x in ['volatileFresh','runtimeFresh','activeClaim','NA (STALE)']: assert x in R,x
           for x in ['setUserMode','saveGeminiKey','deleteGeminiKey','geminiChat','NetworkCard','manualRefresh','BugHealth','STRATEGY COMPOSITION','DECISION PIPELINE','OUTCOME + LEARNING','4 MANUAL SLOTS','429 never rotates','SAVE SLOT','DELETE SLOT']: assert x in M,x
           for x in ['StrategyTruth','DECISION_SOURCE','CPU_LITTLE_MIN','CPU_BIG_MAX','GPU_MIN','GPU_MAX','LEARNING_SAMPLES','LEARNING_CONFIDENCE','ConsolidatedSnapshotReader']: assert x in R,x
           for x in ['AndroidKeyStore','AES/GCM/NoPadding','s$slot']: assert x in K,x
