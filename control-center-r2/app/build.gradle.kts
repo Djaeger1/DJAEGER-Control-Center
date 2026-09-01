@@ -12,8 +12,8 @@ android {
         applicationId = "com.djaeger.controlcenter"
         minSdk = 26
         targetSdk = 33
-        versionCode = 12102
-        versionName = "0.12.1-r2"
+        versionCode = 12103
+        versionName = "0.12.1-r3"
     }
 
     buildFeatures {
