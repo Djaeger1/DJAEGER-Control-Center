@@ -1,0 +1,26 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.djaeger.batteryuisync'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.djaeger.batteryuisync'
+        minSdk 27
+        targetSdk 30
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}
+
+dependencies {
+    compileOnly 'de.robv.android.xposed:api:82'
+}
