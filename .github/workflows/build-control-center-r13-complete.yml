@@ -35,24 +35,23 @@ jobs:
       - name: Strict regression and safety gates
         run: |
           set -euo pipefail
-          M=control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          R=control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          A=control-center-r2/app/src/main/AndroidManifest.xml
-          grep -q 'versionName = "0.12.1-r13"' control-center-r2/app/build.gradle.kts
-          for x in setUserMode saveGeminiKey deleteGeminiKey geminiChat NetworkCard manualRefresh BugHealth; do grep -q "$x" "$M"; done
-          for x in 'STRATEGY COMPOSITION' 'DECISION PIPELINE' 'OUTCOME + LEARNING' '4 MANUAL SLOTS' 'listOf("1","2","3","4")' '429 never rotates'; do grep -qF "$x" "$M"; done
-          for x in StrategyTruth DECISION_SOURCE CPU_LITTLE_MIN CPU_BIG_MAX GPU_MIN GPU_MAX LEARNING_SAMPLES LEARNING_CONFIDENCE; do grep -q "$x" "$R"; done
-          grep -q ConsolidatedSnapshotReader "$R"
-          ! grep -q SYSTEM_ALERT_WINDOW "$A"
-          ! grep -q 'R78 SYNC' "$M"
-          ! grep -R -E 'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}' control-center-r2/app/src control-center-r2/app/build.gradle.kts
           python3 - <<'PY'
           from pathlib import Path
-          s=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text(); a=s.index('suspend fun snapshot()'); b=s.index('suspend fun setUserMode',a); q=s[a:b]
-          for bad in ['/sys/','iptables','nft ','ip route','setprop net.']:
-              assert bad not in q,bad
+          M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
+          B=Path('control-center-r2/app/build.gradle.kts').read_text()
+          for x in ['versionName = "0.12.1-r13"']: assert x in B,x
+          for x in ['setUserMode','saveGeminiKey','deleteGeminiKey','geminiChat','NetworkCard','manualRefresh','BugHealth','STRATEGY COMPOSITION','DECISION PIPELINE','OUTCOME + LEARNING','4 MANUAL SLOTS','listOf("1","2","3","4")','429 never rotates']: assert x in M,x
+          for x in ['StrategyTruth','DECISION_SOURCE','CPU_LITTLE_MIN','CPU_BIG_MAX','GPU_MIN','GPU_MAX','LEARNING_SAMPLES','LEARNING_CONFIDENCE','ConsolidatedSnapshotReader']: assert x in R,x
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          assert 'R78 SYNC' not in M
+          a=R.index('suspend fun snapshot()'); b=R.index('suspend fun setUserMode',a); q=R[a:b]
+          for bad in ['/sys/','iptables','nft ','ip route','setprop net.']: assert bad not in q,bad
+          import re
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
+          print('R13_COMPLETE_REGRESSION=PASS')
           PY
-          echo R13_COMPLETE_REGRESSION=PASS
       - name: Test and build
         working-directory: control-center-r2
         run: |
