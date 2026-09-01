@@ -1,0 +1,76 @@
+name: Build DJAEGER Control Center v0.12.1-r4
+on:
+  push:
+    branches: [codex/v0.12.1-r3-root-vault]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Patch r4 matched stack
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          bp=Path('control-center-r2/app/build.gradle.kts'); b=bp.read_text().replace('versionCode = 12103','versionCode = 12104').replace('versionName = "0.12.1-r3"','versionName = "0.12.1-r4"'); bp.write_text(b)
+          rp=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt'); r=rp.read_text()
+          r=r.replace('private fun su(command:String,timeoutMs:Long=2500)', 'private fun su(command:String,timeoutMs:Long=6000)',1)
+          r=r.replace("tail -n 16 '$persistent/decision_ledger.csv'", "tail -n 8 '$persistent/decision_ledger.csv'")
+          r=r.replace("tail -n 16 '$persistent/plan_history.csv'", "tail -n 8 '$persistent/plan_history.csv'")
+          r=r.replace("tail -n 30 '$module/frame_intel.csv'", "tail -n 15 '$module/frame_intel.csv'")
+          r=r.replace("tail -n 120 '$module/controller.log'", "tail -n 40 '$module/controller.log'")
+          rp.write_text(r)
+          p=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'); s=p.read_text()
+          a='while(true){state=repo.snapshot();if(state.root&&state.installed&&state.sampleFresh){with(state.telemetry){samples.add('
+          b='while(true){val next=repo.snapshot();state=if(next.error.isBlank()) next else if(state.root&&state.installed) state.copy(error=next.error) else next;if(state.root&&state.installed&&state.sampleFresh){with(state.telemetry){samples.add('
+          assert a in s; s=s.replace(a,b,1)
+          s=s.replace('CONTROL CENTER • v0.12.1-r2 • DJAEGER-AI v12.9.50-r3 SYNC • REALTIME 1s','CONTROL CENTER • v0.12.1-r4 • ${state.moduleVersion} • MATCHED STACK • ROOT RESILIENT • KEY VAULT',1)
+          s=s.replace('else "DJAEGER module not found")','else if(s.error.isNotBlank()) "DJAEGER connection pending — module state not yet verified" else "DJAEGER module not found")',1)
+          s=s.replace('if(!s.installed)a.add("DJAEGER module not found")','if(!s.installed&&s.error.isBlank())a.add("DJAEGER module not found")',1)
+          a='var keyInput by remember{mutableStateOf("")}; var chatInput by remember{mutableStateOf("")};'
+          b='var keyInput by remember{mutableStateOf("")}; var vaultIndex by remember{mutableStateOf("")}; var vaultStatus by remember{mutableStateOf("VAULT_COUNT=0")}; var chatInput by remember{mutableStateOf("")};'
+          assert a in s; s=s.replace(a,b,1)
+          a='"DELETE"->{val r=repo.deleteGeminiKey();bridgeStatus=r.second}\n            "CHAT"'
+          b='''"DELETE"->{val r=repo.deleteGeminiKey();bridgeStatus=r.second}\n            "VAULT_STATUS"->{val r=repo.geminiKeyVaultStatus();vaultStatus=r.second.ifBlank{"VAULT_COUNT=0"}}\n            "VAULT_ADD"->{val r=repo.addGeminiKeyToVault(keyInput);vaultStatus=r.second;if(r.first){keyInput="";val x=repo.geminiKeyVaultStatus();vaultStatus=x.second}}\n            "VAULT_SELECT"->{val r=repo.selectGeminiKey(vaultIndex);vaultStatus=r.second;if(r.first){val x=repo.geminiKeyVaultStatus();vaultStatus=x.second;val k=repo.geminiKeyStatus();bridgeStatus=k.second}}\n            "VAULT_REMOVE"->{val r=repo.removeGeminiKey(vaultIndex);vaultStatus=r.second;if(r.first){val x=repo.geminiKeyVaultStatus();vaultStatus=x.second}}\n            "CHAT"'''
+          assert a in s; s=s.replace(a,b,1)
+          a='BoxCard("GEMINI KEY STATUS",bridgeStatus,true)'
+          b='''BoxCard("GEMINI KEY VAULT • r9",vaultStatus,true)\n        OutlinedTextField(value=vaultIndex,onValueChange={vaultIndex=it.filter(Char::isDigit)},label={Text("Vault index")},singleLine=true,modifier=Modifier.fillMaxWidth(),enabled=bridgeOp==null)\n        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){\n            Button(onClick={bridgeOp="VAULT_STATUS"},enabled=bridgeOp==null,modifier=Modifier.weight(1f)){Text("VAULT")}\n            Button(onClick={bridgeOp="VAULT_SELECT"},enabled=bridgeOp==null&&vaultIndex.isNotBlank(),modifier=Modifier.weight(1f)){Text("SELECT")}\n            Button(onClick={bridgeOp="VAULT_REMOVE"},enabled=bridgeOp==null&&vaultIndex.isNotBlank(),modifier=Modifier.weight(1f)){Text("REMOVE")}\n        }\n        BoxCard("GEMINI KEY STATUS",bridgeStatus,true)'''
+          assert a in s; s=s.replace(a,b,1)
+          a='Button(onClick={bridgeOp="SAVE"},enabled=bridgeOp==null&&keyInput.isNotBlank(),modifier=Modifier.weight(1f)){Text("SAVE / REPLACE")}'
+          b='''Button(onClick={bridgeOp="SAVE"},enabled=bridgeOp==null&&keyInput.isNotBlank(),modifier=Modifier.weight(1f)){Text("ACTIVE")}\n            Button(onClick={bridgeOp="VAULT_ADD"},enabled=bridgeOp==null&&keyInput.isNotBlank(),modifier=Modifier.weight(1f)){Text("ADD VAULT")}'''
+          assert a in s; s=s.replace(a,b,1); p.write_text(s)
+          PY
+      - name: Test and build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign and audit
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-r4
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r4.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          UNSIGNED="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" output/aligned.apk
+          "$BT/apksigner" sign --ks signing/r4.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r4-MatchedStack-RootFix.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose output/DJAEGER-Control-Center-v0.12.1-r4-MatchedStack-RootFix.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r4-MatchedStack-RootFix.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r4-MatchedStack-RootFix.apk > output/SHA256SUMS.txt
+          rm output/aligned.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r4-MatchedStack-RootFix
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30
