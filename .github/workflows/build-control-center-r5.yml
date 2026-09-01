@@ -1,0 +1,66 @@
+name: Build DJAEGER Control Center v0.12.1-r5
+on:
+  push:
+    branches: [codex/v0.12.1-r3-root-vault]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Patch r5 frame telemetry lifecycle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          bp=Path('control-center-r2/app/build.gradle.kts'); b=bp.read_text().replace('versionCode = 12103','versionCode = 12105').replace('versionName = "0.12.1-r3"','versionName = "0.12.1-r5"'); bp.write_text(b)
+          rp=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt'); r=rp.read_text()
+          r=r.replace('private fun su(command:String,timeoutMs:Long=2500)', 'private fun su(command:String,timeoutMs:Long=6000)',1)
+          r=r.replace("echo __TEL__; tail -n 1 '$module/telemetry.csv' 2>/dev/null", "echo __TEL__; tail -n 1 '$module/telemetry.csv' 2>/dev/null\n        echo __FRAMEDEBUG__; cat '$persistent/frame_debug' 2>/dev/null\n        echo __FRAMELAYER__; cat '$persistent/frame_layer' 2>/dev/null")
+          r=r.replace('val csv=parseTelemetry(section("TEL","LIVE").trim())','val csv=parseTelemetry(section("TEL","FRAMEDEBUG").trim())\n        val frameDebug=section("FRAMEDEBUG","FRAMELAYER").trim()\n        val frameLayer=section("FRAMELAYER","LIVE").trim()\n        fun clean(v:String?):String{val x=v?.trim().orEmpty();return if(x.length>=2&&((x.first()==\'\\\'\'&&x.last()==\'\\\'\')||(x.first()==\'"\'&&x.last()==\'"\')))x.substring(1,x.length-1) else x}\n        val frameMap=frameDebug.lineSequence().mapNotNull{line->val p=line.indexOf(\'=\');if(p<=0)null else line.substring(0,p).trim() to clean(line.substring(p+1))}.toMap()\n        val frameValid=frameMap["CURRENT_FRAME_DATA"]=="VALID"&&frameMap["STAGE"]=="OK"&&frameLayer.isNotBlank()')
+          r=r.replace('active=rt["active"]?:"0",game=rt["game"]?:"NA",window=rt["window_mode"]?:"INACTIVE",controllerPid=rt["controller_pid"]?:"",predictorPid=rt["predictor_pid"]?:"",updated=rt["updated_at"]?.toLongOrNull()?:0,userMode=rt["user_mode"]?:"AUTO"','active=if(frameValid) "1" else clean(rt["active"]).ifBlank{"0"},game=if(frameValid) frameMap["GAME_DETECT"].orEmpty().ifBlank{clean(rt["game"]).ifBlank{"NA"}} else clean(rt["game"]).ifBlank{"NA"},window=if(frameValid) clean(rt["window_mode"]).ifBlank{"FRAME_ACTIVE"} else clean(rt["window_mode"]).ifBlank{"INACTIVE"},controllerPid=clean(rt["controller_pid"]),predictorPid=clean(rt["predictor_pid"]),updated=clean(rt["updated_at"]).toLongOrNull()?:0,userMode=clean(rt["user_mode"]).ifBlank{"AUTO"}')
+          r=r.replace('sampleFresh=liveFresh||csvFresh','sampleFresh=liveFresh||csvFresh||frameValid')
+          r=r.replace("tail -n 16 '$persistent/decision_ledger.csv'", "tail -n 8 '$persistent/decision_ledger.csv'").replace("tail -n 16 '$persistent/plan_history.csv'", "tail -n 8 '$persistent/plan_history.csv'").replace("tail -n 30 '$module/frame_intel.csv'", "tail -n 15 '$module/frame_intel.csv'").replace("tail -n 120 '$module/controller.log'", "tail -n 40 '$module/controller.log'")
+          rp.write_text(r)
+          p=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'); s=p.read_text()
+          a='while(true){state=repo.snapshot();if(state.root&&state.installed&&state.sampleFresh){with(state.telemetry){samples.add('
+          b='while(true){val next=repo.snapshot();state=if(next.error.isBlank()) next else if(state.root&&state.installed) state.copy(error=next.error) else next;if(state.root&&state.installed&&state.sampleFresh){with(state.telemetry){samples.add('
+          assert a in s; s=s.replace(a,b,1)
+          s=s.replace('CONTROL CENTER • v0.12.1-r2 • DJAEGER-AI v12.9.50-r3 SYNC • REALTIME 1s','CONTROL CENTER • v0.12.1-r5 • ${state.moduleVersion} • MATCHED STACK • FRAME LIFECYCLE FIX',1)
+          s=s.replace('else "DJAEGER module not found")','else if(s.error.isNotBlank()) "DJAEGER connection pending — module state not yet verified" else "DJAEGER module not found")',1)
+          s=s.replace('if(!s.installed)a.add("DJAEGER module not found")','if(!s.installed&&s.error.isBlank())a.add("DJAEGER module not found")',1)
+          p.write_text(s)
+          PY
+      - name: Test and build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign and audit
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-r5
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r5.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          UNSIGNED="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" output/aligned.apk
+          "$BT/apksigner" sign --ks signing/r5.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r5-FrameLifecycleFix.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose output/DJAEGER-Control-Center-v0.12.1-r5-FrameLifecycleFix.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r5-FrameLifecycleFix.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r5-FrameLifecycleFix.apk > output/SHA256SUMS.txt
+          rm output/aligned.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r5-FrameLifecycleFix
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30
