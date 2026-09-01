@@ -1,0 +1,96 @@
+name: Build DJAEGER Control Center v0.12.1-r8 Fast Snapshot
+on:
+  push:
+    branches: [codex/v0.12.1-r3-root-vault]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Apply r7 final baseline then r8 fast snapshot isolation
+        run: |
+          awk '/python3 - <<.PY./{f=1;next} f&&/^          PY$/{exit} f{sub(/^          /,"");print}' .github/workflows/build-control-center-r7-layout-final.yml >/tmp/r7.py
+          python3 /tmp/r7.py
+          python3 - <<'PY'
+          from pathlib import Path
+          bp=Path('control-center-r2/app/build.gradle.kts'); b=bp.read_text().replace('versionCode = 12107','versionCode = 12108').replace('versionName = "0.12.1-r7"','versionName = "0.12.1-r8"'); bp.write_text(b)
+          rp=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt'); r=rp.read_text()
+          # r8: keep one su process, but remove expensive diagnostics from the 1Hz Overview path.
+          start=r.index('        val liveCmd = """')
+          end=r.index('        """.trimIndent()', start)+len('        """.trimIndent()')
+          fast='''        val liveCmd = """
+        echo __INSTALLED__; [ -d '$module' ] && echo 1 || echo 0
+        echo __VERSION__; sed -n 's/^version=//p' '$module/module.prop' 2>/dev/null | head -n 1
+        echo __RUNTIME__; cat '$persistent/runtime_status' 2>/dev/null
+        echo __TEL__; tail -n 1 '$module/telemetry.csv' 2>/dev/null
+        echo __NETWORK__; cat '$persistent/network_status' 2>/dev/null
+        echo __LIVE__
+        printf 'LITTLE_KHZ='; cat /sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq 2>/dev/null || true; printf '\\n'
+        printf 'BIG_KHZ='; cat /sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq 2>/dev/null || true; printf '\\n'
+        printf 'GPU_HZ='; cat /sys/class/kgsl/kgsl-3d0/devfreq/cur_freq 2>/dev/null || true; printf '\\n'
+        printf 'BAT_TEMP_RAW='; cat /sys/class/power_supply/battery/temp 2>/dev/null || true; printf '\\n'
+        printf 'BAT_STATUS='; cat /sys/class/power_supply/battery/status 2>/dev/null || true; printf '\\n'
+        printf 'BAT_VOLTAGE_UV='; cat /sys/class/power_supply/battery/voltage_now 2>/dev/null || true; printf '\\n'
+        printf 'BAT_CURRENT_A='; cat /sys/class/power_supply/battery/current_now 2>/dev/null || true; printf '\\n'
+        printf 'BAT_CURRENT_B='; cat /sys/class/power_supply/sm5602_bat/current_now 2>/dev/null || true; printf '\\n'
+        echo __BRAIN__
+        echo __ENV__
+        echo __HTTP__
+        echo __SERVER__
+        echo __DECISIONS__
+        echo __PLANS__
+        echo __FRAME__; tail -n 3 '$module/frame_intel.csv' 2>/dev/null
+        echo __LOG__; tail -n 8 '$module/controller.log' 2>/dev/null
+        """.trimIndent()'''
+          r=r[:start]+fast+r[end:]
+          # Adapt parser boundary because NETWORK now sits between TEL and LIVE.
+          r=r.replace('val csv=parseTelemetry(section("TEL","NETWORK").trim())','val csv=parseTelemetry(section("TEL","NETWORK").trim())')
+          # r7 baseline already added network parser. Reduce timeout: fast path must fail quickly rather than block UI.
+          r=r.replace('val (rc,out)=su(liveCmd)', 'val (rc,out)=su(liveCmd,1800)')
+          # Quote cleanup for authoritative runtime values.
+          old='active=rt["active"]?:"0",game=rt["game"]?:"NA",window=rt["window_mode"]?:"INACTIVE",controllerPid=rt["controller_pid"]?:"",predictorPid=rt["predictor_pid"]?:"",updated=rt["updated_at"]?.toLongOrNull()?:0,userMode=rt["user_mode"]?:"AUTO"'
+          new='active=cleanNet(rt["active"]).ifBlank{"0"},game=cleanNet(rt["game"]).ifBlank{"NA"},window=cleanNet(rt["window_mode"]).ifBlank{"INACTIVE"},controllerPid=cleanNet(rt["controller_pid"]),predictorPid=cleanNet(rt["predictor_pid"]),updated=cleanNet(rt["updated_at"]).toLongOrNull()?:0,userMode=cleanNet(rt["user_mode"]).ifBlank{"AUTO"}'
+          r=r.replace(old,new)
+          rp.write_text(r)
+          mp=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'); s=mp.read_text().replace('CONTROL CENTER • v0.12.1-r7 • ${state.moduleVersion} • NETWORK INTELLIGENCE • KEY VAULT','CONTROL CENTER • v0.12.1-r8 • ${state.moduleVersion} • FAST TELEMETRY • NETWORK INTELLIGENCE • KEY VAULT'); mp.write_text(s)
+          PY
+      - name: Regression checks
+        run: |
+          set -euo pipefail
+          grep -q 'versionName = "0.12.1-r8"' control-center-r2/app/build.gradle.kts
+          grep -q 'network_status' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'tail -n 3.*frame_intel.csv' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          ! grep -q 'tail -n 120.*controller.log' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -q 'NetworkCard(s.network)' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+      - name: Test and build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign verify and audit
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-r8
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r8.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          UNSIGNED="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" output/aligned.apk
+          "$BT/apksigner" sign --ks signing/r8.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r8-FastTelemetry.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose output/DJAEGER-Control-Center-v0.12.1-r8-FastTelemetry.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r8-FastTelemetry.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r8-FastTelemetry.apk > output/SHA256SUMS.txt
+          rm output/aligned.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r8-FastTelemetry
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30
