@@ -62,7 +62,7 @@ jobs:
 
       - name: Architecture and regression gates
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           R=control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           M=control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -q 'versionName = "0.12.1-r9"' control-center-r2/app/build.gradle.kts
