@@ -10,7 +10,7 @@ r.write_text(rs)
 ms=m.read_text().replace('CONTROL CENTER • v0.12.1-r20 • UNIFIED RUNTIME CONTRACT','CONTROL CENTER • v0.12.1-r21 • RUNTIME BUGFIX',1)
 old='val vaultStatus4=remember(vaultEpoch){vault4.status()+"\\n"+vault4.rotationStatus()}'
 new='''var moduleVaultStatus by remember { mutableStateOf("") }
-        LaunchedEffect(vaultEpoch) { moduleVaultStatus = repo.geminiKeyVaultStatus() }
+        LaunchedEffect(vaultEpoch) { val (_,runtimeVault)=repo.geminiKeyVaultStatus(); moduleVaultStatus=runtimeVault }
         val vaultStatus4 = moduleVaultStatus.ifBlank { vault4.status()+"\\nLOCAL STAGING ONLY • runtime vault status unavailable" }'''
 assert old in ms; ms=ms.replace(old,new,1)
 ms=ms.replace('Text("COPY")','Text("COPY",maxLines=1)',20)
