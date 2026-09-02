@@ -29,8 +29,8 @@ jobs:
           from pathlib import Path
           M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text(); R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text(); B=Path('control-center-r2/app/build.gradle.kts').read_text(); A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
           assert 'versionName = "0.12.1-r22"' in B
-          assert '__THOUGHTS__' in R and '__MEMORY__' in R
           assert 'djaeger_thoughts.env' in R and 'local_memory_status.env' in R
+          assert 'thoughts:String' in R and 'memoryStatus:String' in R
           assert 'SYSTEM_ALERT_WINDOW' not in A
           import re; assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
           print('R22_SAFETY=PASS')
