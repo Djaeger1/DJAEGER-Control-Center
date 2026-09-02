@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import re
+root=Path('control-center-r2'); b=root/'app/build.gradle.kts'; m=root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'; r=root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt'
+bs=b.read_text(); bs=re.sub(r'versionCode\s*=\s*\d+','versionCode = 12180',bs,count=1); bs=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "0.12.1-r18"',bs,count=1); b.write_text(bs)
+rs=r.read_text()
+anchor='    suspend fun setUserMode(mode:String):Pair<Boolean,String> = withContext(Dispatchers.IO) {'
+assert anchor in rs
+fast='''    suspend fun fastTelemetry(base: RuntimeState): RuntimeState = withContext(Dispatchers.IO) {\n        val (rc,out)=su("cat '$persistent/fast_telemetry' 2>/dev/null",700)\n        if(rc!=0 || out.isBlank()) return@withContext base\n        fun clean(v:String):String{val x=v.trim();return if(x.length>=2&&((x.first()==\\'\\\\\\'\\'&&x.last()==\\'\\\\\\'\\')||(x.first()==\\'"\\'&&x.last()==\\'"\\')))x.substring(1,x.length-1) else x}\n        val kv=out.lineSequence().mapNotNull{line->val p=line.indexOf(\\'=\\');if(p<=0)null else line.substring(0,p).trim() to clean(line.substring(p+1))}.toMap()\n        val updated=kv["UPDATED_MS"]?.toLongOrNull()?:return@withContext base\n        val age=System.currentTimeMillis()-updated\n        if(age !in 0..1500) return@withContext base\n        fun l(k:String,old:Long)=kv[k]?.toLongOrNull()?.takeIf{it>0}?:old\n        fun i(k:String,old:Int)=kv[k]?.toDoubleOrNull()?.let{v->if(k.endsWith("_T")&&k!="BAT_T"&&k!="SKIN_T"&&k!="CPU_T"&&k!="GPU_T") old else if(k.endsWith("_T")&&k!="BAT_T"&&k!="SKIN_T") (if(kotlin.math.abs(v)>1000)v/1000 else v).toInt() else v.toInt()}?:old\n        fun d(k:String,old:Double)=kv[k]?.toDoubleOrNull()?:old\n        val t=base.telemetry\n        val nt=t.copy(littleKhz=l("CPU_L_CUR",t.littleKhz),bigKhz=l("CPU_B_CUR",t.bigKhz),gpuHz=l("GPU_CUR",t.gpuHz),cpuT=i("CPU_T",t.cpuT),gpuT=i("GPU_T",t.gpuT),skinT=i("SKIN_T",t.skinT),batT=i("BAT_T",t.batT),frameMs=d("FRAME_MS",t.frameMs),fps=d("FPS_EST",t.fps),jank=d("JANK_PCT",t.jank),p95=d("P95_MS",t.p95),p99=d("P99_MS",t.p99),batteryStatus=kv["BATT_STATUS"]?.takeIf{it!="NA"}?:t.batteryStatus,currentUa=l("BATT_CURRENT_UA",t.currentUa),voltageUv=l("BATT_VOLTAGE_UV",t.voltageUv),powerMw=d("BATT_POWER_MW",t.powerMw),windowMode=kv["WINDOW_MODE"]?.takeIf{it!="NA"}?:t.windowMode)\n        base.copy(sampleFresh=true,telemetry=nt)\n    }\n\n'''
+rs=rs.replace(anchor,fast+anchor,1);r.write_text(rs)
+ms=m.read_text()
+ms=ms.replace('CONTROL CENTER • v0.12.1-r17 • 4-KEY POOL • REALTIME 1s','CONTROL CENTER • v0.12.1-r18 • FAST TELEMETRY 200ms')
+old='    LaunchedEffect(manualRefresh){if(manualRefresh>0){refreshBusy=true;val before=state.updated;val fresh=repo.snapshot();state=fresh;notifier.notifyIfNeeded(fresh.bugHealth);val now=SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(Date());refreshStatus=if(fresh.error.isNotBlank()) "LOCAL REFRESH ERROR • $now" else if(fresh.updated>0&&fresh.updated==before) "LOCAL UNCHANGED • $now" else "LOCAL UPDATED • $now";refreshBusy=false}}'
+assert old in ms
+extra=old+'\n    LaunchedEffect(lifecycleOwner){lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){while(true){state=repo.fastTelemetry(state);delay(200)}}}'
+ms=ms.replace(old,extra,1)
+ms=ms.replace('var refreshStatus by remember{mutableStateOf("LOCAL AUTO 1s")}', 'var refreshStatus by remember{mutableStateOf("FAST 200ms • FULL 1s")}',1)
+ms=ms.replace('Last ${samples.size} seconds • refresh 1s','Last ${samples.size} seconds • fast cards 200ms • history 1s')
+m.write_text(ms)
+print('R18_FAST_SOURCE=MODULE_FAST_TELEMETRY')
+print('R18_FAST_UI=200MS')
+print('R18_FULL_SNAPSHOT=1000MS')
+print('R18_NO_DIRECT_SYSFS=PASS')
