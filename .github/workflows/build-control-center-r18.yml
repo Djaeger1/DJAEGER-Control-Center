@@ -44,8 +44,9 @@ jobs:
           from pathlib import Path
           M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text();R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text();K=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/KeyVault4.kt').read_text();A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text();B=Path('control-center-r2/app/build.gradle.kts').read_text()
           assert 'versionName = "0.12.1-r18"' in B
-          assert 'FAST TELEMETRY' in M and 'delay(200)' in M
-          assert 'fastTelemetry()' in R and '/data/adb/djaeger_ai/fast_telemetry' in R
+          assert 'FAST TELEMETRY • 200ms' in M and 'fastTelemetryState' in M
+          for x in ['FastTelemetry','ensureFastStream','__DJAEGER_FAST_END__','sleep 0.2','fast_telemetry']: assert x in R,x
+          assert R.count('ProcessBuilder("su", "-c", cmd)')==1
           assert 'syncGeminiKeyPool' in R and 'configuredKeys' in K
           assert 'SYSTEM_ALERT_WINDOW' not in A
           a=R.index('suspend fun snapshot()');z=R.index('suspend fun setUserMode',a);q=R[a:z]
