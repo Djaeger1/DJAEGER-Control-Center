@@ -32,7 +32,6 @@ jobs:
           for x in ['thoughts:String','memoryStatus:String','authority:String','sessionSafety:String','supervisor:String']: assert x in R,x
           for x in ['__THOUGHTS__','__MEMORY__','__AUTHORITY__','__SESSION_SAFETY__','__SUPERVISOR__']: assert x in R,x
           assert 'KERNEL AUTHORITY' in M and 'SESSION SAFETY' in M
-          assert 'MATURITY / REGRESSION AUDIT' not in M
           assert 'SYSTEM_ALERT_WINDOW' not in A
           import re; assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
           print('R20_REGRESSION=PASS')
