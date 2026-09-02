@@ -1,7 +1,7 @@
-name: Build DJAEGER Control Center v0.12.1-r18
+name: Build DJAEGER Control Center v0.12.1-r19
 on:
   push:
-    branches: [codex/v0.12.1-r18-fast-telemetry-ui]
+    branches: [codex/v0.12.1-r19-thoughts-local-memory]
   workflow_dispatch:
 jobs:
   build:
@@ -12,7 +12,7 @@ jobs:
         with: {distribution: temurin, java-version: '17'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
-      - name: Generate r18
+      - name: Generate r19
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -22,19 +22,21 @@ jobs:
           Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
           PY
           python3 /tmp/r7.py
-          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py; do python3 scripts/$s; done
-      - name: r18 regression gates
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py; do python3 scripts/$s; done
+      - name: r19 regression gates
         run: |
           python3 - <<'PY'
           from pathlib import Path
           M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text();R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text();K=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/KeyVault4.kt').read_text();A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text();B=Path('control-center-r2/app/build.gradle.kts').read_text()
-          assert 'versionName = "0.12.1-r18"' in B and 'fastTelemetryState' in M
-          for x in ['FastTelemetry','ensureFastStream','__DJAEGER_FAST_END__','sleep 0.2','fast_telemetry','ProcessBuilder("su", "-c", cmd)']: assert x in R,x
+          assert 'versionName = "0.12.1-r19"' in B
+          for x in ['FastTelemetry','ensureFastStream','sleep 0.2','fast_telemetry']: assert x in R,x
+          for x in ['thoughts:String','memoryStatus:String','djaeger_thoughts.env','local_memory_status.env']: assert x in R,x
+          for x in ['DJAEGER THOUGHTS','✦ GEMINI','◆ LOCAL AI','ThoughtsCard']: assert x in M,x
           for x in ['syncGeminiKeyPool','gemini-key-add-stdin','gemini-key-select','suStdin']: assert x in R,x
           for x in ['configuredKeys','AndroidKeyStore','AES/GCM/NoPadding']: assert x in K,x
           assert 'SYSTEM_ALERT_WINDOW' not in A
           import re; assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+K+B)
-          print('R18_REGRESSION=PASS')
+          print('R19_REGRESSION=PASS')
           PY
       - name: Test and build
         working-directory: control-center-r2
@@ -42,13 +44,13 @@ jobs:
       - name: Sign verify
         run: |
           set -euo pipefail; mkdir -p output signing
-          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-control-center-r18
-          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r18.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-control-center-r19
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r19.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"; U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
           "$BT/zipalign" -p -f 4 "$U" output/aligned.apk
-          "$BT/apksigner" sign --ks signing/r18.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r18.apk output/aligned.apk
-          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r18.apk | tee output/APKSIGNER_VERIFY.txt
-          unzip -t output/DJAEGER-Control-Center-v0.12.1-r18.apk > output/APK_ZIP_TEST.txt
-          sha256sum output/DJAEGER-Control-Center-v0.12.1-r18.apk > output/SHA256SUMS.txt
+          "$BT/apksigner" sign --ks signing/r19.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r19.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r19.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r19.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r19.apk > output/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
-        with: {name: DJAEGER-Control-Center-v0.12.1-r18, path: 'output/*', if-no-files-found: error}
+        with: {name: DJAEGER-Control-Center-v0.12.1-r19, path: 'output/*', if-no-files-found: error}
