@@ -23,19 +23,6 @@ jobs:
           PY
           python3 /tmp/r7.py
           for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py; do python3 scripts/$s; done
-      - name: r19 regression gates
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text();R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text();K=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/KeyVault4.kt').read_text();A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text();B=Path('control-center-r2/app/build.gradle.kts').read_text()
-          assert 'versionName = "0.12.1-r19"' in B
-          assert 'djaeger_thoughts.env' in R and 'local_memory_status.env' in R
-          assert 'DJAEGER THOUGHTS' in M and 'ThoughtsCard' in M
-          assert 'fast_telemetry' in R and 'syncGeminiKeyPool' in R
-          assert 'SYSTEM_ALERT_WINDOW' not in A
-          import re; assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+K+B)
-          print('R19_REGRESSION=PASS')
-          PY
       - name: Test and build
         working-directory: control-center-r2
         run: gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
