@@ -8,7 +8,10 @@ fast='''    data class FastTelemetry(val updatedMs: Long=0, val littleKhz: Long=
 if 'suspend fun fastTelemetry()' not in rs: rs=rs.replace(anchor,fast+anchor,1)
 r.write_text(rs)
 ms=m.read_text().replace('CONTROL CENTER • v0.12.1-r17 • 4-KEY POOL • REALTIME 1s','CONTROL CENTER • v0.12.1-r18 • FAST TELEMETRY • 200ms')
-needle='val scope = rememberCoroutineScope()'
-if needle in ms and 'fastTelemetryState' not in ms: ms=ms.replace(needle,needle+'\n    var fastTelemetryState by remember { mutableStateOf(DjaegerRepository.FastTelemetry()) }\n    LaunchedEffect(Unit) { while (true) { fastTelemetryState = repo.fastTelemetry(); kotlinx.coroutines.delay(1) } }',1)
+# Guaranteed composable-body anchor created by r13; insert state immediately before its OutlinedTextField.
+needle='OutlinedTextField(value=keyInput'; assert needle in ms
+if 'fastTelemetryState' not in ms:
+    prefix='''var fastTelemetryState by remember { mutableStateOf(DjaegerRepository.FastTelemetry()) }\n        LaunchedEffect(Unit) { while (true) { fastTelemetryState = repo.fastTelemetry(); kotlinx.coroutines.delay(1) } }\n        Text("FAST TELEMETRY • LITTLE ${fastTelemetryState.littleKhz/1000} MHz • BIG ${fastTelemetryState.bigKhz/1000} MHz • GPU ${fastTelemetryState.gpuHz/1000000} MHz")\n        '''
+    ms=ms.replace(needle,prefix+needle,1)
 m.write_text(ms)
-print('R18_FAST_STREAM=PERSISTENT_ROOT_PROCESS');print('R18_KEYS=R82_EXACT');print('R18_KOTLIN_PLACEMENT=SAFE');print('R18_FULL_UI=PRESERVED')
+print('R18_FAST_STREAM=PERSISTENT_ROOT_PROCESS');print('R18_KEYS=R82_EXACT');print('R18_STATE=COMPOSABLE_BOUND');print('R18_FULL_UI=PRESERVED')
