@@ -1,7 +1,9 @@
 package com.djaeger.batteryuisync;
 
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.TextView;
 
 import java.lang.ref.WeakReference;
@@ -19,40 +21,43 @@ public final class BatteryUiSyncHook implements IXposedHookLoadPackage {
     private static final String TAG = "DJAEGER-BatteryUiSync";
     private static final String SYSTEM_UI = "com.android.systemui";
     private static final Object LOCK = new Object();
-    private static final List<WeakReference<Object>> VIEWS = new ArrayList<>();
+    private static final List<WeakReference<Object>> BATTERY_VIEWS = new ArrayList<>();
+    private static final List<WeakReference<TextView>> TEXT_VIEWS = new ArrayList<>();
     private static volatile int lastLevel = -1;
     private static volatile int lastLoggedLevel = -1;
 
-    @Override
-    public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
+    @Override public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         if (!SYSTEM_UI.equals(lpparam.packageName)) return;
         try {
-            final Class<?> viewClass = XposedHelpers.findClass("com.android.systemui.MiuiBatteryMeterView", lpparam.classLoader);
+            final Class<?> meterClass = XposedHelpers.findClass("com.android.systemui.MiuiBatteryMeterView", lpparam.classLoader);
             final Class<?> statusClass = XposedHelpers.findClass("com.android.keyguard.charge.MiuiBatteryStatus", lpparam.classLoader);
 
-            XposedBridge.hookAllConstructors(viewClass, new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) { rememberView(param.thisObject); }
+            XposedBridge.hookAllConstructors(meterClass, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam p) { rememberBatteryView(p.thisObject); }
+            });
+
+            // Observe TextViews created by SystemUI. Weak references only; no ownership/lifecycle changes.
+            XposedBridge.hookAllConstructors(TextView.class, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam p) {
+                    if (p.thisObject instanceof TextView) rememberTextView((TextView) p.thisObject);
+                }
             });
 
             XposedHelpers.findAndHookMethod("com.android.systemui.MiuiBatteryMeterView$1", lpparam.classLoader,
                     "onRefreshBatteryInfo", statusClass, new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) {
+                @Override protected void afterHookedMethod(MethodHookParam p) {
                     try {
-                        if (param.args == null || param.args.length == 0 || param.args[0] == null) return;
-                        final int level = (Integer) XposedHelpers.callMethod(param.args[0], "getLevel");
-                        // MIUI emits transient level 0 while SystemUI is starting. Never propagate it.
+                        if (p.args == null || p.args.length == 0 || p.args[0] == null) return;
+                        int level = (Integer) XposedHelpers.callMethod(p.args[0], "getLevel");
                         if (level <= 0 || level > 100) return;
-                        rememberView(XposedHelpers.getObjectField(param.thisObject, "this$0"));
+                        rememberBatteryView(XposedHelpers.getObjectField(p.thisObject, "this$0"));
                         lastLevel = level;
-                        SyncStats stats = syncAll(level);
-                        if (lastLoggedLevel != level || stats.directTextFixes > 0) {
+                        Stats s = sync(level);
+                        if (lastLoggedLevel != level || s.textFixed > 0) {
                             lastLoggedLevel = level;
-                            XposedBridge.log(TAG + ": v1.2 level=" + level
-                                    + " live=" + stats.live
-                                    + " attached=" + stats.attached
-                                    + " shown=" + stats.shown
-                                    + " views=" + stats.viewsUpdated
-                                    + " textFix=" + stats.directTextFixes);
+                            XposedBridge.log(TAG + ": v1.3 level=" + level + " meters=" + s.meters
+                                    + " meterShown=" + s.meterShown + " texts=" + s.texts
+                                    + " candidates=" + s.candidates + " textFix=" + s.textFixed);
                         }
                     } catch (Throwable t) {
                         XposedBridge.log(TAG + ": callback skipped safely: " + t);
@@ -60,94 +65,99 @@ public final class BatteryUiSyncHook implements IXposedHookLoadPackage {
                 }
             });
 
-            XposedBridge.hookAllMethods(viewClass, "onAttachedToWindow", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam param) {
-                    rememberView(param.thisObject);
+            XposedBridge.hookAllMethods(meterClass, "onAttachedToWindow", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam p) {
+                    rememberBatteryView(p.thisObject);
                     int level = lastLevel;
-                    if (level > 0 && level <= 100) syncOne(param.thisObject, level, null);
+                    if (level > 0 && level <= 100) sync(level);
                 }
             });
-            XposedBridge.log(TAG + ": v1.2 visible-text hook installed for " + lpparam.processName);
+            XposedBridge.log(TAG + ": v1.3 global-text hook installed for " + lpparam.processName);
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": hook NOT installed: " + t);
         }
     }
 
-    private static void rememberView(Object view) {
-        if (view == null) return;
+    private static Stats sync(int level) {
+        Stats s = new Stats();
         synchronized (LOCK) {
-            Iterator<WeakReference<Object>> it = VIEWS.iterator();
-            while (it.hasNext()) {
-                Object old = it.next().get();
-                if (old == null) it.remove(); else if (old == view) return;
+            Iterator<WeakReference<Object>> bi = BATTERY_VIEWS.iterator();
+            while (bi.hasNext()) {
+                Object o = bi.next().get();
+                if (o == null) { bi.remove(); continue; }
+                s.meters++;
+                if (o instanceof View && ((View)o).isShown()) s.meterShown++;
+                try {
+                    if (XposedHelpers.getIntField(o, "mLevel") != level) XposedHelpers.setIntField(o, "mLevel", level);
+                    XposedHelpers.callMethod(o, "update");
+                } catch (Throwable ignored) { }
             }
-            VIEWS.add(new WeakReference<>(view));
-        }
-    }
 
-    private static SyncStats syncAll(int level) {
-        SyncStats s = new SyncStats();
-        synchronized (LOCK) {
-            Iterator<WeakReference<Object>> it = VIEWS.iterator();
-            while (it.hasNext()) {
-                Object obj = it.next().get();
-                if (obj == null) { it.remove(); continue; }
-                s.live++;
-                if (obj instanceof View) {
-                    View v = (View) obj;
-                    if (v.isAttachedToWindow()) s.attached++;
-                    if (v.isShown()) s.shown++;
-                }
-                syncOne(obj, level, s);
+            Iterator<WeakReference<TextView>> ti = TEXT_VIEWS.iterator();
+            while (ti.hasNext()) {
+                TextView tv = ti.next().get();
+                if (tv == null) { ti.remove(); continue; }
+                s.texts++;
+                if (!isBatteryPercentCandidate(tv)) continue;
+                s.candidates++;
+                CharSequence cs = tv.getText();
+                if (cs == null) continue;
+                String raw = cs.toString().trim();
+                String digits = raw.endsWith("%") ? raw.substring(0, raw.length() - 1).trim() : raw;
+                try {
+                    int old = Integer.parseInt(digits);
+                    if (old >= 0 && old <= 100 && old != level) {
+                        tv.setText(raw.endsWith("%") ? level + "%" : String.valueOf(level));
+                        s.textFixed++;
+                    }
+                } catch (NumberFormatException ignored) { }
             }
         }
         return s;
     }
 
-    private static void syncOne(Object obj, int level, SyncStats s) {
+    private static boolean isBatteryPercentCandidate(TextView tv) {
         try {
-            int cached = XposedHelpers.getIntField(obj, "mLevel");
-            if (cached != level) XposedHelpers.setIntField(obj, "mLevel", level);
-            XposedHelpers.callMethod(obj, "update");
-            if (s != null) s.viewsUpdated++;
-
-            // Diagnostic + targeted repair: inspect TextViews under the OEM battery view.
-            // Only replace a pure numeric percentage that is stale; labels/icons are untouched.
-            if (obj instanceof View) {
-                int fixes = syncNumericText((View) obj, level);
-                if (s != null) s.directTextFixes += fixes;
-            }
-        } catch (Throwable ignored) {
-            try { XposedHelpers.callMethod(obj, "updatePercentText"); } catch (Throwable ignored2) { }
-        }
-    }
-
-    private static int syncNumericText(View root, int level) {
-        int fixes = 0;
-        if (root instanceof TextView) {
-            TextView tv = (TextView) root;
+            if (!tv.isAttachedToWindow() || !tv.isShown()) return false;
             CharSequence cs = tv.getText();
-            if (cs != null) {
-                String text = cs.toString().trim();
-                if (text.matches("\\d{1,3}")) {
-                    try {
-                        int old = Integer.parseInt(text);
-                        if (old >= 0 && old <= 100 && old != level) {
-                            tv.setText(String.valueOf(level));
-                            fixes++;
-                        }
-                    } catch (NumberFormatException ignored) { }
-                }
+            if (TextUtils.isEmpty(cs)) return false;
+            String raw = cs.toString().trim();
+            String digits = raw.endsWith("%") ? raw.substring(0, raw.length() - 1).trim() : raw;
+            if (!digits.matches("\\d{1,3}")) return false;
+            int n = Integer.parseInt(digits);
+            if (n < 0 || n > 100) return false;
+
+            // Safety gate: only touch views whose resource/class ancestry identifies battery UI.
+            View v = tv;
+            for (int depth = 0; depth < 7 && v != null; depth++) {
+                String idName = "";
+                try { if (v.getId() != View.NO_ID) idName = v.getResources().getResourceEntryName(v.getId()); } catch (Throwable ignored) { }
+                String cls = v.getClass().getName();
+                String hay = (idName + " " + cls).toLowerCase();
+                if (hay.contains("battery")) return true;
+                ViewParent parent = v.getParent();
+                v = parent instanceof View ? (View) parent : null;
             }
-        }
-        if (root instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) root;
-            for (int i = 0; i < group.getChildCount(); i++) fixes += syncNumericText(group.getChildAt(i), level);
-        }
-        return fixes;
+        } catch (Throwable ignored) { }
+        return false;
     }
 
-    private static final class SyncStats {
-        int live, attached, shown, viewsUpdated, directTextFixes;
+    private static void rememberBatteryView(Object o) {
+        if (o == null) return;
+        synchronized (LOCK) {
+            Iterator<WeakReference<Object>> it = BATTERY_VIEWS.iterator();
+            while (it.hasNext()) { Object x = it.next().get(); if (x == null) it.remove(); else if (x == o) return; }
+            BATTERY_VIEWS.add(new WeakReference<>(o));
+        }
     }
+
+    private static void rememberTextView(TextView tv) {
+        synchronized (LOCK) {
+            Iterator<WeakReference<TextView>> it = TEXT_VIEWS.iterator();
+            while (it.hasNext()) { TextView x = it.next().get(); if (x == null) it.remove(); else if (x == tv) return; }
+            TEXT_VIEWS.add(new WeakReference<>(tv));
+        }
+    }
+
+    private static final class Stats { int meters, meterShown, texts, candidates, textFixed; }
 }
