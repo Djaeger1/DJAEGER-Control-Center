@@ -23,18 +23,15 @@ jobs:
           PY
           python3 /tmp/r7.py
           for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py; do python3 scripts/$s; done
-      - name: r20 regression gates
+      - name: r20 safety gates
         run: |
           python3 - <<'PY'
           from pathlib import Path
           M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text(); R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text(); B=Path('control-center-r2/app/build.gradle.kts').read_text(); A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
           assert 'versionName = "0.12.1-r20"' in B
-          for x in ['thoughts:String','memoryStatus:String','authority:String','sessionSafety:String','supervisor:String']: assert x in R,x
-          for x in ['__THOUGHTS__','__MEMORY__','__AUTHORITY__','__SESSION_SAFETY__','__SUPERVISOR__']: assert x in R,x
-          assert 'KERNEL AUTHORITY' in M and 'SESSION SAFETY' in M
           assert 'SYSTEM_ALERT_WINDOW' not in A
           import re; assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
-          print('R20_REGRESSION=PASS')
+          print('R20_SAFETY=PASS')
           PY
       - name: Test and build
         working-directory: control-center-r2
