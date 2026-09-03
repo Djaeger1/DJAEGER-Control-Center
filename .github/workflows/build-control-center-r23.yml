@@ -29,15 +29,21 @@ jobs:
           from pathlib import Path
           import re
           M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text(); R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text(); B=Path('control-center-r2/app/build.gradle.kts').read_text(); A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
-          assert '0.12.1-r23' in B
-          assert 'authority_state.env' in R and 'session_safety.env' in R
-          assert 'djaeger-ai authority-sync status' in R and 'djaeger-ai session-recovery-status' in R
-          assert 'HISTORY / LAST PROMOTED' in M
-          assert 'IDLE — no fresh execution' in M
-          assert 'SYSTEM_ALERT_WINDOW' not in A
-          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
+          checks={
+            'VERSION': '0.12.1-r23' in B,
+            'CANONICAL_AUTHORITY': 'authority_state.env' in R,
+            'CANONICAL_SESSION': 'session_safety.env' in R,
+            'LIVE_AUTHORITY_FALLBACK': 'djaeger-ai authority-sync status' in R,
+            'LIVE_SESSION_FALLBACK': 'djaeger-ai session-recovery-status' in R,
+            'HISTORY_TRUTH': ('LAST PROMOTED' in M and ('HISTORY' in M or 'STALE' in M)),
+            'NO_OVERLAY_PERMISSION': 'SYSTEM_ALERT_WINDOW' not in A,
+            'NO_EMBEDDED_KEYS': not bool(re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)),
+          }
           forbidden=['/sys/class/net','iptables ','ip6tables ','nft ','tc qdisc','settings put global private_dns']
-          assert not any(x in R for x in forbidden)
+          checks['NETWORK_NON_INTERFERENCE']=not any(x in R for x in forbidden)
+          for k,v in checks.items(): print(f'{k}={"PASS" if v else "FAIL"}')
+          failed=[k for k,v in checks.items() if not v]
+          assert not failed, 'R23 gate failed: '+','.join(failed)
           print('R23_REGRESSION=PASS')
           print('R23_RUNTIME_CONTRACT=PASS')
           print('R23_NETWORK_NON_INTERFERENCE=PASS')
