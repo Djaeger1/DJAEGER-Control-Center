@@ -16,38 +16,27 @@ b.write_text(bs)
 # SUPERVISOR inside the single atomic cc_snapshot. Extend the R9 mapper instead
 # of restoring the retired multi-read shell snapshot.
 mp=mapper.read_text()
-mapped=re.search(r'data class Mapped\((.*?)\n\s*\)',mp,re.S)
-assert mapped,'Mapped data class missing'
-minsert=''
-for name in ['thoughts','memoryStatus','authority','sessionSafety','supervisor']:
-    if f'val {name}: String' not in mapped.group(1):
-        minsert += f'        val {name}: String,\n'
-if minsert:
-    mp=mp[:mapped.start(1)]+mapped.group(1)+"\n"+minsert+mp[mapped.end(1):]
-anchor='            reasoning = s["REASONING"].orEmpty(),'
-assert anchor in mp,'mapper assignment anchor missing'
-extra='''            thoughts = s["THOUGHTS"].orEmpty(),\n            memoryStatus = s["MEMORY"].orEmpty(),\n            authority = s["AUTHORITY"].orEmpty(),\n            sessionSafety = s["SESSION_SAFETY"].orEmpty(),\n            supervisor = s["SUPERVISOR"].orEmpty(),\n'''
+field_anchor='        val reasoning: String,'
+assert field_anchor in mp,'Mapped field anchor missing'
+fields='''        val thoughts: String,\n        val memoryStatus: String,\n        val authority: String,\n        val sessionSafety: String,\n        val supervisor: String,\n'''
+if 'val thoughts: String' not in mp:
+    mp=mp.replace(field_anchor,fields+field_anchor,1)
+assign_anchor='            reasoning = s["REASONING"].orEmpty(),'
+assert assign_anchor in mp,'mapper assignment anchor missing'
+assigns='''            thoughts = s["THOUGHTS"].orEmpty(),\n            memoryStatus = s["MEMORY"].orEmpty(),\n            authority = s["AUTHORITY"].orEmpty(),\n            sessionSafety = s["SESSION_SAFETY"].orEmpty(),\n            supervisor = s["SUPERVISOR"].orEmpty(),\n'''
 if 'thoughts = s["THOUGHTS"]' not in mp:
-    mp=mp.replace(anchor,extra+anchor,1)
+    mp=mp.replace(assign_anchor,assigns+assign_anchor,1)
 mapper.write_text(mp)
 
 rs=r.read_text()
-state=re.search(r'data class RuntimeState\((.*?)\)',rs,re.S)
-assert state,'RuntimeState missing'
-fields=state.group(1)
-insert=''
-for name,typ in [
-    ('runtimeVersion','String=""'),
-    ('thoughts','String=""'),
-    ('memoryStatus','String=""'),
-    ('authority','String=""'),
-    ('sessionSafety','String=""'),
-    ('supervisor','String=""'),
-]:
-    if f'val {name}:' not in fields:
-        insert += f'val {name}:{typ},'
-if insert:
-    rs=rs[:state.start(1)]+insert+rs[state.start(1):]
+# R19/R20 already add thoughts/memory/authority/session/supervisor fields.
+# Assert them instead of re-adding them. Only runtimeVersion is new in R24.
+for existing in ['val thoughts:String=""','val memoryStatus:String=""','val authority:String=""','val sessionSafety:String=""','val supervisor:String=""']:
+    assert existing in rs,existing+' missing after R19/R20 chain'
+if 'val runtimeVersion:String=""' not in rs:
+    anchor='data class RuntimeState('
+    assert anchor in rs,'RuntimeState missing'
+    rs=rs.replace(anchor,anchor+'val runtimeVersion:String="",',1)
 
 class_anchor='class DjaegerRepository'
 pos=rs.find(class_anchor); assert pos>=0,'repository class missing'
@@ -68,7 +57,6 @@ assert anchor in ms,'thoughtField missing'
 helper_ui='''private fun runtimeField(raw:String,key:String):String = raw.lineSequence().firstOrNull{it.startsWith("$key=")}?.substringAfter('=')?.trim()?.trim('\\'') ?: ""\nprivate fun runtimeIdentity(s:RuntimeState):String {\n    val v=runtimeField(s.runtimeVersion,"MODULE_VERSION")\n    return v.ifBlank{s.moduleVersion.ifBlank{"RUNTIME WAITING"}}\n}\n\n'''
 if 'fun runtimeIdentity' not in ms:
     ms=ms.replace(anchor,helper_ui+anchor,1)
-# Visible dynamic identity in Overview, so CI cannot pass on an unused helper.
 needle_ui='StatusCard(s);ThoughtsCard(s);Row(Modifier.fillMaxWidth()'
 assert needle_ui in ms,'Overview Thoughts anchor missing'
 ms=ms.replace(needle_ui,'StatusCard(s);ThoughtsCard(s);BoxCard("RUNTIME IDENTITY",runtimeIdentity(s),true);Row(Modifier.fillMaxWidth()',1)
@@ -79,6 +67,8 @@ for x in ['runtimeVersion=canonicalRuntimeVersion(mapped.moduleVersion)','though
     assert x in R,x
 for x in ['s["THOUGHTS"]','s["MEMORY"]','s["AUTHORITY"]','s["SESSION_SAFETY"]','s["SUPERVISOR"]']:
     assert x in MP,x
+for name in ['thoughts','memoryStatus','authority','sessionSafety','supervisor']:
+    assert R.count('val '+name+':String=""') == 1,(name+' field count')
 assert 'BoxCard("RUNTIME IDENTITY",runtimeIdentity(s),true)' in M
 assert 'ProcessBuilder("su"' not in MP,'mapper must not spawn a second root process'
 assert 'R87 RUNTIME RECONCILE' not in M
@@ -88,6 +78,7 @@ print('R24_RUNTIME_IDENTITY=CC_SNAPSHOT_VERSION_BOUND')
 print('R24_THOUGHTS_MEMORY=CC_SNAPSHOT_BOUND')
 print('R24_AUTHORITY_SESSION=CC_SNAPSHOT_BOUND')
 print('R24_SUPERVISOR=CC_SNAPSHOT_BOUND')
+print('R24_FIELD_DUPLICATION_GUARD=PASS')
 print('R24_SINGLE_SNAPSHOT_ARCHITECTURE=PRESERVED')
 print('R24_RUNTIME_IDENTITY_VISIBLE=PASS')
 print('R24_NETWORK_NON_INTERFERENCE=PASS')
