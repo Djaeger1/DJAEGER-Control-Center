@@ -32,19 +32,20 @@ jobs:
           R=(root/'DjaegerRepository.kt').read_text(); M=(root/'MainActivity.kt').read_text(); MP=(root/'ConsolidatedRuntimeMapper.kt').read_text(); B=Path('control-center-r2/app/build.gradle.kts').read_text(); A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
           checks={
             'VERSION':'0.12.1-r24' in B,
-            'RUNTIME_VERSION_REAL':'s["RUNTIME_VERSION"]' in MP and 'runtimeVersion=mapped.runtimeVersion' in R,
+            'RUNTIME_IDENTITY_REAL':'runtimeVersion=canonicalRuntimeVersion(mapped.moduleVersion)' in R,
             'THOUGHTS_REAL':'s["THOUGHTS"]' in MP and 'thoughts=mapped.thoughts' in R,
             'MEMORY_REAL':'s["MEMORY"]' in MP and 'memoryStatus=mapped.memoryStatus' in R,
             'AUTHORITY_REAL':'s["AUTHORITY"]' in MP and 'authority=mapped.authority' in R,
             'SESSION_REAL':'s["SESSION_SAFETY"]' in MP and 'sessionSafety=mapped.sessionSafety' in R,
-            'RUNTIME_VISIBLE':'${runtimeIdentity(state)}' in M,
+            'SUPERVISOR_REAL':'s["SUPERVISOR"]' in MP and 'supervisor=mapped.supervisor' in R,
+            'RUNTIME_VISIBLE':'BoxCard("RUNTIME IDENTITY",runtimeIdentity(s),true)' in M,
             'CC_SNAPSHOT_ONLY':'ConsolidatedSnapshotReader(persistent + "/cc_snapshot").read(4000)' in R,
             'MAPPER_NO_ROOT':'ProcessBuilder("su"' not in MP,
             'NO_R87_HEADER':'R87 RUNTIME RECONCILE' not in M,
             'NO_OVERLAY':'SYSTEM_ALERT_WINDOW' not in A,
             'NO_KEYS':not bool(re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+MP+B))
           }
-          forbidden=['/sys/class/net','iptables ','ip6tables ','nft ','tc qdisc','settings put global private_dns']; checks['NETWORK_NON_INTERFERENCE']=not any(x in R for x in forbidden)
+          forbidden=['/sys/class/net','iptables ','ip6tables ','nft ','tc qdisc','settings put global private_dns']; checks['NETWORK_NON_INTERFERENCE']=not any(x in R+MP for x in forbidden)
           for k,v in checks.items(): print(f'{k}={"PASS" if v else "FAIL"}')
           bad=[k for k,v in checks.items() if not v]; assert not bad,','.join(bad)
           PY
