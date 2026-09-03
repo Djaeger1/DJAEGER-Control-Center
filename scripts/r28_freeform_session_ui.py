@@ -13,11 +13,13 @@ b.write_text(bs)
 ms=m.read_text()
 ms=ms.replace('CONTROL CENTER • v0.12.1-r27 • LIVE HARDWARE + GEMINI TRUTH','CONTROL CENTER • v0.12.1-r28 • LIVE HARDWARE',1)
 
-# R28 freeform navigation: the old ScrollableTabRow centers the selected tab,
-# which visibly clips the first/last labels in a narrow MIUI freeform window.
-old_tabs='ScrollableTabRow(selectedTabIndex=tab,containerColor=Bg,edgePadding=0.dp){listOf("Overview","Session","Charts","AI","History","Safety","Logs").forEachIndexed{i,n->Tab(selected=tab==i,onClick={tab=i},text={Text(n)})}}'
-assert old_tabs in ms,'R28 tab anchor missing'
-ms=ms.replace(old_tabs,'ResponsiveTabs(tab){tab=it}',1)
+# R28 freeform navigation: replace the generated tab strip by structure, not by
+# one historical literal. MIUI narrow freeform otherwise centers the selected
+# tab and visibly clips labels on both sides.
+tab_pat=re.compile(r'ScrollableTabRow\(selectedTabIndex=tab.*?\}\};Spacer\(Modifier\.height\(12\.dp\)\)',re.S)
+tm=tab_pat.search(ms)
+assert tm,'R28 tab structure missing'
+ms=ms[:tm.start()]+'ResponsiveTabs(tab){tab=it};Spacer(Modifier.height(12.dp))'+ms[tm.end():]
 
 insert='@Composable fun Overview(s:RuntimeState)'
 assert insert in ms,'R28 Overview anchor missing'
@@ -27,14 +29,9 @@ ms=ms.replace(insert,responsive+insert,1)
 # The legacy PERFORMANCE card is session-CSV-bound and shows all dashes while the
 # live hardware row above is already valid. Replace the duplicate with explicit
 # session truth so an inactive detector never looks like a hardware-read failure.
-perf_pat=re.compile(r'BoxCard\("PERFORMANCE","Little: \.?\$\{positiveLongText\(s\.telemetry\.littleKhz,1000," MHz"\)\}.*?P95/P99: \$\{positiveText\(s\.telemetry\.p95," ms"\)\} / \$\{positiveText\(s\.telemetry\.p99," ms"\)\}"\);')
-match=perf_pat.search(ms)
-if not match:
-    exact='BoxCard("PERFORMANCE","Little: ${positiveLongText(s.telemetry.littleKhz,1000," MHz")}\\nBig: ${positiveLongText(s.telemetry.bigKhz,1000," MHz")}\\nGPU: ${positiveLongText(s.telemetry.gpuHz,1_000_000," MHz")}\\nProfile: ${s.telemetry.profile}\\nP95/P99: ${positiveText(s.telemetry.p95," ms")} / ${positiveText(s.telemetry.p99," ms")}");'
-    assert exact in ms,'R28 PERFORMANCE anchor missing'
-    ms=ms.replace(exact,'SessionPerformanceCard(s);',1)
-else:
-    ms=ms[:match.start()]+'SessionPerformanceCard(s);'+ms[match.end():]
+exact='BoxCard("PERFORMANCE","Little: ${positiveLongText(s.telemetry.littleKhz,1000," MHz")}\\nBig: ${positiveLongText(s.telemetry.bigKhz,1000," MHz")}\\nGPU: ${positiveLongText(s.telemetry.gpuHz,1_000_000," MHz")}\\nProfile: ${s.telemetry.profile}\\nP95/P99: ${positiveText(s.telemetry.p95," ms")} / ${positiveText(s.telemetry.p99," ms")}");'
+assert exact in ms,'R28 PERFORMANCE anchor missing'
+ms=ms.replace(exact,'SessionPerformanceCard(s);',1)
 
 power_old='BoxCard("POWER","${s.telemetry.batteryStatus} • $power\\n$current • $voltage\\nValidity: ${s.telemetry.powerValid} (${s.telemetry.powerReason})");'
 assert power_old in ms,'R28 POWER anchor missing'
