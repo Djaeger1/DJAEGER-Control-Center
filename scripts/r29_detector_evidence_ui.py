@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# R29: expose backend detector evidence so hardware failures are no longer guessed.
 from pathlib import Path
 import re
 root=Path('control-center-r2')
@@ -20,8 +21,6 @@ needle='RuntimeState(\n            runtimeVersion=canonicalRuntimeVersion(mapped
 assert needle in rs,'R24 constructor missing'
 if 'detector=mapped.detector' not in rs:
     rs=rs.replace(needle,'RuntimeState(\n            detector=mapped.detector,\n            runtimeVersion=canonicalRuntimeVersion(mapped.moduleVersion),',1)
-# R94 publishes runtime heartbeat at <=2s while a supported game process exists,
-# but allow bounded dumpsys jitter without falsely erasing an otherwise current session.
 rs=rs.replace('val runtimeFresh=runtimeUpdated>0 && (now-runtimeUpdated) in 0..5','val runtimeFresh=runtimeUpdated>0 && (now-runtimeUpdated) in 0..12',1)
 r.write_text(rs)
 
