@@ -4,24 +4,16 @@ import re
 root=Path('control-center-r2'); b=root/'app/build.gradle.kts'; m=root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'; r=root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt'
 bs=b.read_text(); bs=re.sub(r'versionCode\s*=\s*\d+','versionCode = 12240',bs,count=1); bs=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "0.12.1-r24"',bs,count=1); b.write_text(bs)
 rs=r.read_text()
-# Do not mutate the fragile generated snapshot shell. Add a dedicated canonical
-# root read for runtime_version.env and bind it to RuntimeState after snapshot parse.
 state=re.search(r'data class RuntimeState\((.*?)\)',rs,re.S); assert state,'RuntimeState missing'
 if 'runtimeVersion:String' not in state.group(1): rs=rs[:state.start(1)]+'runtimeVersion:String="",'+rs[state.start(1):]
-# Find repository class body and add a tiny canonical reader using the same root transport.
-class_anchor='class DjaegerRepository'
-pos=rs.find(class_anchor); assert pos>=0,'repository class missing'
-brace=rs.find('{',pos); assert brace>=0,'repository class brace missing'
+class_anchor='class DjaegerRepository'; pos=rs.find(class_anchor); assert pos>=0,'repository class missing'; brace=rs.find('{',pos); assert brace>=0,'repository class brace missing'
 reader='''\n    private suspend fun readRuntimeVersion():String = withContext(Dispatchers.IO) {\n        root("cat /data/adb/djaeger_ai/runtime_version.env 2>/dev/null").out.trim()\n    }\n'''
 if 'fun readRuntimeVersion()' not in rs: rs=rs[:brace+1]+reader+rs[brace+1:]
-# Bind at the public state-return boundary without touching section markers.
-# Generated repository returns RuntimeState(...) in snapshot(); append copy when possible.
-returns=list(re.finditer(r'return\s+(RuntimeState\(.*?\))\s*\n',rs,re.S))
-if returns and '.copy(runtimeVersion=' not in rs:
-    x=returns[-1]; expr=x.group(1); repl='return '+expr+'.copy(runtimeVersion=readRuntimeVersion())\n'; rs=rs[:x.start()]+repl+rs[x.end():]
-else:
-    # Fallback: replace a final RuntimeState constructor expression in snapshot-like code.
-    assert 'runtimeVersion=readRuntimeVersion()' in rs or '.copy(runtimeVersion=' in rs,'RuntimeState return boundary missing'
+# R9's generated snapshot ends in a named-argument RuntimeState constructor. Bind
+# canonical runtime identity directly there instead of relying on a return keyword.
+needle='RuntimeState(\n            root=true,'
+assert needle in rs,'R9 RuntimeState constructor boundary missing'
+rs=rs.replace(needle,'RuntimeState(\n            runtimeVersion=readRuntimeVersion(),\n            root=true,',1)
 r.write_text(rs)
 ms=m.read_text().replace('v0.12.1-r23','v0.12.1-r24').replace('R87 RUNTIME RECONCILE','CANONICAL RUNTIME READER').replace('R87','RUNTIME')
 anchor='private fun thoughtField('; assert anchor in ms,'thoughtField missing'
@@ -29,7 +21,7 @@ helper='''private fun runtimeField(raw:String,key:String):String = raw.lineSeque
 if 'fun runtimeIdentity' not in ms: ms=ms.replace(anchor,helper+anchor,1)
 m.write_text(ms)
 R=r.read_text(); M=m.read_text()
-for x in ['runtime_version.env','runtimeVersion:String','readRuntimeVersion','djaeger_thoughts.env','local_memory_status.env','authority_state.env','session_safety.env']: assert x in R,x
+for x in ['runtime_version.env','runtimeVersion:String','runtimeVersion=readRuntimeVersion()','djaeger_thoughts.env','local_memory_status.env','authority_state.env','session_safety.env']: assert x in R,x
 assert 'R87 RUNTIME RECONCILE' not in M
 forbidden=['/sys/class/net','iptables ','ip6tables ','nft ','tc qdisc','settings put global private_dns']; assert not any(x in R for x in forbidden)
-print('R24_CANONICAL_RUNTIME_VERSION=DEDICATED_ROOT_READ'); print('R24_SNAPSHOT_MARKERS=UNTOUCHED'); print('R24_THOUGHTS_MEMORY_READER=PRESERVED'); print('R24_AUTHORITY_SESSION_READER=PRESERVED'); print('R24_NETWORK_NON_INTERFERENCE=PASS')
+print('R24_CANONICAL_RUNTIME_VERSION=BOUND'); print('R24_R9_STATE_CONSTRUCTOR=PASS'); print('R24_THOUGHTS_MEMORY_READER=PRESERVED'); print('R24_AUTHORITY_SESSION_READER=PRESERVED'); print('R24_NETWORK_NON_INTERFERENCE=PASS')
