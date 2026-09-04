@@ -37,7 +37,8 @@ jobs:
           assert 'BoxCard("THOUGHTS", providerLines+"\\n\\n"+text, true)' in M
           assert 'DJAEGER THOUGHTS' not in M
           assert 'val providerLines="Active now: $activeNow\\nCloud active: $activeCloud\\nStrategy: $strategySource"' in M
-          assert 'standbyActors.add("LOCAL AI")' in M
+          assert 'val localOnline=s.predictorPid.isNotBlank()' in M
+          assert 'if(localOnline) standbyActors.add("LOCAL AI")' in M
           assert 'geminiState=="READY" || geminiState=="ACTIVE"' in M
           assert 'groqState=="READY" || groqState=="ACTIVE"' in M
           assert 'cloudflareState=="READY" || cloudflareState=="ACTIVE"' in M
@@ -61,7 +62,8 @@ jobs:
           assert 'SYSTEM_ALERT_WINDOW' not in A
           assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9._-]{20,}',M+R+B)
           print('R29_THOUGHTS_MINIMAL=PASS')
-          print('R29_ACTIVE_NOW_ALL_STANDBY_ACTORS=PASS')
+          print('R29_ACTIVE_NOW_ALL_ONLINE_STANDBY_ACTORS=PASS')
+          print('R29_LOCAL_AI_REQUIRES_LIVE_PREDICTOR=PASS')
           print('R29_CLOUD_ACTIVE_ALL_ACTIVE_CLOUDS=PASS')
           print('R29_STRATEGY_MODULE_PUBLISHED_AUTHOR=PASS')
           print('R29_MULTI_ACTIVE_CLOUD_DISPLAY=PASS')
