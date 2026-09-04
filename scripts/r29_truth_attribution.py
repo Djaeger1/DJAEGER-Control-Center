@@ -14,20 +14,20 @@ b.write_text(bs)
 ms=m.read_text()
 ms=ms.replace('CONTROL CENTER • v0.12.1-r28 • THREE EQUAL CLOUD PEERS','CONTROL CENTER • v0.12.1-r29 • TRUTH ATTRIBUTION',1).replace('v0.12.1-r28','v0.12.1-r29')
 
-# Keep the Thoughts card intentionally minimal, but every attribution line must
-# be derived from backend-published truth rather than a UI guess.
+# Keep the Thoughts card intentionally minimal, while every attribution line is
+# derived from backend-published truth rather than a UI guess.
 #
-# Active now = every AI actor currently standing by/available. Cloud providers
-# qualify when their published state is READY or ACTIVE. Local AI qualifies only
-# when the backend publishes a Local AI role.
+# Active now = all AI actors that are BOTH online and standing by/usable.
+# Local AI requires a live published predictor PID plus a published Local-AI role.
+# Cloud actors require READY or ACTIVE provider state.
 #
 # Cloud active = every cloud provider whose published state is ACTIVE. Do not
-# collapse three simultaneous ACTIVE states into one display value. ACTIVE_REASONER
-# is used only as a compatibility fallback when no provider exposes ACTIVE state.
+# collapse multiple simultaneously ACTIVE cloud states into one display value.
+# ACTIVE_REASONER is only a compatibility fallback when no provider publishes
+# an ACTIVE state.
 #
-# Strategy = the source attached to StrategyTruth, which is already derived from
-# module-published decision source. Never substitute transport state for strategy
-# authorship.
+# Strategy = module-published strategy/decision source. Transport availability
+# must never be substituted for strategy authorship.
 old='''    val chain=thoughtField(s.providerStatus,"PROVIDER_CHAIN").ifBlank{"GEMINI <-> GROQ <-> CLOUDFLARE => LOCAL_AI"}.replace("<->","⇄").replace("=>","⇒").replace("->","→").replace("LOCAL_AI","LOCAL AI")
     val relation=thoughtField(s.providerStatus,"PROVIDER_RELATION").ifBlank{"PEER_EQUAL"}.replace("PEER_EQUAL","EQUAL")
     val active=thoughtField(s.providerStatus,"ACTIVE_REASONER").ifBlank{src}.replace("LOCAL_AI","LOCAL AI")
@@ -41,8 +41,9 @@ new='''    val geminiState=thoughtField(s.providerStatus,"GEMINI_STATUS").ifBlan
     val localRole=thoughtField(s.providerStatus,"LOCAL_AI_ROLE").uppercase()
     val cloudReasoner=thoughtField(s.providerStatus,"ACTIVE_REASONER").uppercase()
 
+    val localOnline=s.predictorPid.isNotBlank() && s.predictorPid!="0" && localRole.isNotBlank() && localRole!="NONE" && localRole!="UNAVAILABLE"
     val standbyActors=mutableListOf<String>()
-    if(localRole.isNotBlank() && localRole!="NONE" && localRole!="UNAVAILABLE") standbyActors.add("LOCAL AI")
+    if(localOnline) standbyActors.add("LOCAL AI")
     if(geminiState=="READY" || geminiState=="ACTIVE") standbyActors.add("GEMINI")
     if(groqState=="READY" || groqState=="ACTIVE") standbyActors.add("GROQ")
     if(cloudflareState=="READY" || cloudflareState=="ACTIVE") standbyActors.add("CLOUDFLARE")
@@ -78,14 +79,14 @@ new_footer='Cloud transport failures affect only the selected chat peer. Local A
 assert old_footer in ms, 'R29 legacy Gemini-only chat footer missing'
 ms=ms.replace(old_footer,new_footer,1)
 
-# Provider-neutralize the human-view card: this content is DJAEGER-published state, not necessarily Gemini.
 ms=ms.replace('BoxCard("GEMINI INTELLIGENCE HUMAN VIEW",retained,true)','BoxCard("DJAEGER INTELLIGENCE HUMAN VIEW",retained,true)',1)
 
 assert 'CONTROL CENTER • v0.12.1-r29 • TRUTH ATTRIBUTION' in ms
 assert 'BoxCard("THOUGHTS", providerLines+"\\n\\n"+text, true)' in ms
 assert 'DJAEGER THOUGHTS' not in ms
 assert 'val providerLines="Active now: $activeNow\\nCloud active: $activeCloud\\nStrategy: $strategySource"' in ms
-assert 'standbyActors.add("LOCAL AI")' in ms
+assert 'val localOnline=s.predictorPid.isNotBlank()' in ms
+assert 'if(localOnline) standbyActors.add("LOCAL AI")' in ms
 assert 'geminiState=="READY" || geminiState=="ACTIVE"' in ms
 assert 'groqState=="READY" || groqState=="ACTIVE"' in ms
 assert 'cloudflareState=="READY" || cloudflareState=="ACTIVE"' in ms
@@ -102,7 +103,8 @@ assert 'DJAEGER INTELLIGENCE HUMAN VIEW' in ms
 m.write_text(ms)
 
 print('R29_THOUGHTS_TITLE=MINIMAL')
-print('R29_ACTIVE_NOW=ALL_BACKEND_STANDBY_ACTORS')
+print('R29_ACTIVE_NOW=ALL_ONLINE_STANDBY_ACTORS')
+print('R29_LOCAL_AI_ONLINE=LIVE_PREDICTOR_PLUS_ROLE')
 print('R29_CLOUD_ACTIVE=ALL_BACKEND_ACTIVE_CLOUDS')
 print('R29_STRATEGY=MODULE_PUBLISHED_STRATEGY_AUTHOR')
 print('R29_MULTI_ACTIVE_CLOUD_DISPLAY=SUPPORTED')
