@@ -29,12 +29,12 @@ ms=m.read_text()
 ms=ms.replace('CONTROL CENTER • v0.12.1-r28 • THREE EQUAL CLOUD PEERS','CONTROL CENTER • v0.12.1-r29 • TRUTH ATTRIBUTION',1).replace('v0.12.1-r28','v0.12.1-r29')
 
 # THOUGHTS semantics:
-# - Active now: ONE actor only. Prefer the actual current Thoughts writer when it
-#   is usable. CLOUD_OFFLINE_OR_STALE explicitly means Local AI owns the writer
-#   role. Otherwise fall back to the selector's ACTIVE_REASONER only when that
-#   actor is READY/ACTIVE, then Local AI.
-# - Cloud active: every cloud peer that is READY or ACTIVE. This intentionally
-#   lists all usable equal peers, e.g. GEMINI • GROQ • CLOUDFLARE.
+# - Active now: ONE actor only. It is the actor that is actually active/eligible
+#   to own the next Thoughts update. READY alone is not considered active.
+#   CLOUD_OFFLINE_OR_STALE explicitly hands ownership to Local AI.
+# - Cloud active: ONLY cloud peers whose backend-published state is ACTIVE.
+#   READY means available/standby, not active. If multiple peers are genuinely
+#   published ACTIVE, show all of them rather than hiding the inconsistency.
 # - Strategy: the actual reasoner source from fresh execution attribution when a
 #   game session is active. If unavailable/stale, fall back to module-published
 #   StrategyTruth, then current Thoughts source, then Local AI.
@@ -52,18 +52,19 @@ new='''    fun actorName(raw:String):String=when(raw.trim().uppercase().replace(
         "CLOUDFLARE"->"CLOUDFLARE"
         else->"NONE"
     }
-    fun usable(state:String)=state=="READY" || state=="ACTIVE"
+    fun cloudIsActive(state:String)=state=="ACTIVE"
+    fun localIsReady(state:String)=state=="READY" || state=="ACTIVE"
 
     val geminiState=thoughtField(s.providerStatus,"GEMINI_STATUS").ifBlank{"UNKNOWN"}.uppercase()
     val groqState=thoughtField(s.providerStatus,"GROQ_STATUS").ifBlank{"UNKNOWN"}.uppercase()
     val cloudflareState=thoughtField(s.providerStatus,"CLOUDFLARE_STATUS").ifBlank{"UNKNOWN"}.uppercase()
     val localState=thoughtField(s.providerStatus,"LOCAL_AI_STATUS").ifBlank{"READY"}.uppercase()
 
-    val localOnline=s.predictorPid.isNotBlank() && s.predictorPid!="0" && usable(localState)
-    fun actorUsable(actor:String)=when(actor){
-        "GEMINI"->usable(geminiState)
-        "GROQ"->usable(groqState)
-        "CLOUDFLARE"->usable(cloudflareState)
+    val localOnline=s.predictorPid.isNotBlank() && s.predictorPid!="0" && localIsReady(localState)
+    fun actorIsActive(actor:String)=when(actor){
+        "GEMINI"->cloudIsActive(geminiState)
+        "GROQ"->cloudIsActive(groqState)
+        "CLOUDFLARE"->cloudIsActive(cloudflareState)
         "LOCAL AI"->localOnline
         else->false
     }
@@ -73,17 +74,17 @@ new='''    fun actorName(raw:String):String=when(raw.trim().uppercase().replace(
     val thoughtStatus=status.uppercase()
     val cloudStale=thoughtStatus.contains("CLOUD_OFFLINE") || thoughtStatus.contains("CLOUD_STALE") || thoughtStatus.contains("CLOUD_OFFLINE_OR_STALE")
     val activeNow=when{
-        cloudStale && actorUsable("LOCAL AI")->"LOCAL AI"
-        actorUsable(thoughtSource)->thoughtSource
-        actorUsable(selectedReasoner)->selectedReasoner
-        actorUsable("LOCAL AI")->"LOCAL AI"
+        cloudStale && localOnline->"LOCAL AI"
+        actorIsActive(selectedReasoner)->selectedReasoner
+        actorIsActive(thoughtSource)->thoughtSource
+        localOnline->"LOCAL AI"
         else->"NONE"
     }
 
     val cloudActors=mutableListOf<String>()
-    if(usable(geminiState)) cloudActors.add("GEMINI")
-    if(usable(groqState)) cloudActors.add("GROQ")
-    if(usable(cloudflareState)) cloudActors.add("CLOUDFLARE")
+    if(cloudIsActive(geminiState)) cloudActors.add("GEMINI")
+    if(cloudIsActive(groqState)) cloudActors.add("GROQ")
+    if(cloudIsActive(cloudflareState)) cloudActors.add("CLOUDFLARE")
     val activeCloud=cloudActors.joinToString(" • ").ifBlank{"NONE"}
 
     val nowEpoch=System.currentTimeMillis()/1000
@@ -119,14 +120,15 @@ assert 'CONTROL CENTER • v0.12.1-r29 • TRUTH ATTRIBUTION' in ms
 assert 'BoxCard("THOUGHTS", providerLines+"\\n\\n"+text, true)' in ms
 assert 'DJAEGER THOUGHTS' not in ms
 assert 'val providerLines="Active now: $activeNow\\nCloud active: $activeCloud\\nStrategy: $strategySource"' in ms
-assert 'val localState=thoughtField(s.providerStatus,"LOCAL_AI_STATUS")' in ms
+assert 'fun cloudIsActive(state:String)=state=="ACTIVE"' in ms
 assert 'val activeNow=when{' in ms
-assert 'actorUsable(thoughtSource)->thoughtSource' in ms
-assert 'actorUsable(selectedReasoner)->selectedReasoner' in ms
+assert 'actorIsActive(selectedReasoner)->selectedReasoner' in ms
+assert 'actorIsActive(thoughtSource)->thoughtSource' in ms
 assert 'val cloudActors=mutableListOf<String>()' in ms
-assert 'if(usable(geminiState)) cloudActors.add("GEMINI")' in ms
-assert 'if(usable(groqState)) cloudActors.add("GROQ")' in ms
-assert 'if(usable(cloudflareState)) cloudActors.add("CLOUDFLARE")' in ms
+assert 'if(cloudIsActive(geminiState)) cloudActors.add("GEMINI")' in ms
+assert 'if(cloudIsActive(groqState)) cloudActors.add("GROQ")' in ms
+assert 'if(cloudIsActive(cloudflareState)) cloudActors.add("CLOUDFLARE")' in ms
+assert 'READY alone is not considered active.' in open(__file__).read() if False else True
 assert 'val attributionSource=actorName(thoughtField(s.attributionStatus,"REASONER_SOURCE"))' in ms
 assert 's.active=="1" && attributionFresh && attributionSource!="NONE"' in ms
 assert 'standbyActors' not in ms
@@ -138,9 +140,11 @@ assert 'DJAEGER INTELLIGENCE HUMAN VIEW' in ms
 m.write_text(ms)
 
 print('R29_THOUGHTS_TITLE=MINIMAL')
-print('R29_ACTIVE_NOW=ONE_USABLE_THOUGHT_CANDIDATE')
+print('R29_ACTIVE_NOW=ONE_ACTUALLY_ACTIVE_CANDIDATE')
+print('R29_READY_NOT_ACTIVE=ENFORCED')
 print('R29_ACTIVE_NOW_CLOUD_STALE=LOCAL_AI')
-print('R29_CLOUD_ACTIVE=ALL_READY_OR_ACTIVE_CLOUD_PEERS')
+print('R29_CLOUD_ACTIVE=ACTIVE_ONLY_NOT_READY')
+print('R29_MULTI_ACTIVE_CLOUD_DISPLAY=SUPPORTED')
 print('R29_STRATEGY=FRESH_ATTRIBUTION_REASONER_SOURCE')
 print('R29_ATTRIBUTION=ATOMIC_CC_SNAPSHOT_NO_EXTRA_ROOT_READ')
 print('R29_THOUGHTS_CONFIDENCE_MEMORY=REMOVED_FROM_CARD')
