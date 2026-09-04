@@ -34,10 +34,15 @@ jobs:
           A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
           assert '0.12.1-r29' in B
           assert 'TRUTH ATTRIBUTION' in M
-          assert 'Active cloud: $activeCloud' in M
-          assert 'Thought source: $thoughtSource' in M
-          assert 'Strategy source: $strategySource' in M
-          assert 'Active reasoner: $activeReasoner' in M
+          assert 'BoxCard("THOUGHTS • $badge"' in M
+          assert 'DJAEGER THOUGHTS' not in M
+          assert 'Active now: $activeThoughtSource' in M
+          assert 'activeThoughtSource=src.replace("LOCAL_AI","LOCAL AI")' in M
+          assert 'Cloud active: $activeCloud' in M
+          assert 'Route: $chain' in M
+          assert 'Strategy: $strategySource' in M
+          assert 'Active reasoner:' not in M
+          assert 'Thought source:' not in M
           assert 'Transport errors affect Gemini chat only' not in M
           assert 'Cloud transport failures affect only the selected chat peer.' in M
           assert 'DJAEGER INTELLIGENCE HUMAN VIEW' in M
@@ -47,8 +52,9 @@ jobs:
           assert 'djaeger-ai chat-stdin' in R
           assert 'SYSTEM_ALERT_WINDOW' not in A
           assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9._-]{20,}',M+R+B)
-          print('R29_TRUTH_ATTRIBUTION=PASS')
-          print('R29_PROVIDER_NEUTRAL_CHAT_FOOTER=PASS')
+          print('R29_THOUGHTS_TITLE=PASS')
+          print('R29_ACTIVE_NOW_THOUGHT_SOURCE=PASS')
+          print('R29_CLOUD_ACTIVE_SEPARATE=PASS')
           print('R29_THREE_EQUAL_PEERS_PRESERVED=PASS')
           print('R29_LOCAL_AI_FINAL_FALLBACK=PASS')
           PY
