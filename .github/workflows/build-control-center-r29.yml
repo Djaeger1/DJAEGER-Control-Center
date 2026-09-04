@@ -37,17 +37,30 @@ jobs:
           assert 'BoxCard("THOUGHTS", providerLines+"\\n\\n"+text, true)' in M
           assert 'DJAEGER THOUGHTS' not in M
           assert 'val providerLines="Active now: $activeNow\\nCloud active: $activeCloud\\nStrategy: $strategySource"' in M
+
+          # Active now = exactly one usable candidate, never a joined standby list.
+          assert 'val activeNow=when{' in M
+          assert 'cloudStale && actorUsable("LOCAL AI")->"LOCAL AI"' in M
+          assert 'actorUsable(thoughtSource)->thoughtSource' in M
+          assert 'actorUsable(selectedReasoner)->selectedReasoner' in M
+          assert 'standbyActors' not in M
+          assert 'val localState=thoughtField(s.providerStatus,"LOCAL_AI_STATUS")' in M
           assert 'val localOnline=s.predictorPid.isNotBlank()' in M
-          assert 'if(localOnline) standbyActors.add("LOCAL AI")' in M
-          assert 'geminiState=="READY" || geminiState=="ACTIVE"' in M
-          assert 'groqState=="READY" || groqState=="ACTIVE"' in M
-          assert 'cloudflareState=="READY" || cloudflareState=="ACTIVE"' in M
-          assert 'if(geminiState=="ACTIVE") activeCloudActors.add("GEMINI")' in M
-          assert 'if(groqState=="ACTIVE") activeCloudActors.add("GROQ")' in M
-          assert 'if(cloudflareState=="ACTIVE") activeCloudActors.add("CLOUDFLARE")' in M
-          assert 'activeCloudActors.distinct().joinToString(" • ")' in M
-          assert 'val strategyRaw=s.strategy.source.trim()' in M
-          assert '"LOCAL_AI","LOCAL AI","LOCAL_BASELINE","LOCAL BASELINE","LOCAL"->"LOCAL AI"' in M
+
+          # Cloud active = all online/usable equal cloud peers (READY or ACTIVE).
+          assert 'val cloudActors=mutableListOf<String>()' in M
+          assert 'if(usable(geminiState)) cloudActors.add("GEMINI")' in M
+          assert 'if(usable(groqState)) cloudActors.add("GROQ")' in M
+          assert 'if(usable(cloudflareState)) cloudActors.add("CLOUDFLARE")' in M
+          assert 'cloudActors.joinToString(" • ")' in M
+
+          # Strategy authorship = fresh backend attribution, not transport guess.
+          assert 'val attributionStatus:String=""' in R
+          assert 'attributionStatus=mapped.attribution,' in R
+          assert 'val attributionSource=actorName(thoughtField(s.attributionStatus,"REASONER_SOURCE"))' in M
+          assert 'val attributionFresh=attributionAt>0 && (nowEpoch-attributionAt) in 0..1200' in M
+          assert 's.active=="1" && attributionFresh && attributionSource!="NONE"->attributionSource' in M
+
           assert 'Cloud peers: $relation' not in M
           assert 'Route: $chain' not in M
           assert '+text+"\\n\\nConfidence:' not in M
@@ -62,11 +75,11 @@ jobs:
           assert 'SYSTEM_ALERT_WINDOW' not in A
           assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9._-]{20,}',M+R+B)
           print('R29_THOUGHTS_MINIMAL=PASS')
-          print('R29_ACTIVE_NOW_ALL_ONLINE_STANDBY_ACTORS=PASS')
-          print('R29_LOCAL_AI_REQUIRES_LIVE_PREDICTOR=PASS')
-          print('R29_CLOUD_ACTIVE_ALL_ACTIVE_CLOUDS=PASS')
-          print('R29_STRATEGY_MODULE_PUBLISHED_AUTHOR=PASS')
-          print('R29_MULTI_ACTIVE_CLOUD_DISPLAY=PASS')
+          print('R29_ACTIVE_NOW_ONE_USABLE_CANDIDATE=PASS')
+          print('R29_CLOUD_STALE_LOCAL_AI_OWNER=PASS')
+          print('R29_CLOUD_ACTIVE_ALL_READY_OR_ACTIVE=PASS')
+          print('R29_STRATEGY_FRESH_ATTRIBUTION_SOURCE=PASS')
+          print('R29_ATTRIBUTION_ATOMIC_SNAPSHOT=PASS')
           print('R29_THREE_EQUAL_PEER_BACKEND_UNCHANGED=PASS')
           print('R29_LOCAL_AI_FINAL_FALLBACK=PASS')
           PY
