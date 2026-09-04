@@ -14,8 +14,20 @@ b.write_text(bs)
 ms=m.read_text()
 ms=ms.replace('CONTROL CENTER • v0.12.1-r28 • THREE EQUAL CLOUD PEERS','CONTROL CENTER • v0.12.1-r29 • TRUTH ATTRIBUTION',1).replace('v0.12.1-r28','v0.12.1-r29')
 
-# The visible Thoughts writer is authoritative only from backend-published SOURCE.
-# Keep transport state separate and keep this card intentionally minimal.
+# Keep the Thoughts card intentionally minimal, but every attribution line must
+# be derived from backend-published truth rather than a UI guess.
+#
+# Active now = every AI actor currently standing by/available. Cloud providers
+# qualify when their published state is READY or ACTIVE. Local AI qualifies only
+# when the backend publishes a Local AI role.
+#
+# Cloud active = every cloud provider whose published state is ACTIVE. Do not
+# collapse three simultaneous ACTIVE states into one display value. ACTIVE_REASONER
+# is used only as a compatibility fallback when no provider exposes ACTIVE state.
+#
+# Strategy = the source attached to StrategyTruth, which is already derived from
+# module-published decision source. Never substitute transport state for strategy
+# authorship.
 old='''    val chain=thoughtField(s.providerStatus,"PROVIDER_CHAIN").ifBlank{"GEMINI <-> GROQ <-> CLOUDFLARE => LOCAL_AI"}.replace("<->","⇄").replace("=>","⇒").replace("->","→").replace("LOCAL_AI","LOCAL AI")
     val relation=thoughtField(s.providerStatus,"PROVIDER_RELATION").ifBlank{"PEER_EQUAL"}.replace("PEER_EQUAL","EQUAL")
     val active=thoughtField(s.providerStatus,"ACTIVE_REASONER").ifBlank{src}.replace("LOCAL_AI","LOCAL AI")
@@ -23,16 +35,41 @@ old='''    val chain=thoughtField(s.providerStatus,"PROVIDER_CHAIN").ifBlank{"GE
     val groqState=thoughtField(s.providerStatus,"GROQ_STATUS").ifBlank{"UNKNOWN"}
     val cloudflareState=thoughtField(s.providerStatus,"CLOUDFLARE_STATUS").ifBlank{"UNKNOWN"}
     val providerLines="Cloud peers: $relation • ONE ACTIVE\\nProvider selection: $chain\\nActive now: $active\\nGemini: $geminiState • Groq: $groqState • Cloudflare: $cloudflareState"'''
-new='''    val cloudReasoner=thoughtField(s.providerStatus,"ACTIVE_REASONER").ifBlank{"UNKNOWN"}.replace("LOCAL_AI","LOCAL AI")
-    val activeCloud=thoughtField(s.providerStatus,"ACTIVE_CLOUD").ifBlank{if(cloudReasoner=="GEMINI"||cloudReasoner=="GROQ"||cloudReasoner=="CLOUDFLARE")cloudReasoner else "NONE"}
-    val activeThoughtSource=src.replace("LOCAL_AI","LOCAL AI")
-    val strategySource=thoughtField(s.providerStatus,"STRATEGY_SOURCE").ifBlank{"LOCAL_BASELINE"}.replace("LOCAL_AI","LOCAL AI").replace("LOCAL_BASELINE","LOCAL BASELINE")
-    val providerLines="Active now: $activeThoughtSource\\nCloud active: $activeCloud\\nStrategy: $strategySource"'''
+new='''    val geminiState=thoughtField(s.providerStatus,"GEMINI_STATUS").ifBlank{"UNKNOWN"}.uppercase()
+    val groqState=thoughtField(s.providerStatus,"GROQ_STATUS").ifBlank{"UNKNOWN"}.uppercase()
+    val cloudflareState=thoughtField(s.providerStatus,"CLOUDFLARE_STATUS").ifBlank{"UNKNOWN"}.uppercase()
+    val localRole=thoughtField(s.providerStatus,"LOCAL_AI_ROLE").uppercase()
+    val cloudReasoner=thoughtField(s.providerStatus,"ACTIVE_REASONER").uppercase()
+
+    val standbyActors=mutableListOf<String>()
+    if(localRole.isNotBlank() && localRole!="NONE" && localRole!="UNAVAILABLE") standbyActors.add("LOCAL AI")
+    if(geminiState=="READY" || geminiState=="ACTIVE") standbyActors.add("GEMINI")
+    if(groqState=="READY" || groqState=="ACTIVE") standbyActors.add("GROQ")
+    if(cloudflareState=="READY" || cloudflareState=="ACTIVE") standbyActors.add("CLOUDFLARE")
+    val activeNow=standbyActors.distinct().joinToString(" • ").ifBlank{"NONE"}
+
+    val activeCloudActors=mutableListOf<String>()
+    if(geminiState=="ACTIVE") activeCloudActors.add("GEMINI")
+    if(groqState=="ACTIVE") activeCloudActors.add("GROQ")
+    if(cloudflareState=="ACTIVE") activeCloudActors.add("CLOUDFLARE")
+    if(activeCloudActors.isEmpty() && (cloudReasoner=="GEMINI" || cloudReasoner=="GROQ" || cloudReasoner=="CLOUDFLARE")) activeCloudActors.add(cloudReasoner)
+    val activeCloud=activeCloudActors.distinct().joinToString(" • ").ifBlank{"NONE"}
+
+    val strategyRaw=s.strategy.source.trim()
+    val strategySource=when(strategyRaw.uppercase()){
+        "LOCAL_AI","LOCAL AI","LOCAL_BASELINE","LOCAL BASELINE","LOCAL"->"LOCAL AI"
+        "GEMINI"->"GEMINI"
+        "GROQ"->"GROQ"
+        "CLOUDFLARE"->"CLOUDFLARE"
+        "","—","UNAVAILABLE","UNKNOWN","NA"->"UNAVAILABLE"
+        else->strategyRaw.replace("_"," ")
+    }
+    val providerLines="Active now: $activeNow\\nCloud active: $activeCloud\\nStrategy: $strategySource"'''
 assert old in ms, 'R29 R28 provider block missing'
 ms=ms.replace(old,new,1)
 
 old_card='''    BoxCard("DJAEGER THOUGHTS • $badge", providerLines+"\\n\\n"+text+"\\n\\nConfidence: "+(conf.ifBlank{"—"})+"%\\n"+mem, true)'''
-new_card='''    BoxCard("THOUGHTS •", providerLines+"\\n\\n"+text, true)'''
+new_card='''    BoxCard("THOUGHTS", providerLines+"\\n\\n"+text, true)'''
 assert old_card in ms, 'R29 Thoughts card title anchor missing'
 ms=ms.replace(old_card,new_card,1)
 
@@ -45,10 +82,18 @@ ms=ms.replace(old_footer,new_footer,1)
 ms=ms.replace('BoxCard("GEMINI INTELLIGENCE HUMAN VIEW",retained,true)','BoxCard("DJAEGER INTELLIGENCE HUMAN VIEW",retained,true)',1)
 
 assert 'CONTROL CENTER • v0.12.1-r29 • TRUTH ATTRIBUTION' in ms
-assert 'BoxCard("THOUGHTS •", providerLines+"\\n\\n"+text, true)' in ms
+assert 'BoxCard("THOUGHTS", providerLines+"\\n\\n"+text, true)' in ms
 assert 'DJAEGER THOUGHTS' not in ms
-assert 'val providerLines="Active now: $activeThoughtSource\\nCloud active: $activeCloud\\nStrategy: $strategySource"' in ms
-assert 'activeThoughtSource=src.replace("LOCAL_AI","LOCAL AI")' in ms
+assert 'val providerLines="Active now: $activeNow\\nCloud active: $activeCloud\\nStrategy: $strategySource"' in ms
+assert 'standbyActors.add("LOCAL AI")' in ms
+assert 'geminiState=="READY" || geminiState=="ACTIVE"' in ms
+assert 'groqState=="READY" || groqState=="ACTIVE"' in ms
+assert 'cloudflareState=="READY" || cloudflareState=="ACTIVE"' in ms
+assert 'if(geminiState=="ACTIVE") activeCloudActors.add("GEMINI")' in ms
+assert 'if(groqState=="ACTIVE") activeCloudActors.add("GROQ")' in ms
+assert 'if(cloudflareState=="ACTIVE") activeCloudActors.add("CLOUDFLARE")' in ms
+assert 'val strategyRaw=s.strategy.source.trim()' in ms
+assert '"LOCAL_AI","LOCAL AI","LOCAL_BASELINE","LOCAL BASELINE","LOCAL"->"LOCAL AI"' in ms
 assert 'Active reasoner:' not in ms
 assert 'Thought source:' not in ms
 assert old_footer not in ms
@@ -57,8 +102,9 @@ assert 'DJAEGER INTELLIGENCE HUMAN VIEW' in ms
 m.write_text(ms)
 
 print('R29_THOUGHTS_TITLE=MINIMAL')
-print('R29_ACTIVE_NOW=BACKEND_THOUGHT_SOURCE')
-print('R29_CLOUD_ACTIVE=SEPARATE_TRANSPORT_STATE')
-print('R29_STRATEGY=BACKEND_STRATEGY_SOURCE')
+print('R29_ACTIVE_NOW=ALL_BACKEND_STANDBY_ACTORS')
+print('R29_CLOUD_ACTIVE=ALL_BACKEND_ACTIVE_CLOUDS')
+print('R29_STRATEGY=MODULE_PUBLISHED_STRATEGY_AUTHOR')
+print('R29_MULTI_ACTIVE_CLOUD_DISPLAY=SUPPORTED')
 print('R29_THOUGHTS_AUX_LINES=REMOVED')
 print('R29_THOUGHTS_CONFIDENCE_MEMORY=REMOVED_FROM_CARD')
