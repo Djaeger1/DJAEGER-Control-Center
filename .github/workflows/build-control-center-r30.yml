@@ -1,0 +1,103 @@
+name: Build DJAEGER Control Center v0.12.1-r30
+on:
+  push:
+    branches: [codex/v0.12.1-r30-human-strategy]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Generate r30
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r23_groq_source_badge.py r24_groq_key_ui.py r25_thoughts_provider_chain.py r26_provider_chat_ui.py r27_equal_cloud_peers.py r28_badge_prepatch.py r28_cloudflare_peer.py r29_truth_attribution.py r30_human_strategy.py; do python3 scripts/$s; done
+      - name: r30 human strategy and safety gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          B=Path('control-center-r2/app/build.gradle.kts').read_text()
+          A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
+
+          assert 'versionCode = 12300' in B
+          assert 'versionName = "0.12.1-r30"' in B
+          assert 'CONTROL CENTER • v0.12.1-r30 • HUMAN STRATEGY' in M
+
+          # Keep R29 provider truth semantics.
+          assert 'fun cloudIsActive(state:String)=state=="ACTIVE"' in M
+          assert 'val providerLines="Active now: $activeNow\\nCloud active: $activeCloud\\nStrategy: $strategySource"' in M
+          assert 'if(cloudIsActive(geminiState)) cloudActors.add("GEMINI")' in M
+          assert 'if(cloudIsActive(groqState)) cloudActors.add("GROQ")' in M
+          assert 'if(cloudIsActive(cloudflareState)) cloudActors.add("CLOUDFLARE")' in M
+          assert 'val attributionSource=actorName(thoughtField(s.attributionStatus,"REASONER_SOURCE"))' in M
+
+          # Human Indonesian summary + structured strategy.
+          assert 'BAHASA MANUSIA\\n' in M
+          assert 'STRATEGI\\n' in M
+          assert 'Keputusan: $strategyAction' in M
+          assert 'Profil / mode: $strategyProfile / $strategyMode' in M
+          assert 'CPU little: ${s.strategy.cpuLittleMin}-${s.strategy.cpuLittleMax} kHz' in M
+          assert 'CPU big: ${s.strategy.cpuBigMin}-${s.strategy.cpuBigMax} kHz' in M
+          assert 'GPU: ${s.strategy.gpuMin}-${s.strategy.gpuMax} MHz' in M
+          assert 'Prediksi: $predictionText' in M
+          assert 'Risiko: $riskText' in M
+          assert 'Confidence: $confidence%' in M
+          assert 'Review ulang: $review' in M
+          assert 'Validasi Local AI: ${s.strategy.validation.ifBlank{"—"}}' in M
+          assert 'Local AI tetap menjadi validator dan executor-side safety authority.' in M
+          assert 'PREDICTOR POLICY ACTION=' in M
+          assert 'CLOUD_STRATEGY_COMMITTED' in M
+          assert 'HIERARCHY ' in M
+
+          # Do not display raw potentially-English cloud narrative in THOUGHTS.
+          assert 'providerLines+"\\n\\n"+text' not in M
+          assert 'BoxCard("THOUGHTS", providerLines+"\\n\\n"+humanStrategy+"\\n\\n"+technicalStrategy, true)' in M
+
+          # No new root polling / backend mutation from UI feature.
+          assert 'predictive_policy' not in R
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9._-]{20,}',M+R+B)
+
+          print('R30_HUMAN_INDONESIAN=PASS')
+          print('R30_STRUCTURED_STRATEGY=PASS')
+          print('R30_PROVIDER_TRUTH_PRESERVED=PASS')
+          print('R30_NO_RAW_ENGLISH_THOUGHT=PASS')
+          print('R30_NO_EXTRA_ROOT_POLL=PASS')
+          print('R30_LOCAL_VALIDATOR_VISIBLE=PASS')
+          PY
+      - name: Test and build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign verify
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-control-center-r30
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r30.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"; U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          "$BT/zipalign" -p -f 4 "$U" output/aligned.apk
+          "$BT/apksigner" sign --ks signing/r30.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r30.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r30.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r30.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r30.apk > output/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r30-HUMAN-STRATEGY
+          path: output/*
+          if-no-files-found: error
