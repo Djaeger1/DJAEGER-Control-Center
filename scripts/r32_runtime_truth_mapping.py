@@ -66,23 +66,24 @@ if 'val brainTruth = AtomicSnapshot.keyValues(mapped.brain)' not in rs:
     helper='''        val brainTruth = AtomicSnapshot.keyValues(mapped.brain)\n        val attributionTruth = AtomicSnapshot.keyValues(mapped.attribution)\n        fun published(vararg values:String?):String = values.firstOrNull { v ->\n            val x=v?.trim().orEmpty()\n            x.isNotBlank() && x!="—" && !x.equals("UNAVAILABLE",true)\n        }?.trim() ?: "—"\n\n'''
     rs=rs.replace(strategy_anchor,helper+strategy_anchor,1)
 
-old='source=rv("DECISION_SOURCE","decision_source","SOURCE")'
+# R15 rewrote StrategyTruth, so bind against the R15 final anchors.
+old='source=rv("DECISION_SOURCE","decision_source","SOURCE").let{if(it=="—") rv("SOURCE") else it}'
 new='source=published(attributionTruth["REASONER_SOURCE"],brainTruth["SOURCE"],rv("DECISION_SOURCE","decision_source","SOURCE"))'
 assert old in rs or new in rs, 'R32 decision source StrategyTruth anchor missing'
 rs=rs.replace(old,new,1)
 
-old='learningSamples=rv("LEARNING_SAMPLES")'
-new='learningSamples=published(brainTruth["LEARNED_SAMPLES"],rv("LEARNING_SAMPLES"))'
+old='learningSamples=rv("LEARNING_SAMPLES","SAMPLES")'
+new='learningSamples=published(brainTruth["LEARNED_SAMPLES"],rv("LEARNING_SAMPLES","SAMPLES"))'
 assert old in rs or new in rs, 'R32 learning samples anchor missing'
 rs=rs.replace(old,new,1)
 
-old='learningConfidence=rv("LEARNING_CONFIDENCE")'
-new='learningConfidence=published(brainTruth["LEARNED_CONF"],rv("LEARNING_CONFIDENCE"))'
+old='learningConfidence=rv("LEARNING_CONFIDENCE","CONFIDENCE")'
+new='learningConfidence=published(brainTruth["LEARNED_CONF"],rv("LEARNING_CONFIDENCE","CONFIDENCE"))'
 assert old in rs or new in rs, 'R32 learning confidence anchor missing'
 rs=rs.replace(old,new,1)
 
-old='learningPromotion=rv("LEARNING_PROMOTION","LEARNING_STATUS")'
-new='learningPromotion=published(brainTruth["LEARNING_PROMOTION"],rv("LEARNING_PROMOTION","LEARNING_STATUS"))'
+old='learningPromotion=rv("LEARNED_STATE","LEARNING_STATUS")'
+new='learningPromotion=published(brainTruth["LEARNING_PROMOTION"],rv("LEARNED_STATE","LEARNING_STATUS"))'
 assert old in rs or new in rs, 'R32 learning promotion anchor missing'
 rs=rs.replace(old,new,1)
 
