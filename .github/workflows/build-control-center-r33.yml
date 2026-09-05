@@ -23,7 +23,7 @@ jobs:
           PY
           python3 /tmp/r7.py
           for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r23_groq_source_badge.py r24_groq_key_ui.py r25_thoughts_provider_chain.py r26_provider_chat_ui.py r27_equal_cloud_peers.py r28_badge_prepatch.py r28_cloudflare_peer.py r29_truth_attribution.py r30_human_strategy.py r31_dynamic_cloud_reasoning.py r32_runtime_truth_mapping.py r33_cloudflare_three_slots.py; do python3 scripts/$s; done
-      - name: r33 Cloudflare three-slot gates
+      - name: r33 Cloudflare three-slot automatic gates
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -35,15 +35,17 @@ jobs:
           A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
           assert 'versionCode = 12330' in B
           assert 'versionName = "0.12.1-r33"' in B
-          assert 'CONTROL CENTER • v0.12.1-r33 • CLOUDFLARE 3 SLOTS' in M
-          # Three slots, manual selection, secrets only through stdin.
-          for x in ['Text("SLOT 1")','Text("SLOT 2")','Text("SLOT 3")','Text("SAVE SLOT")','Text("USE SLOT")','Text("REMOVE SLOT")']:
+          assert 'CONTROL CENTER • v0.12.1-r33 • CLOUDFLARE 3 AUTO SLOTS' in M
+          # Three editable slots; active credential selection belongs to backend automation.
+          for x in ['Text("SLOT 1")','Text("SLOT 2")','Text("SLOT 3")','Text("SAVE SLOT")','Text("REMOVE SLOT")','sticky healthy → failover 401/403/429']:
               assert x in M, x
-          for x in ['cloudflare-credentials-vault-status','cloudflare-credentials-slot-stdin $slot','cloudflare-credentials-select $slot','cloudflare-credentials-remove $slot']:
+          assert 'Text("USE SLOT")' not in M
+          assert 'CLOUDFLARE_SELECT' not in M
+          assert 'selectCloudflareCredentialsSlot' not in R
+          for x in ['cloudflare-credentials-vault-status','cloudflare-credentials-slot-stdin $slot','cloudflare-credentials-remove $slot']:
               assert x in R, x
           assert 'suStdin("djaeger-ai cloudflare-credentials-slot-stdin $slot",a+"\\n"+t)' in R
           assert 'saveCloudflareCredentialsSlot(cloudflareSlot,cloudflareAccountInput,cloudflareTokenInput)' in M
-          assert 'selectCloudflareCredentialsSlot(cloudflareSlot)' in M
           assert 'removeCloudflareCredentialsSlot(cloudflareSlot)' in M
           # Preserve R31 dynamic narrative and R32 truth mapping.
           assert 'val publishedThoughtText=thoughtField(s.thoughts,"TEXT").trim()' in M
@@ -65,8 +67,8 @@ jobs:
               assert forbidden not in ss, forbidden
           assert 'SYSTEM_ALERT_WINDOW' not in A
           assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9._-]{20,}',M+R+B+C)
-          print('R33_CLOUDFLARE_THREE_SLOTS=PASS')
-          print('R33_MANUAL_SELECTION_ONLY=PASS')
+          print('R33_CLOUDFLARE_THREE_AUTO_SLOTS=PASS')
+          print('R33_UI_EDIT_ONLY_NO_MANUAL_USE_SLOT=PASS')
           print('R33_SECRET_STDIN_ONLY=PASS')
           print('R33_R31_DYNAMIC_REASONING_PRESERVED=PASS')
           print('R33_R32_TRUTH_MAPPING_PRESERVED=PASS')
@@ -92,6 +94,6 @@ jobs:
           sha256sum output/DJAEGER-Control-Center-v0.12.1-r33.apk > output/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-Control-Center-v0.12.1-r33-CLOUDFLARE-THREE-SLOTS
+          name: DJAEGER-Control-Center-v0.12.1-r33-CLOUDFLARE-THREE-AUTO-SLOTS
           path: output/*
           if-no-files-found: error
