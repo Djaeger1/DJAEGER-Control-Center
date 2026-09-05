@@ -1,0 +1,97 @@
+name: Build DJAEGER Control Center v0.12.1-r33
+on:
+  push:
+    branches: [codex/v0.12.1-r33-cloudflare-three-slots]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Generate r33
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r23_groq_source_badge.py r24_groq_key_ui.py r25_thoughts_provider_chain.py r26_provider_chat_ui.py r27_equal_cloud_peers.py r28_badge_prepatch.py r28_cloudflare_peer.py r29_truth_attribution.py r30_human_strategy.py r31_dynamic_cloud_reasoning.py r32_runtime_truth_mapping.py r33_cloudflare_three_slots.py; do python3 scripts/$s; done
+      - name: r33 Cloudflare three-slot gates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          C=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
+          B=Path('control-center-r2/app/build.gradle.kts').read_text()
+          A=Path('control-center-r2/app/src/main/AndroidManifest.xml').read_text()
+          assert 'versionCode = 12330' in B
+          assert 'versionName = "0.12.1-r33"' in B
+          assert 'CONTROL CENTER • v0.12.1-r33 • CLOUDFLARE 3 SLOTS' in M
+          # Three slots, manual selection, secrets only through stdin.
+          for x in ['Text("SLOT 1")','Text("SLOT 2")','Text("SLOT 3")','Text("SAVE SLOT")','Text("USE SLOT")','Text("REMOVE SLOT")']:
+              assert x in M, x
+          for x in ['cloudflare-credentials-vault-status','cloudflare-credentials-slot-stdin $slot','cloudflare-credentials-select $slot','cloudflare-credentials-remove $slot']:
+              assert x in R, x
+          assert 'suStdin("djaeger-ai cloudflare-credentials-slot-stdin $slot",a+"\\n"+t)' in R
+          assert 'saveCloudflareCredentialsSlot(cloudflareSlot,cloudflareAccountInput,cloudflareTokenInput)' in M
+          assert 'selectCloudflareCredentialsSlot(cloudflareSlot)' in M
+          assert 'removeCloudflareCredentialsSlot(cloudflareSlot)' in M
+          # Preserve R31 dynamic narrative and R32 truth mapping.
+          assert 'val publishedThoughtText=thoughtField(s.thoughts,"TEXT").trim()' in M
+          assert 'cloudNarrativeFresh->"PEMIKIRAN $thoughtSource\\n$publishedThoughtText"' in M
+          assert 'Decision source: ${x.source}' in M
+          assert 'Learning confidence: $lc' in M
+          for x in ['authority = s["AUTHORITY"].orEmpty(),','sessionSafety = s["SESSION_SAFETY"].orEmpty(),','supervisor = s["SUPERVISOR"].orEmpty(),']:
+              assert x in C, x
+          assert 'BoxCard("KERNEL AUTHORITY",s.authority.ifBlank{"UNAVAILABLE — authority state not published."},true)' in M
+          assert 'BoxCard("SESSION SAFETY",(s.sessionSafety+"\\n"+s.supervisor).trim().ifBlank{"UNAVAILABLE — session safety state not published."},true)' in M
+          # Provider equality / Local AI authority unchanged.
+          assert 'fun cloudIsActive(state:String)=state=="ACTIVE"' in M
+          assert 'val providerLines="Active now: $activeNow\\nCloud active: $activeCloud\\nStrategy: $strategySource"' in M
+          assert 'Validasi Local AI: ${s.strategy.validation.ifBlank{"—"}}' in M
+          # No new recurring root read or credential leakage.
+          ss=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode')]
+          assert 'ConsolidatedSnapshotReader' in ss
+          for forbidden in ['/sys/','cloudflare_2.conf','cloudflare_3.conf','cloudflare_active_slot']:
+              assert forbidden not in ss, forbidden
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9._-]{20,}',M+R+B+C)
+          print('R33_CLOUDFLARE_THREE_SLOTS=PASS')
+          print('R33_MANUAL_SELECTION_ONLY=PASS')
+          print('R33_SECRET_STDIN_ONLY=PASS')
+          print('R33_R31_DYNAMIC_REASONING_PRESERVED=PASS')
+          print('R33_R32_TRUTH_MAPPING_PRESERVED=PASS')
+          print('R33_PROVIDER_EQUALITY_PRESERVED=PASS')
+          print('R33_SINGLE_ATOMIC_ROOT_READ=PASS')
+          PY
+      - name: Test and build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign verify
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-control-center-r33
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r33.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center, O=DJAEGER, C=ID'
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"; U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          "$BT/zipalign" -p -f 4 "$U" output/aligned.apk
+          "$BT/apksigner" sign --ks signing/r33.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r33.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r33.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r33.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r33.apk > output/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r33-CLOUDFLARE-THREE-SLOTS
+          path: output/*
+          if-no-files-found: error
