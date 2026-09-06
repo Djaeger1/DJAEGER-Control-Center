@@ -47,7 +47,10 @@ jobs:
               'Cloudflare raw $rawCloudConfidence% • tidak dipakai untuk eksekusi',
               'LOCAL AI PROFILE / tanpa override Cloudflare',
           ]: assert x in M,x
-          assert 'val cloudStrategyEventsCurrent=s.active=="1" && !cloudAdvisory && !effectiveLocal' in M
+          # R36 early log gate remains declaration-order safe; R37 final render is
+          # governed by explicit FIX5 execution_eligible/execution_owner truth.
+          assert 'val cloudStrategyEventsCurrent=s.active=="1" && strategySource!="LOCAL AI"' in M
+          assert 'cloudNarrativeFresh && (cloudAdvisory||effectiveLocal)' in M
           for x in ['Text("SLOT 1")','Text("SLOT 2")','Text("SLOT 3")','sticky healthy → failover 401/403/429']:
               assert x in M,x
           ss=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode')]
@@ -59,6 +62,7 @@ jobs:
           print('R37_EFFECTIVE_STRATEGY_TRUTH=PASS')
           print('R37_PROPOSAL_EXECUTION_SEPARATION=PASS')
           print('R37_NONEXECUTED_CLOUDFLARE_ADVISORY=PASS')
+          print('R37_KOTLIN_DECLARATION_ORDER=PASS')
           print('R37_R36_R34_R33_CONTRACTS_PRESERVED=PASS')
           PY
       - name: Test and build
