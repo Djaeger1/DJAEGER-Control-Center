@@ -63,14 +63,11 @@ ms=ms.replace('''    val operationalConfidence=if(strategySource=="CLOUDFLARE"&&
     val rawCloudConfidence=if(proposalEnvelopeCurrent) thoughtField(s.envelope,"model_confidence_raw") else ""
 ''',1)
 
-# R36 source-bound log events now obey backend execution eligibility, not a
-# guessed text label such as exactly "LOCAL AI".
-old3='''    val cloudStrategyEventsCurrent=s.active=="1" && strategySource!="LOCAL AI"
-'''
-new3='''    val cloudStrategyEventsCurrent=s.active=="1" && !cloudAdvisory && !effectiveLocal
-'''
-assert old3 in ms, 'R37 R36 cloud event gate missing'
-ms=ms.replace(old3,new3,1)
+# Keep R36's early event gate unchanged. It is declared before envelope truth is
+# available, so referencing cloudAdvisory/effectiveLocal here would be a forward
+# reference in Kotlin. The final rendered truth below is bound to FIX5 explicit
+# execution fields and therefore cannot present a repaired proposal as execution.
+assert 'val cloudStrategyEventsCurrent=s.active=="1" && strategySource!="LOCAL AI"' in ms
 
 old4='''        cloudNarrativeFresh && strategySource=="LOCAL AI"->"PEMIKIRAN $thoughtSource (ADVISORY / TIDAK DIEKSEKUSI)\\n$publishedThoughtText"
 '''
@@ -154,7 +151,6 @@ for required in [
     'LOCAL AI PROFILE / tanpa override Cloudflare',
     'providerLinesEffective+"\\n\\n"+humanStrategy',
 ]: assert required in ms, required
-# Preserve three-slot UX and no extra recurring root read.
 for required in ['Text("SLOT 1")','Text("SLOT 2")','Text("SLOT 3")','sticky healthy → failover 401/403/429']:
     assert required in ms, required
 m.write_text(ms)
