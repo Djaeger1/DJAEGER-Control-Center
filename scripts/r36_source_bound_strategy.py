@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# R36 source-bound strategy truth; second commit intentionally triggers the newly added workflow.
 from pathlib import Path
 import re
 
