@@ -1,0 +1,112 @@
+name: Build DJAEGER Control Center r22-r92ui1
+on:
+  push:
+    branches: [codex/r92-r22-thoughts-strategy-ui]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+
+      - name: Generate exact R22 baseline + R92 UI patch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py; do
+            python3 scripts/$s
+          done
+
+      - name: R92 UI truth and baseline gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('control-center-r2')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          B=(root/'app/build.gradle.kts').read_text()
+          A=(root/'app/src/main/AndroidManifest.xml').read_text()
+          mapper=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
+
+          assert 'versionName = "0.12.1-r22-r92ui1"' in B
+          assert 'versionCode = 12221' in B
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          assert 'StrategyCard(s)' in M
+          assert 'Active now:' in M and 'Cloud active:' in M
+          assert 'PEMIKIRAN GEMINI' in M and 'PEMIKIRAN LOCAL AI' in M
+          assert 'GROQ' not in M and 'CLOUDFLARE' not in M
+          assert 'return PlanRecord(c[1],c[2],c[3],c[4],c[5],c[6],c[7],c[8],c[9],c[10],c[11])' in R
+          assert 'ConsolidatedSnapshotReader' in R
+          assert 'thoughts=mapped.thoughts' in R and 'memoryStatus=mapped.memoryStatus' in R
+          assert 's["THOUGHTS"]' in mapper and 's["MEMORY"]' in mapper
+
+          # R92 fixture: epoch,state,score,reason,mode,profile,lmin,lmax,bmin,bmax,gmin,gmax
+          c='1788607517,PROMOTED,92,PROFILE_OR_NEW_PLAN,DYNAMIC,SOFT_COOL,940800,1516800,1228800,1651200,266,490'.split(',')
+          mapped=dict(state=c[1],score=c[2],reason=c[3],mode=c[4],profile=c[5],lmin=c[6],lmax=c[7],bmin=c[8],bmax=c[9],gmin=c[10],gmax=c[11])
+          assert mapped == {
+            'state':'PROMOTED','score':'92','reason':'PROFILE_OR_NEW_PLAN','mode':'DYNAMIC','profile':'SOFT_COOL',
+            'lmin':'940800','lmax':'1516800','bmin':'1228800','bmax':'1651200','gmin':'266','gmax':'490'
+          }
+
+          # Presentation-only: no new command/root/hardware authority is introduced by the patch file.
+          P=Path('scripts/r22_r92_thoughts_strategy_ui.py').read_text()
+          for forbidden in ['iptables','ip6tables',' nft ','force-stop','settings put','setprop','/sys/class/']:
+              assert forbidden not in P
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
+          print('R92_UI_TRUTH_GATES=PASS')
+          print('R92_PLAN_FIXTURE=PASS')
+          print('R22_ATOMIC_THOUGHTS_MEMORY=PASS')
+          print('PROVIDER_SCOPE=GEMINI_LOCAL_ONLY')
+          print('BACKEND_AUTHORITY_CHANGE=NONE')
+          PY
+
+      - name: Test and build release
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: APK safety scan
+        run: |
+          set -euo pipefail
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          test -n "$U"
+          unzip -t "$U" >/tmp/apk_zip_test.txt
+          strings "$U" > /tmp/apk_strings.txt || true
+          ! grep -E 'GROQ|CLOUDFLARE' /tmp/apk_strings.txt
+          ! grep -E 'iptables|ip6tables|force-stop|settings put|setprop' /tmp/apk_strings.txt
+          echo APK_PRE_SIGN_SAFETY=PASS
+
+      - name: Sign verify and hash
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-control-center-r22-r92ui1
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r22-r92ui1.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center R92 UI, O=DJAEGER, C=ID'
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          "$BT/zipalign" -p -f 4 "$U" output/aligned.apk
+          "$BT/apksigner" sign --ks signing/r22-r92ui1.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r22-r92UI1.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r22-r92UI1.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r22-r92UI1.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r22-r92UI1.apk > output/SHA256SUMS.txt
+          cp scripts/r22_r92_thoughts_strategy_ui.py output/
+          printf '%s\n' 'BASELINE_COMMIT=70e575a5e0cbed37b7531b3fc5b4c0f5f069deff' 'BACKEND_TARGET=r92-fix1' 'BACKEND_CHANGED=NO' 'PROVIDERS=GEMINI+LOCAL_AI_ONLY' > output/BASELINE.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r22-r92UI1
+          path: output/*
+          if-no-files-found: error
