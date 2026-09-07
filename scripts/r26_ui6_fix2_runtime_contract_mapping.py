@@ -33,9 +33,15 @@ rs=r.read_text()
 for required in ['val authority:String=""','val sessionSafety:String=""','val supervisor:String=""']:
     assert required in rs, 'UI6_FIX2_FAIL=runtime-state-'+required
 if 'authority=mapped.authority' not in rs:
-    anchor='            memoryStatus=mapped.memoryStatus,\n'
-    assert anchor in rs, 'UI6_FIX2_FAIL=repository-map-anchor'
-    rs=rs.replace(anchor,anchor+'            authority=mapped.authority,\n            sessionSafety=mapped.sessionSafety,\n            supervisor=mapped.supervisor,\n',1)
+    # r22 UI2 placed strategyResult on the same line as memoryStatus. Insert after
+    # the complete memory/strategy expression rather than assuming old formatting.
+    anchor='memoryStatus=mapped.memoryStatus,strategyResult=mapped.strategyResult,'
+    if anchor in rs:
+        rs=rs.replace(anchor,anchor+'authority=mapped.authority,sessionSafety=mapped.sessionSafety,supervisor=mapped.supervisor,',1)
+    else:
+        anchor='memoryStatus=mapped.memoryStatus,'
+        assert anchor in rs, 'UI6_FIX2_FAIL=repository-map-anchor'
+        rs=rs.replace(anchor,anchor+'authority=mapped.authority,sessionSafety=mapped.sessionSafety,supervisor=mapped.supervisor,',1)
 
 # Preserve the single atomic recurring read. Do not re-introduce direct root/file reads.
 start=rs.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){')
