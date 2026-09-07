@@ -65,6 +65,11 @@ private fun currentRange(raw:String,unit:String):String{
     return if(v.isBlank()||v.contains("NA")) "—" else "$v $unit"
 }
 
+private fun planRange(a:String,b:String,unit:String):String{
+    val x=a.trim(); val y=b.trim()
+    return if(x.isBlank()||y.isBlank()||x.equals("NA",true)||y.equals("NA",true)) "—" else "$x-$y $unit"
+}
+
 @Composable fun StrategyCard(s:RuntimeState){
     val src=envField(s.brain,"SOURCE")
     val cloudAction=envField(s.brain,"MODE")
