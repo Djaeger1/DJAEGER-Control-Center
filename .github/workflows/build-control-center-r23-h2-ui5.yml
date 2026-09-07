@@ -1,4 +1,4 @@
-name: Build DJAEGER Control Center r24-H2-RT3-UI6
+name: Build DJAEGER Control Center r25-RT4-UI7
 on:
   push:
     branches: [codex/r92-h2-ui3-hermes-card]
@@ -13,7 +13,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
 
-      - name: Generate exact R22 + R92 UI2 + Hermes H2 RT3 UI6
+      - name: Generate exact R22 + R92 UI2 + Hermes H2 RT4 UI7
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -23,11 +23,11 @@ jobs:
           Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
           PY
           python3 /tmp/r7.py
-          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py; do
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_rt4_ui7_gemini_first_status.py; do
             python3 scripts/$s
           done
 
-      - name: H2 RT3 UI6 source gates
+      - name: RT4 UI7 source gates
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -38,25 +38,33 @@ jobs:
           R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
           B=(root/'app/build.gradle.kts').read_text()
           A=(root/'app/src/main/AndroidManifest.xml').read_text()
-          assert 'versionName = "0.12.1-r22-r92ui6"' in B
-          assert 'versionCode = 12226' in B
+          assert 'versionName = "0.12.1-r22-r92ui7"' in B
+          assert 'versionCode = 12227' in B
           assert '@Composable fun HermesCard(s:RuntimeState)' in M
           assert 'HERMES H2 • LOCAL BRAIN' in M
           assert 'StatusCard(s);ThoughtsCard(s);HermesCard(s);StrategyCard(s);OutcomeLearningCard(s);' in M
           assert M.count('OutcomeLearningCard(s);') == 1
           assert 'BoxCard("THOUGHT",body,true)' in M
-          assert 'CONTROL CENTER • v0.12.1-r22-r92ui6 • HERMES H2 RT3 SYNC' in M
-          for required in ['CURRENT_BRAIN','FINAL_SOURCE','FINAL_ADJUSTMENT','CLOUD_PLAN_STATE','HERMES_PROPOSAL_STATE','HERMES_EVIDENCE_SCOPE','THOUGHT_FRESH','LAST GEMINI THOUGHT']:
+          assert 'CONTROL CENTER • v0.12.1-r22-r92ui7 • GEMINI FIRST RT4 SYNC' in M
+          for required in ['CLOUD_CONNECTION_STATUS','CLOUD_PROVIDER','CLOUD_MODEL','CLOUD_IN_CONTROL','CLOUD_PLAN_STATE','CLOUD_PLAN_REASON','CLOUD_ACCOUNTABILITY_STATUS','CURRENT_BRAIN','FINAL_SOURCE','HERMES_PROPOSAL_STATE','THOUGHT_FRESH']:
               assert required in M, required
+          assert 'Gemini: $geminiState' in M
+          assert 'Gemini: $cloudConnection' in M
+          assert 'Cloud active:' not in M
+          assert 'if(currentBrain=="GEMINI") "GEMINI" else "NONE"' not in M
+          thought=M[M.index('@Composable fun ThoughtsCard'):M.index('private fun currentRange',M.index('@Composable fun ThoughtsCard'))]
+          assert thought.index('Gemini: $geminiState') < thought.index('Active brain:')
+          assert 'thoughtSrc=="GEMINI" && thoughtFresh && cloudConnection=="ONLINE"' in thought
           assert 'ConsolidatedSnapshotReader' in R
           assert 'SYSTEM_ALERT_WINDOW' not in A
-          for forbidden in ['iptables','ip6tables',' nft ','force-stop','settings put','setprop','/sys/class/']:
+          for forbidden in ['iptables','ip6tables',' nft ','force-stop','settings put','setprop','/sys/class/','ProcessBuilder']:
               assert forbidden not in M
           assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
-          print('H2_RT3_UI6_SOURCE_GATES=PASS')
+          print('RT4_UI7_SOURCE_GATES=PASS')
           print('OVERVIEW_ORDER=THOUGHT>HERMES>STRATEGI>OUTCOME')
-          print('SEMANTIC_SPLIT=BRAIN+CLOUD_PROPOSAL+HERMES_PROPOSAL+FINAL')
-          print('THOUGHT_FRESHNESS=MODULE_PUBLISHED')
+          print('GEMINI_FIRST_DISPLAY=PASS')
+          print('CLOUD_TRANSPORT_SEPARATE_FROM_BRAIN=PASS')
+          print('CLOUD_ACTIVE_NONE_REMOVED=PASS')
           PY
 
       - name: Test and build release
@@ -79,20 +87,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output signing
-          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-control-center-r92ui6
-          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r92ui6.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center H2 RT3 UI6, O=DJAEGER, C=ID'
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-control-center-r92ui7
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r92ui7.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center RT4 UI7, O=DJAEGER, C=ID'
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
-          cp "$U" output/DJAEGER-Control-Center-v0.12.1-r22-r92UI6-HermesH2-UNSIGNED.apk
+          cp "$U" output/DJAEGER-Control-Center-v0.12.1-r22-r92UI7-RT4-UNSIGNED.apk
           "$BT/zipalign" -p -f 4 "$U" output/aligned.apk
-          "$BT/apksigner" sign --ks signing/r92ui6.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r22-r92UI6-HermesH2.apk output/aligned.apk
-          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r22-r92UI6-HermesH2.apk | tee output/APKSIGNER_VERIFY.txt
-          unzip -t output/DJAEGER-Control-Center-v0.12.1-r22-r92UI6-HermesH2.apk > output/APK_ZIP_TEST.txt
+          "$BT/apksigner" sign --ks signing/r92ui7.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r22-r92UI7-RT4.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r22-r92UI7-RT4.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r22-r92UI7-RT4.apk > output/APK_ZIP_TEST.txt
           sha256sum output/*.apk > output/SHA256SUMS.txt
-          printf '%s\n' 'SOURCE_BASELINE=r92UI2' 'HERMES_BACKEND=H2_RT3' 'UI_CONTRACT=HERMES_OVERVIEW_V4' 'OVERVIEW_ORDER=THOUGHT>HERMES>STRATEGI>OUTCOME' 'SEMANTIC_SPLIT=BRAIN+CLOUD_PROPOSAL+HERMES_PROPOSAL+FINAL' 'HERMES_AUTHORITY=DISPLAY_ONLY' > output/BUILD_CONTRACT.txt
+          printf '%s\n' 'SOURCE_BASELINE=r92UI2' 'HERMES_BACKEND=H2_RT4' 'UI_CONTRACT=GEMINI_FIRST_CLOUD_TRUTH_V1' 'OVERVIEW_ORDER=THOUGHT>HERMES>STRATEGI>OUTCOME' 'GEMINI_STATUS_SOURCE=CLOUD_CONNECTION_STATUS' 'CURRENT_BRAIN_SEPARATE=YES' 'CLOUD_ACTIVE_NONE_REMOVED=YES' 'HERMES_AUTHORITY=DISPLAY_ONLY' > output/BUILD_CONTRACT.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-Control-Center-v0.12.1-r22-r92UI6-HermesH2-RT3
+          name: DJAEGER-Control-Center-v0.12.1-r22-r92UI7-RT4-GeminiFirst
           path: output/*
           if-no-files-found: error
