@@ -50,7 +50,7 @@ jobs:
           assert 'ConsolidatedSnapshotReader' in R
           assert 'SYSTEM_ALERT_WINDOW' not in A
           for forbidden in ['iptables','ip6tables',' nft ','force-stop','settings put','setprop','/sys/class/']:
-              assert forbidden not in Path('scripts/r23_h2_ui5_hermes_card.py').read_text()
+              assert forbidden not in M
           assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
           print('H2_UI5_SOURCE_GATES=PASS')
           print('OVERVIEW_ORDER=THOUGHT>HERMES>STRATEGI>OUTCOME')
