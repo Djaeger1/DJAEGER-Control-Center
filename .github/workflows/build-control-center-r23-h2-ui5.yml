@@ -1,0 +1,96 @@
+name: Build DJAEGER Control Center r23-H2-UI5
+on:
+  push:
+    branches: [codex/r92-h2-ui3-hermes-card]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+
+      - name: Generate exact R22 + R92 UI2 + Hermes H2 UI5
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py; do
+            python3 scripts/$s
+          done
+
+      - name: H2 UI5 source gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('control-center-r2')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          B=(root/'app/build.gradle.kts').read_text()
+          A=(root/'app/src/main/AndroidManifest.xml').read_text()
+          assert 'versionName = "0.12.1-r22-r92ui5"' in B
+          assert 'versionCode = 12225' in B
+          assert '@Composable fun HermesCard(s:RuntimeState)' in M
+          assert 'HERMES H2 • LOCAL BRAIN' in M
+          assert 'HERMES_STATE' in M and 'HERMES_VARIABLE_SUCCESS_RATE' in M
+          assert 'StatusCard(s);ThoughtsCard(s);HermesCard(s);StrategyCard(s);OutcomeLearningCard(s);' in M
+          assert M.count('OutcomeLearningCard(s);') == 1
+          assert 'BoxCard("THOUGHT",body,true)' in M
+          assert 'CONTROL CENTER • v0.12.1-r22-r92ui5 • HERMES H2 RT2 SYNC' in M
+          assert 'ConsolidatedSnapshotReader' in R
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          for forbidden in ['iptables','ip6tables',' nft ','force-stop','settings put','setprop','/sys/class/']:
+              assert forbidden not in Path('scripts/r23_h2_ui5_hermes_card.py').read_text()
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+B)
+          print('H2_UI5_SOURCE_GATES=PASS')
+          print('OVERVIEW_ORDER=THOUGHT>HERMES>STRATEGI>OUTCOME')
+          print('HERMES_DATA_SOURCE=MODULE_BRAIN_HERMES_FIELDS')
+          PY
+
+      - name: Test and build release
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: APK safety scan
+        run: |
+          set -euo pipefail
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          test -n "$U"
+          unzip -t "$U" >/tmp/apk_zip_test.txt
+          strings "$U" > /tmp/apk_strings.txt || true
+          ! grep -E 'iptables|ip6tables|force-stop|settings put|setprop' /tmp/apk_strings.txt
+          echo APK_PRE_SIGN_SAFETY=PASS
+
+      - name: Sign verify and hash
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-control-center-r92ui5
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore signing/r92ui5.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 9125 -dname 'CN=DJAEGER Control Center H2 UI5, O=DJAEGER, C=ID'
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          cp "$U" output/DJAEGER-Control-Center-v0.12.1-r22-r92UI5-HermesH2-UNSIGNED.apk
+          "$BT/zipalign" -p -f 4 "$U" output/aligned.apk
+          "$BT/apksigner" sign --ks signing/r92ui5.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-r22-r92UI5-HermesH2.apk output/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r22-r92UI5-HermesH2.apk | tee output/APKSIGNER_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r22-r92UI5-HermesH2.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/*.apk > output/SHA256SUMS.txt
+          printf '%s\n' 'SOURCE_BASELINE=r92UI2' 'HERMES_BACKEND=H2_RT2' 'OVERVIEW_ORDER=THOUGHT>HERMES>STRATEGI>OUTCOME' 'HERMES_AUTHORITY=DISPLAY_ONLY' > output/BUILD_CONTRACT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.1-r22-r92UI5-HermesH2
+          path: output/*
+          if-no-files-found: error
