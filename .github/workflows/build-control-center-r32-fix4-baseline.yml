@@ -1,0 +1,105 @@
+name: Build DJAEGER Control Center HCC1 FIX4 Baseline Hardened
+on:
+  push:
+    branches: [codex/r92-hcc1-fix4-baseline-hardened]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+
+      - name: Generate exact HCC1 FIX4 baseline source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py; do
+            python3 scripts/$s
+          done
+
+      - name: Exact FIX4 baseline synchronization gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('control-center-r2')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          C=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
+          B=(root/'app/build.gradle.kts').read_text()
+          A=(root/'app/src/main/AndroidManifest.xml').read_text()
+          assert 'versionCode = 12236' in B
+          assert '0.12.1-r22-r92ui6-fix2-cog1-hcc1-fullsync-fix4-baseline' in B
+          assert 'while true; do cat /data/adb/djaeger_ai/fast_telemetry' not in R
+          assert 'ensureFastStream' not in R and 'suspend fun fastTelemetry' not in R
+          assert 'TELEMETRI 1 DETIK' in M
+          snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
+          assert 'ConsolidatedSnapshotReader' in snap
+          assert 'hermesHumanComfort=mapped.hermesHumanComfort' in snap
+          assert 'jankText(s.telemetry.jank)' in M
+          for sec in ['HERMES_HUMAN_COMFORT','HERMES_COGNITION_STATUS','HERMES_MEMORY_VNEXT','HERMES_REASONING_V2','HERMES_SKILLS_VNEXT','HERMES_LEARNING_V2','HERMES_RESEARCH_V2','HERMES_CTX1_STATUS','HERMES_CTX1_RUNTIME','HERMES_CTX1_SAFETY','HERMES_CTX1_HARDWARE','HERMES_CTX1_MEMORY','HERMES_CTX1_LEARNING','AUTHORITY','SESSION_SAFETY','SUPERVISOR']:
+              assert f's["{sec}"]' in C, sec
+          start=M.index('@Composable fun Overview(s:RuntimeState)'); end=M.index('@Composable fun StatusCard',start); O=M[start:end]
+          required=['ThoughtsCard(s);','Metric("FPS"','Metric("Frame"','Metric("Jank"','ThermalRow(s);','NetworkCard(s.network);','HermesCard(s);','HumanComfortHcc1Card(s);','ContextVNextCard(s);']
+          pos=[O.index(x) for x in required]; assert pos==sorted(pos)
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          for forbidden in ['iptables','ip6tables',' force-stop','settings put','setprop','/sys/class/']:
+              assert forbidden not in M
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+C+B)
+          print('FIX4_SINGLE_RECURRING_ROOT_TRUTH=PASS')
+          print('FIX4_JANK_ZERO_VALID=PASS')
+          print('FIX4_HCC1_CTX1_COG1_SYNC=PASS')
+          print('FIX4_AUTHORITY_SESSION_MAPPING=PASS')
+          print('FIX4_OVERVIEW_ORDER=PASS')
+          PY
+
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Prepare aligned unsigned baseline APK and signing tool
+        run: |
+          set -euo pipefail
+          mkdir -p output/signing-tool/lib output/source
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          test -n "$U"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/zipalign" -p -f 4 "$U" output/DJAEGER-Control-Center-HCC1-FIX4-BASELINE-aligned-unsigned.apk
+          cp "$BT/apksigner" output/signing-tool/apksigner
+          cp "$BT/lib/apksigner.jar" output/signing-tool/lib/apksigner.jar
+          cp control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt output/source/
+          cp control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt output/source/
+          cp control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt output/source/
+          cp control-center-r2/app/src/main/AndroidManifest.xml output/source/
+          cp control-center-r2/app/build.gradle.kts output/source/
+          unzip -t output/DJAEGER-Control-Center-HCC1-FIX4-BASELINE-aligned-unsigned.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-HCC1-FIX4-BASELINE-aligned-unsigned.apk > output/SHA256_UNSIGNED.txt
+          printf '%s\n' 'BASELINE_SOURCE=HCC1_FULLSYNC_FIX2' 'FIX4_SINGLE_RECURRING_ROOT_TRUTH=ATOMIC_CC_SNAPSHOT_1S' 'FAST_TELEMETRY_SECOND_ROOT_PROCESS=REMOVED' 'JANK_ZERO_VALID=PRESERVED' 'HCC1_CTX1_COG1=PRESERVED' 'SIGNING_POLICY=EXTERNAL_STABLE_KEY_REQUIRED' > output/BUILD_CONTRACT.txt
+
+      - name: Temporary CI signing verification only
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-fix4-ci-verification
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/ci-test.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 365 -dname 'CN=DJAEGER FIX4 CI Verification, O=DJAEGER, C=ID'
+          output/signing-tool/apksigner sign --ks /tmp/ci-test.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-HCC1-FIX4-CI-TEST-SIGNED.apk output/DJAEGER-Control-Center-HCC1-FIX4-BASELINE-aligned-unsigned.apk
+          output/signing-tool/apksigner verify --verbose --print-certs output/DJAEGER-Control-Center-HCC1-FIX4-CI-TEST-SIGNED.apk > output/CI_SIGN_VERIFY.txt
+          rm -f /tmp/ci-test.p12
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-HCC1-FIX4-BASELINE-UNSIGNED
+          path: output/*
+          if-no-files-found: error
