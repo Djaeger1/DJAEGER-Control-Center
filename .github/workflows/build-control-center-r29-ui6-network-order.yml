@@ -57,8 +57,6 @@ jobs:
           network=O.index('NetworkCard(s.network);')
           hermes=O.index('HermesCard(s);')
           assert thought < fps < frame < jank < thermal < network < hermes
-          for label in ['Metric("CPU"','Metric("GPU"')]:
-              pass
           for sec,field in [('HERMES_COGNITION_STATUS','hermesCognitionStatus'),('HERMES_MEMORY_VNEXT','hermesMemoryVNext'),('HERMES_REASONING_V2','hermesReasoningV2'),('HERMES_SKILLS_VNEXT','hermesSkillsVNext'),('HERMES_LEARNING_V2','hermesLearningV2'),('HERMES_RESEARCH_V2','hermesResearchV2')]:
               assert f's["{sec}"]' in C, sec
               assert field in C and field in R and field in M, field
