@@ -50,13 +50,14 @@ j_tail=ov.index(',Modifier.weight(1f))',j_start)
 ov=ov[:j_start]+'Metric("Jank",jankText(s.telemetry.jank)'+ov[j_tail:]
 ms=ms[:ov_start]+ov+ms[ov_end:]
 
-# Match UI stale indicator to the same active/idle runtime heartbeat contract.
+# Match UI stale indicator to the same active/idle heartbeat contract while preserving
+# the proven r10.2 rule: an active session is stale when its telemetry sample is stale.
 status_start=ms.index('@Composable fun StatusCard(s:RuntimeState)')
 status_end=ms.index('@Composable fun ThermalRow',status_start)
 status=ms[status_start:status_end]
-old_stale='val stale=s.updated<=0||(System.currentTimeMillis()/1000-s.updated)>5;'
+old_stale='val runtimeStale=s.updated<=0||(System.currentTimeMillis()/1000-s.updated)>5;val stale=if(s.active=="1") !s.sampleFresh else runtimeStale;'
 assert old_stale in status, 'FIX2_FAIL=status-stale-anchor'
-new_stale='val runtimeTtl=if(s.active=="1")5 else 15;val stale=s.updated<=0||(System.currentTimeMillis()/1000-s.updated)>runtimeTtl;'
+new_stale='val runtimeTtl=if(s.active=="1")5 else 15;val runtimeStale=s.updated<=0||(System.currentTimeMillis()/1000-s.updated)>runtimeTtl;val stale=if(s.active=="1") !s.sampleFresh else runtimeStale;'
 status=status.replace(old_stale,new_stale,1)
 ms=ms[:status_start]+status+ms[status_end:]
 m.write_text(ms)
@@ -70,6 +71,7 @@ assert 'runtimeTtlSec=if(activeClaim) 5L else 15L' in R
 assert 'jankText(s.telemetry.jank)' in M
 assert 'value>=0.0' in M
 assert 'val runtimeTtl=if(s.active=="1")5 else 15' in M
+assert 'val stale=if(s.active=="1") !s.sampleFresh else runtimeStale' in M
 # HCC1 and one-atomic-snapshot contracts remain intact.
 for token in ['hermesHumanComfort=mapped.hermesHumanComfort','djaeger-ai comfort $arg','djaeger-ai feedback $arg','ConsolidatedSnapshotReader']:
     assert token in R, token
@@ -80,5 +82,6 @@ print('HCC1_FIX2_JANK_ZERO_IS_VALID=PASS')
 print('HCC1_FIX2_JANK_UNAVAILABLE_SENTINEL=-1.0')
 print('HCC1_FIX2_RUNTIME_TTL_ACTIVE_SEC=5')
 print('HCC1_FIX2_RUNTIME_TTL_IDLE_SEC=15')
+print('HCC1_FIX2_ACTIVE_STALE_RULE=TELEMETRY_SAMPLE_FRESHNESS')
 print('HCC1_FIX2_SINGLE_ATOMIC_SNAPSHOT=PRESERVED')
 print('HCC1_FIX2_HCC1_CONTRACT=PRESERVED')
