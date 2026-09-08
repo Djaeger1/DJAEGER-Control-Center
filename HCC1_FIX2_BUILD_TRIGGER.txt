@@ -1,0 +1,2 @@
+HCC1 FIX2 build trigger after workflow registration.
+Scope: valid zero-jank semantics + ENGINE/SESSION freshness repair.
