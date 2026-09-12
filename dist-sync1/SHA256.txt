@@ -1,1 +1,1 @@
-bedf0646691c864d2e8f9fc7e11757fb5b39cecd02ad1c4e5c856455d6f5a54d  output/DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1.apk
+f0417e54a3e3d3f8abe85e3dcfdd04071af37bd4ef2cb686d5846f83beb3d9e4  output/DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1.apk
