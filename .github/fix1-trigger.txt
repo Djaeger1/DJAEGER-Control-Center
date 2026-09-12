@@ -1,0 +1,1 @@
+trigger Agent A2 SYNC1 FIX1 build after hardened runtime patch
