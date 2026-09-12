@@ -1,0 +1,35 @@
+name: Export DJAEGER FIX2 Temporary Transfer
+
+on:
+  push:
+    branches: [codex/r92-agent-a2-sync1-fix2]
+    paths:
+      - '.github/workflows/export-fix2-tempfile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export_temp:
+    runs-on: ubuntu-latest
+    env:
+      APK: dist-fix2/DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1-FIX2.apk
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and temporarily transfer APK for chat attachment
+        run: |
+          set -euo pipefail
+          test -f "$APK"
+          sha256sum "$APK"
+          curl -fsS -X POST https://tempfile.org/api/upload/local \
+            -F "files=@$APK" \
+            -F "expiryHours=1" | tee /tmp/tempfile-response.json
+          echo
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/tempfile-response.json'))
+          print('TEMPFILE_URL='+x['files'][0]['url'])
+          print('TEMPFILE_NAME='+x['files'][0]['name'])
+          print('TEMPFILE_SIZE='+str(x['files'][0]['size']))
+          PY
