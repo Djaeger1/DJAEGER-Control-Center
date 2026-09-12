@@ -4,8 +4,12 @@ on:
     branches: [codex/r92-agent-a2-dualbrain-sync]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,8 +56,7 @@ jobs:
           for x in ['Validasi Local AI','Local AI','LOCAL AI','LOCAL TYPED EXECUTOR','local typed executor']:
               assert x not in M, x
           start=M.index('@Composable fun Overview(s:RuntimeState)'); end=M.index('@Composable fun StatusCard',start); O=M[start:end]
-          order=['ThoughtsCard(s);','AgentA2Card(s);','HermesCard(s);']
-          pos=[O.index(x) for x in order]; assert pos==sorted(pos), pos
+          assert 'ThoughtsCard(s);AgentA2Card(s);HermesCard(s);' in O
           snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
           assert 'ConsolidatedSnapshotReader' in snap
           assert 'while true; do cat /data/adb/djaeger_ai/fast_telemetry' not in R
@@ -64,7 +67,7 @@ jobs:
           print('AGENT_A2_EXACT_TWO_BRAINS=PASS')
           print('AGENT_A2_UI_AUTHORITY=PASS')
           print('AGENT_A2_SINGLE_SNAPSHOT=PASS')
-          print('AGENT_A2_OVERVIEW_ORDER=PASS')
+          print('AGENT_A2_OVERVIEW_CONTIGUOUS=PASS')
           PY
 
       - name: Unit tests and release build
@@ -91,8 +94,15 @@ jobs:
           printf '%s\n' 'MATCHED_MODULE=GOLDEN1_RC1_DUALBRAIN_AGENT_A2' 'VERSION_CODE=12239' 'BRAINS=GEMINI,HERMES_H2' 'FINAL_OWNER=AI_AGENT_A2' 'THIRD_BRAIN=NONE' 'SIGNER=AGENT_A2_CI_NEW_KEY' > output/BUILD_CONTRACT.txt
           rm -f /tmp/a2.p12
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DJAEGER-Control-Center-DUALBRAIN-AGENT-A2
-          path: output/*
-          if-no-files-found: error
+      - name: Publish installable APK to private branch dist
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist
+          cp output/DJAEGER-Control-Center-v0.12.1-Agent-A2.apk dist/
+          cp output/APK_VERIFY.txt output/APK_ZIP_TEST.txt output/SHA256.txt output/BUILD_CONTRACT.txt dist/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist
+          git commit -m 'Publish synchronized Agent A2 Control Center [skip ci]'
+          git push origin HEAD:codex/r92-agent-a2-dualbrain-sync
