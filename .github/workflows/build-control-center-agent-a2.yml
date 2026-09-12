@@ -1,0 +1,98 @@
+name: Build DJAEGER Control Center Dual-Brain Agent A2
+on:
+  push:
+    branches: [codex/r92-agent-a2-dualbrain-sync]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Generate exact RC1 plus Agent A2 source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines()
+          marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker)
+          end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py r34_hcc1_fix4_authority_semantic_sync.py r35_agent_a2_dualbrain_sync.py; do
+            python3 scripts/$s
+          done
+
+      - name: Agent A2 exact synchronization gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('control-center-r2')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          C=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
+          B=(root/'app/build.gradle.kts').read_text()
+          A=(root/'app/src/main/AndroidManifest.xml').read_text()
+          assert 'versionCode = 12239' in B
+          assert 'agent-a2' in B
+          for x in ['AI AGENT A2 • FINAL AUTHORITY','AGENT_WINNER','AGENT_STATE','AGENT_SCORE','AGENT_REASON','BRAIN_CLOUD','BRAIN_LOCAL','THIRD_BRAIN','Exactly two brains: Gemini + Hermes H2','AI Agent A2 → Root Authority']:
+              assert x in M, x
+          for x in ['Validasi Local AI','Local AI','LOCAL AI','LOCAL TYPED EXECUTOR','local typed executor']:
+              assert x not in M, x
+          start=M.index('@Composable fun Overview(s:RuntimeState)'); end=M.index('@Composable fun StatusCard',start); O=M[start:end]
+          order=['ThoughtsCard(s);','AgentA2Card(s);','HermesCard(s);']
+          pos=[O.index(x) for x in order]; assert pos==sorted(pos), pos
+          snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
+          assert 'ConsolidatedSnapshotReader' in snap
+          assert 'while true; do cat /data/adb/djaeger_ai/fast_telemetry' not in R
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          for forbidden in ['iptables','ip6tables',' force-stop','settings put','setprop','/sys/class/']:
+              assert forbidden not in M
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+C+B)
+          print('AGENT_A2_EXACT_TWO_BRAINS=PASS')
+          print('AGENT_A2_UI_AUTHORITY=PASS')
+          print('AGENT_A2_SINGLE_SNAPSHOT=PASS')
+          print('AGENT_A2_OVERVIEW_ORDER=PASS')
+          PY
+
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Align and sign installable Agent A2 APK
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          test -n "$U"
+          "$BT/zipalign" -p -f 4 "$U" output/DJAEGER-Control-Center-DUALBRAIN-AGENT-A2-aligned-unsigned.apk
+          PASS="$(openssl rand -hex 24)"
+          ALIAS=djaeger-agent-a2-ci
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/a2.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER Agent A2, O=DJAEGER, C=ID'
+          "$BT/apksigner" sign --ks /tmp/a2.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out output/DJAEGER-Control-Center-v0.12.1-Agent-A2.apk output/DJAEGER-Control-Center-DUALBRAIN-AGENT-A2-aligned-unsigned.apk
+          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-Agent-A2.apk > output/APK_VERIFY.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-Agent-A2.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-Agent-A2.apk > output/SHA256.txt
+          printf '%s\n' 'MATCHED_MODULE=GOLDEN1_RC1_DUALBRAIN_AGENT_A2' 'VERSION_CODE=12239' 'BRAINS=GEMINI,HERMES_H2' 'FINAL_OWNER=AI_AGENT_A2' 'THIRD_BRAIN=NONE' 'SIGNER=AGENT_A2_CI_NEW_KEY' > output/BUILD_CONTRACT.txt
+          rm -f /tmp/a2.p12
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-DUALBRAIN-AGENT-A2
+          path: output/*
+          if-no-files-found: error
