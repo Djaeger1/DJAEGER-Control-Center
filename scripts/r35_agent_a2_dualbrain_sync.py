@@ -37,7 +37,6 @@ ms=ms.replace(needle,replacement,1)
 
 agent_card=r'''
 @Composable fun AgentA2Card(s:RuntimeState){
-    val version=envField(s.brain,"AGENT_VERSION").ifBlank{"A2"}
     val state=envField(s.brain,"AGENT_STATE").ifBlank{"UNPUBLISHED"}
     val winner=envField(s.brain,"AGENT_WINNER").ifBlank{"UNPUBLISHED"}
     val score=envField(s.brain,"AGENT_SCORE").ifBlank{"0"}
@@ -46,7 +45,7 @@ agent_card=r'''
     val local=envField(s.brain,"BRAIN_LOCAL").ifBlank{"HERMES_H2"}
     val third=envField(s.brain,"THIRD_BRAIN").ifBlank{"NONE"}
     val direct=envField(s.brain,"DIRECT_ROOT_AUTHORITY").ifBlank{"1"}
-    BoxCard("AI AGENT $version • FINAL AUTHORITY","Cloud brain: $cloud\nLocal brain: $local\nThird brain: $third\nState: $state\nWinner: $winner • Score: $score\nReason: $reason\nDecision owner: AI AGENT A2\nExecution owner: AI AGENT A2\nDirect Root Authority: ${if(direct=="1")"YES" else direct}",true)
+    BoxCard("AI AGENT A2 • FINAL AUTHORITY","Cloud brain: $cloud\nLocal brain: $local\nThird brain: $third\nState: $state\nWinner: $winner • Score: $score\nReason: $reason\nDecision owner: AI AGENT A2\nExecution owner: AI AGENT A2\nDirect Root Authority: ${if(direct=="1")"YES" else direct}",true)
 }
 '''
 insert_at=ms.index('@Composable fun History(s:RuntimeState)')
