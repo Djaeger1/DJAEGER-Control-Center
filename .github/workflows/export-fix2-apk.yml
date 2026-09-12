@@ -1,0 +1,30 @@
+name: Export DJAEGER FIX2 APK
+
+on:
+  push:
+    branches: [codex/r92-agent-a2-sync1-fix2]
+    paths:
+      - '.github/workflows/export-fix2-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify FIX2 APK exists
+        run: |
+          set -euo pipefail
+          test -f dist-fix2/DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1-FIX2.apk
+          sha256sum dist-fix2/DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1-FIX2.apk
+      - name: Upload FIX2 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1-FIX2
+          path: dist-fix2/DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1-FIX2.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
