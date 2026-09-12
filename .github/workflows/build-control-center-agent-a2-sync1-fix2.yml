@@ -33,7 +33,7 @@ jobs:
           Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
           PY
           python3 /tmp/r7.py
-          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py r34_hcc1_fix4_authority_semantic_sync.py r35_agent_a2_dualbrain_sync.py r36_agent_a2_sync1_matched_pair.py r37_agent_a2_sync1_runtime_hardening.py r38_agent_a2_sync1_semantic_runtime_fix2.py r39_agent_a2_strategy_result_binding_fix2.py r40_agent_a2_keyvault_slot_mapping_fix2.py r41_agent_a2_sync2_fix1_overview_runtime.py; do
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py r34_hcc1_fix4_authority_semantic_sync.py r35_agent_a2_dualbrain_sync.py r36_agent_a2_sync1_matched_pair.py r37_agent_a2_sync1_runtime_hardening.py r38_agent_a2_sync1_semantic_runtime_fix2.py r39_agent_a2_strategy_result_binding_fix2.py r40_agent_a2_keyvault_slot_mapping_fix2.py r41_agent_a2_sync2_fix1_overview_runtime.py r42_agent_a2_sync2_fix1_kotlin_escape.py; do
             python3 scripts/$s
           done
 
@@ -71,6 +71,7 @@ jobs:
           print('SYNC2_FIX1_AGENT_STATE_BINDING=PASS')
           print('SYNC2_FIX1_EXECUTION_BINDING=PASS')
           print('SYNC2_FIX1_EXACT_TWO_BRAINS=PASS')
+          print('SYNC2_FIX1_KOTLIN_ESCAPE=PASS')
           PY
 
       - name: Unit tests and release build
