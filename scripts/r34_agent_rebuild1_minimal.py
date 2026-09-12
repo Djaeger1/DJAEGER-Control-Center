@@ -31,7 +31,7 @@ s=s.replace('thoughtSrc=="LOCAL_AI"->"PEMIKIRAN LOCAL AI"','thoughtSrc=="HERMES_
 
 anchor='''private fun currentRange(raw:String,unit:String):String{'''
 assert anchor in s
-agent='''@Composable fun AgentRebuild1Card(s:RuntimeState){
+agent=r'''@Composable fun AgentRebuild1Card(s:RuntimeState){
     val version=envField(s.brain,"AGENT_VERSION").ifBlank{"UNPUBLISHED"}
     val state=envField(s.brain,"AGENT_STATE").ifBlank{"UNPUBLISHED"}
     val winner=envField(s.brain,"AGENT_WINNER").ifBlank{"NONE"}
