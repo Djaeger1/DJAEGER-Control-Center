@@ -29,6 +29,11 @@ s=s.replace(old,new,1)
 
 s=s.replace('thoughtSrc=="LOCAL_AI"->"PEMIKIRAN LOCAL AI"','thoughtSrc=="HERMES_H2"->"PEMIKIRAN HERMES H2"',1)
 
+old_header='CONTROL CENTER • v0.12.1-r22-r92ui6-fix2-cog1-hcc1-fullsync-fix4-baseline-rc1 • HERMES COGNITION VNEXT • HCC1'
+new_header='CONTROL CENTER • v0.12.1 FIX4 RC1 AGENT REBUILD1 • HERMES H2 • HCC1'
+assert old_header in s, 'visible identity anchor missing'
+s=s.replace(old_header,new_header,1)
+
 anchor='''private fun currentRange(raw:String,unit:String):String{'''
 assert anchor in s
 agent=r'''@Composable fun AgentRebuild1Card(s:RuntimeState){
@@ -64,3 +69,4 @@ print('REBUILD1_UI_PATCH=PASS')
 print('BASELINE_LAYOUT_PRESERVED=PASS')
 print('AGENT_CARD_INSERTED_AFTER_THOUGHT=PASS')
 print('THIRD_BRAIN_UI_REMOVED=PASS')
+print('REBUILD1_VISIBLE_IDENTITY=PASS')
