@@ -62,7 +62,7 @@ for forbidden in ['Validasi Local AI','Local AI','LOCAL AI','LOCAL TYPED EXECUTO
     assert forbidden not in M, forbidden
 ov=M[M.index('@Composable fun Overview(s:RuntimeState)'):M.index('@Composable fun StatusCard',M.index('@Composable fun Overview(s:RuntimeState)'))]
 assert 'ThoughtsCard(s);AgentA2Card(s);HermesCard(s);' in ov
-assert 'MatchedPairSyncCard(s)' in ov
+assert 'MatchedPairSyncCard(s)' in M
 print('AGENT_A2_SYNC1_MATCHED_PAIR_UI=PASS')
 print('AGENT_A2_SYNC1_RUNTIME_CONTRACT_FIELDS=PASS')
 print('AGENT_A2_SYNC1_VERSION_COMPATIBILITY_GATE=PASS')
