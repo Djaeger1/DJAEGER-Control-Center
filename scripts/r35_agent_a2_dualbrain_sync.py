@@ -29,11 +29,11 @@ new_monitor='BoxCard("MONITOR INVARIANTS","READ-ONLY application\\nExactly two b
 assert old_monitor in ms, 'R35_FAIL=safety-anchor'
 ms=ms.replace(old_monitor,new_monitor,1)
 
-# Add Agent card directly before Hermes in Overview, preserving requested visual hierarchy.
-needle='NetworkCard(s.network);HermesCard(s);HumanComfortHcc1Card(s);ContextVNextCard(s);'
-replacement='NetworkCard(s.network);AgentA2Card(s);HermesCard(s);HumanComfortHcc1Card(s);ContextVNextCard(s);'
-assert needle in ms, 'R35_FAIL=overview-order-anchor'
-ms=ms.replace(needle,replacement,1)
+# Exact requested reasoning order: THOUGHT -> AGENT -> HERMES, contiguous.
+assert 'ThoughtsCard(s);' in ms, 'R35_FAIL=thought-anchor'
+assert 'HermesCard(s);' in ms, 'R35_FAIL=hermes-anchor'
+ms=ms.replace('HermesCard(s);','',1)
+ms=ms.replace('ThoughtsCard(s);','ThoughtsCard(s);AgentA2Card(s);HermesCard(s);',1)
 
 agent_card=r'''
 @Composable fun AgentA2Card(s:RuntimeState){
@@ -72,10 +72,8 @@ for x in ['AI AGENT A2 • FINAL AUTHORITY','AGENT_WINNER','AGENT_STATE','AGENT_
 for forbidden in ['Validasi Local AI','Local AI','LOCAL AI','LOCAL TYPED EXECUTOR','local typed executor']:
     assert forbidden not in M, forbidden
 start=M.index('@Composable fun Overview(s:RuntimeState)'); end=M.index('@Composable fun StatusCard',start); O=M[start:end]
-required=['ThoughtsCard(s);','AgentA2Card(s);','HermesCard(s);']
-pos=[O.index(x) for x in required]
-assert pos==sorted(pos), pos
+assert 'ThoughtsCard(s);AgentA2Card(s);HermesCard(s);' in O
 print('AGENT_A2_UI_SYNC=PASS')
 print('EXACT_TWO_BRAINS=PASS')
 print('AGENT_A2_AUTHORITY_SEMANTICS=PASS')
-print('OVERVIEW_THOUGHT_AGENT_HERMES_ORDER=PASS')
+print('OVERVIEW_THOUGHT_AGENT_HERMES_CONTIGUOUS=PASS')
