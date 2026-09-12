@@ -1,0 +1,44 @@
+name: Export DJAEGER FIX2 via Release
+
+on:
+  push:
+    branches: [codex/r92-agent-a2-sync1-fix2]
+    paths:
+      - '.github/workflows/export-fix2-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export_release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: fix2-chat-export-1
+      APK: dist-fix2/DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1-FIX2.apk
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify APK
+        run: |
+          set -euo pipefail
+          test -f "$APK"
+          sha256sum "$APK"
+      - name: Create temporary private-repo release asset
+        run: |
+          set -euo pipefail
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --title 'DJAEGER FIX2 Chat Export' --notes 'Temporary transfer copy for direct ChatGPT attachment.' --prerelease
+      - name: Print temporary signed asset URL
+        run: |
+          set -euo pipefail
+          ASSET_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name=="DJAEGER-Control-Center-v0.12.2-Agent-A2-SYNC1-FIX2.apk") | .id')"
+          test -n "$ASSET_ID"
+          curl -sS -D /tmp/h -o /dev/null \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/octet-stream' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
+          URL="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/,""); sub(/\r$/,""); print; exit}' /tmp/h)"
+          test -n "$URL"
+          echo "SIGNED_URL=$URL"
