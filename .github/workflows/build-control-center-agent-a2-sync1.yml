@@ -51,13 +51,13 @@ jobs:
           A=(root/'app/src/main/AndroidManifest.xml').read_text()
           assert 'versionCode = 12240' in B
           assert 'versionName = "0.12.2-agent-a2-sync1"' in B
-          for x in ['DJAEGER-AI MATCHED PAIR','DUALBRAIN-AGENT-A2-SYNC1','AI AGENT A2 • FINAL AUTHORITY','AGENT_WINNER','AGENT_STATE','AGENT_SCORE','AGENT_REASON','AGENT_ARCH','BRAIN_CLOUD','BRAIN_LOCAL','THIRD_BRAIN','READBACK_REQUIRED','ROLLBACK_REQUIRED','NATIVE_BASELINE_ROLE','CONTROL_CENTER_SYNC','s.moduleVersion.contains(expected)','AI Agent A2 → Root Authority']:
+          for x in ['DJAEGER-AI MATCHED PAIR','DUALBRAIN-AGENT-A2-SYNC1','AI AGENT A2 • FINAL AUTHORITY','AGENT_WINNER','AGENT_STATE','AGENT_SCORE','AGENT_REASON','AGENT_ARCH','BRAIN_CLOUD','BRAIN_LOCAL','THIRD_BRAIN','READBACK_REQUIRED','ROLLBACK_REQUIRED','NATIVE_BASELINE_ROLE','CONTROL_CENTER_SYNC','s.moduleVersion.contains(expected)','Final hardware authority: AI AGENT A2 → ROOT AUTHORITY']:
               assert x in M, x
           for x in ['Validasi Local AI','Local AI','LOCAL AI','LOCAL TYPED EXECUTOR','local typed executor']:
               assert x not in M, x
           start=M.index('@Composable fun Overview(s:RuntimeState)'); end=M.index('@Composable fun StatusCard',start); O=M[start:end]
           assert 'ThoughtsCard(s);AgentA2Card(s);HermesCard(s);' in O
-          assert 'MatchedPairSyncCard(s)' in O
+          assert 'MatchedPairSyncCard(s)' in M
           snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
           assert 'ConsolidatedSnapshotReader' in snap
           assert 'while true; do cat /data/adb/djaeger_ai/fast_telemetry' not in R
