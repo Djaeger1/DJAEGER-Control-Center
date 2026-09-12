@@ -8,11 +8,11 @@ Verified using v4 scheme (APK Signature Scheme v4): false
 Verified for SourceStamp: false
 Number of signers: 1
 V3.0 Signer: certificate DN: CN=DJAEGER Agent A2 SYNC1 FIX2, O=DJAEGER, C=ID
-V3.0 Signer: certificate SHA-256 digest: dcffb62cf1f7fcbb61191ff31079ae76463a9d881d875ae468947612bc8c9f6a
-V3.0 Signer: certificate SHA-1 digest: 716ff3c489f2fd1133fd6bc5c539090e5d7f26d9
-V3.0 Signer: certificate MD5 digest: dbdd34aa502abb47718a5d29425c2fe0
+V3.0 Signer: certificate SHA-256 digest: 2e055b0708b2b6ea2c5e4d663e99ae02332f329661938197b160080328c07ef3
+V3.0 Signer: certificate SHA-1 digest: e1b25a89585039bab9e2634ea4cc5be011119d7c
+V3.0 Signer: certificate MD5 digest: 8218875b74c35e3e5eb4ed8b231ff59a
 V3.0 Signer: key algorithm: RSA
 V3.0 Signer: key size (bits): 4096
-V3.0 Signer: public key SHA-256 digest: b6673436512aa6040e1891158effe33c9c7e221dea97a59dbe14280ce5e2c72e
-V3.0 Signer: public key SHA-1 digest: f8fb9b660907bbd0a25ea3271da1cdb89de1114d
-V3.0 Signer: public key MD5 digest: 0411579d4f3d9d24d13b5985cfeff62a
+V3.0 Signer: public key SHA-256 digest: 63e77480e45d7569b3a61ddf210ec9e7d06328545d44eeebd4d75098402cd003
+V3.0 Signer: public key SHA-1 digest: 466681dbae846a5578d34eb313d67c18e32541eb
+V3.0 Signer: public key MD5 digest: 8a14022314a52c96c4e7a8c7e367f855
