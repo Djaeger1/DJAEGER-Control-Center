@@ -1,0 +1,9 @@
+MATCHED_MODULE=GOLDEN1_RC1_DUALBRAIN_AGENT_A2_SYNC2_FIX1
+MODULE_VERSION_CODE=129615
+CONTROL_CENTER_VERSION=0.12.2-agent-a2-sync2-fix1
+VERSION_CODE=12243
+BRAINS=GEMINI,HERMES_H2
+FINAL_OWNER=AI_AGENT_A2
+THIRD_BRAIN=NONE
+FIXES=kernel_clamp_runtime_pair,http_gemini_binding,agent_state_binding,execution_binding,responsive_multiwindow,concise_thought,session_isolation,keyvault_mapping
+SIGNER=EPHEMERAL_CI_NOT_STABLE_BASELINE
