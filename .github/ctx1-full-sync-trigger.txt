@@ -1,1 +1,1 @@
-Trigger UI6 FIX2 CTX1 full-sync build.
+Trigger SYNC2 corrected build: session truth + THOUGHT > metrics/thermal/network > STRATEGI.
