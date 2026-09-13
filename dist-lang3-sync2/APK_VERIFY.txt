@@ -1,0 +1,18 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v3.2 scheme (APK Signature Scheme v3.2): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+V3.0 Signer: certificate DN: CN=DJAEGER LANG3 MATH1 SYNC2, O=DJAEGER, C=ID
+V3.0 Signer: certificate SHA-256 digest: d772710021ec150446e96705e825dc0e4c46c8b50cfc62ab0fe49e63fc5b32b8
+V3.0 Signer: certificate SHA-1 digest: 529e65062cd4cfefd6beba897e302a93bc942d3b
+V3.0 Signer: certificate MD5 digest: 7d0469eb886429699a7ca64a8c547dd3
+V3.0 Signer: key algorithm: RSA
+V3.0 Signer: key size (bits): 4096
+V3.0 Signer: public key SHA-256 digest: be7bf6894918d15346719267fe74f6ca153369740aaa6f8bcdc22fc660c0daaf
+V3.0 Signer: public key SHA-1 digest: e9972d8d181a7f43a32fbd3cf6b1820a1dbb7ee3
+V3.0 Signer: public key MD5 digest: d474be7bde43f6515be4e4f4001a9d3f
