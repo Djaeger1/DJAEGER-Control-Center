@@ -83,6 +83,7 @@ jobs:
           cp control-center-r2/app/build.gradle.kts audit-lang3-sync2/
           cp control-center-r2/app/src/main/AndroidManifest.xml audit-lang3-sync2/
       - name: Upload SYNC2 artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: djaeger-control-center-sync2
@@ -90,7 +91,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Publish outputs
-        continue-on-error: true
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
