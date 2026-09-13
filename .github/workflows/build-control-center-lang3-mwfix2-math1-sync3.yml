@@ -1,0 +1,84 @@
+name: Build DJAEGER Control Center LANG3 MWFIX2 MATH1 SYNC3
+on:
+  push:
+    branches: [codex/rebuild3-lang3-mwfix2-math1-sync3]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Restore source and apply SYNC3
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py; do python3 scripts/$s; done
+          python3 scripts/r34_rebuild3_agent_full_hardware_truth.py
+          python3 scripts/r35_rebuild3_lang2_mwfix1.py
+          python3 scripts/r36_rebuild3_lang3_math1_sync1.py
+          python3 scripts/r37_sync2_session_truth_ui_order.py
+          python3 scripts/r38_mwfix2_sync3.py
+      - name: SYNC3 gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('control-center-r2')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text(); R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text(); C=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text(); B=(root/'app/build.gradle.kts').read_text()
+          assert 'versionCode = 12256' in B and '0.12.1-rebuild3-lang3-mwfix2-math1-sync3' in B
+          assert 'val sessionFresh=runtimeFresh' in R and 'volatileFresh' not in R
+          assert 'active=if(sessionFresh)' in R and 'game=if(sessionFresh)' in R and 'window=if(sessionFresh)' in R
+          assert 'UNKNOWN / STALE' in M and 'REBUILD3_LANG3_MWFIX2_MATH1_SYNC3' in M and 'syncModule=="129629"&&syncCc=="12256"' in M
+          assert 'LANG3 • MWFIX2 • MATH1' in M
+          ov=M[M.index('@Composable fun Overview('):M.index('@Composable fun Session(',M.index('@Composable fun Overview('))]
+          p=[ov.index('ThoughtsCard(s)'),ov.index('Metric("FPS"'),ov.index('ThermalRow(s)'),ov.index('NetworkCard(s.network)'),ov.index('StrategyCard(s)'),ov.index('AgentRebuild3Card(s)')]; assert p==sorted(p)
+          for required in ['HermesCard(s)','HumanComfortHcc1Card(s)','ContextVNextCard(s)','MemoryVNextCard(s)','ReasoningV2Card(s)','SkillsVNextCard(s)','LearningResearchV2Card(s)','OutcomeLearningCard(s)','StrategyCompositionCard(s)','DecisionPipelineCard(s)']: assert required in ov,required
+          assert 'HERMES_MATH' in C and 'CONTROL_CENTER_SYNC' in C
+          snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]; assert snap.count('ConsolidatedSnapshotReader')==1
+          print('SYNC3_SESSION_TRUTH_SEPARATED=PASS'); print('SYNC3_MODULE_LABEL_LANG3_MWFIX2=PASS'); print('SYNC3_UI_ORDER=PASS'); print('SYNC3_EXISTING_OVERVIEW_CARDS_PRESERVED=PASS')
+          PY
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign verify and prepare audit
+        run: |
+          set -euo pipefail
+          rm -rf dist-lang3-mwfix2-sync3 audit-lang3-mwfix2-sync3 output-lang3-mwfix2-sync3
+          mkdir -p dist-lang3-mwfix2-sync3 audit-lang3-mwfix2-sync3/src output-lang3-mwfix2-sync3
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"; BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/zipalign" -p -f 4 "$U" output-lang3-mwfix2-sync3/aligned.apk
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-lang3-mwfix2-sync3-ci
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/sync3.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER LANG3 MWFIX2 MATH1 SYNC3, O=DJAEGER, C=ID'
+          APK=dist-lang3-mwfix2-sync3/DJAEGER-Control-Center-v0.12.1-REBUILD3-LANG3-MWFIX2-MATH1-SYNC3.apk
+          "$BT/apksigner" sign --ks /tmp/sync3.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out "$APK" output-lang3-mwfix2-sync3/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > dist-lang3-mwfix2-sync3/APK_VERIFY.txt
+          unzip -t "$APK" > dist-lang3-mwfix2-sync3/APK_ZIP_TEST.txt; sha256sum "$APK" > dist-lang3-mwfix2-sync3/SHA256.txt
+          printf '%s\n' 'MATCHED_MODULE_VERSION_CODE=129629' 'CONTROL_CENTER_VERSION_CODE=12256' 'CONTROL_CENTER_VERSION_NAME=0.12.1-rebuild3-lang3-mwfix2-math1-sync3' 'CONTRACT=REBUILD3_LANG3_MWFIX2_MATH1_SYNC3' 'FIX=BINDER_OBSERVER_TIMEOUT_FAILSOFT_PLUS_SESSION_FIRST_SNAPSHOT' 'UI_FIX=COMPACT_MODULE_LANG3_IDENTITY' 'UI_ORDER=THOUGHT>METRICS>THERMAL>NETWORK>STRATEGI' 'NLG=LANG3_CONVERSATIONAL' 'MATH_CORE=MATH1' 'PRIMARY_BRAIN=GEMINI' 'DEPUTY_LOCAL_BRAIN=HERMES_H2' 'AGENT_HARDWARE_AUTHORITY=FULL' 'THIRD_BRAIN=NONE' 'SNAPSHOT_SOURCE=ATOMIC_CC_SNAPSHOT' > dist-lang3-mwfix2-sync3/BUILD_CONTRACT.txt
+          cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-lang3-mwfix2-sync3/src/; cp control-center-r2/app/build.gradle.kts audit-lang3-mwfix2-sync3/; cp control-center-r2/app/src/main/AndroidManifest.xml audit-lang3-mwfix2-sync3/
+      - name: Upload SYNC3 artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with: {name: djaeger-control-center-mwfix2-sync3, path: dist-lang3-mwfix2-sync3/, if-no-files-found: error, retention-days: 30}
+      - name: Publish outputs
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist-lang3-mwfix2-sync3 audit-lang3-mwfix2-sync3
+          git commit -m 'Publish REBUILD3 LANG3 MWFIX2 MATH1 SYNC3 [skip ci]'
+          for i in 1 2 3; do git push origin HEAD:codex/rebuild3-lang3-mwfix2-math1-sync3 && exit 0; sleep 5; done
+          exit 1
