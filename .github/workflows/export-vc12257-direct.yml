@@ -1,0 +1,39 @@
+name: Export VC12257 Direct Download
+on:
+  push:
+    branches: [codex/rebuild3-lang3-mwfix2-attr1-math1-sync4]
+    paths: ['.github/workflows/export-vc12257-direct.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify APK
+        run: |
+          set -euo pipefail
+          APK='dist-lang3-mwfix2-attr1-sync4/DJAEGER-Control-Center-v0.12.1-REBUILD3-LANG3-MWFIX2-ATTR1-MATH1-SYNC4.apk'
+          test -f "$APK"
+          echo "APK_SHA256=$(sha256sum "$APK" | awk '{print $1}')"
+      - name: Publish temporary release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK='dist-lang3-mwfix2-attr1-sync4/DJAEGER-Control-Center-v0.12.1-REBUILD3-LANG3-MWFIX2-ATTR1-MATH1-SYNC4.apk'
+          TAG='vc12257-direct'
+          gh release delete "$TAG" --cleanup-tag -y >/dev/null 2>&1 || true
+          gh release create "$TAG" "$APK" --title 'DJAEGER Control Center vc12257' --notes 'Direct transfer package for matched module vc129630.' --target "$GITHUB_SHA"
+          ASSET_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name=="DJAEGER-Control-Center-v0.12.1-REBUILD3-LANG3-MWFIX2-ATTR1-MATH1-SYNC4.apk") | .id')"
+          test -n "$ASSET_ID"
+          curl -sS -D /tmp/h -o /dev/null \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/octet-stream' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
+          URL="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/^[^:]+:[[:space:]]*/,""); gsub(/\r/,""); print; exit}' /tmp/h)"
+          test -n "$URL"
+          echo "DIRECT_SIGNED_URL=$URL"
+          echo "ASSET_ID=$ASSET_ID"
