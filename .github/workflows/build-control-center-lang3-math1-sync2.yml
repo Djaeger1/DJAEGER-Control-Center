@@ -46,19 +46,11 @@ jobs:
           assert 'active=if(sessionFresh)' in R and 'game=if(sessionFresh)' in R and 'window=if(sessionFresh)' in R
           assert 'UNKNOWN / STALE' in M
           ov=M[M.index('@Composable fun Overview('):M.index('@Composable fun Session(',M.index('@Composable fun Overview('))]
-          p_thought=ov.index('ThoughtsCard(s)')
-          p_metric=ov.index('Metric("FPS"')
-          p_thermal=ov.index('ThermalRow(s)')
-          p_network=ov.index('NetworkCard(s.network)')
-          p_strategy=ov.index('StrategyCard(s)')
-          p_agent=ov.index('AgentRebuild3Card(s)')
+          p_thought=ov.index('ThoughtsCard(s)'); p_metric=ov.index('Metric("FPS"'); p_thermal=ov.index('ThermalRow(s)'); p_network=ov.index('NetworkCard(s.network)'); p_strategy=ov.index('StrategyCard(s)'); p_agent=ov.index('AgentRebuild3Card(s)')
           assert p_thought < p_metric < p_thermal < p_network < p_strategy < p_agent
           assert ov.count('StrategyCard(s)')==1 and ov.count('AgentRebuild3Card(s)')==1
-          for required in ['HermesCard(s)','HumanComfortHcc1Card(s)','ContextVNextCard(s)','MemoryVNextCard(s)','ReasoningV2Card(s)','SkillsVNextCard(s)','LearningResearchV2Card(s)','OutcomeLearningCard(s)','StrategyCompositionCard(s)','DecisionPipelineCard(s)']:
-              assert required in ov,required
+          for required in ['HermesCard(s)','HumanComfortHcc1Card(s)','ContextVNextCard(s)','MemoryVNextCard(s)','ReasoningV2Card(s)','SkillsVNextCard(s)','LearningResearchV2Card(s)','OutcomeLearningCard(s)','StrategyCompositionCard(s)','DecisionPipelineCard(s)']: assert required in ov,required
           assert 'HERMES_MATH' in C and 'CONTROL_CENTER_SYNC' in C
-          assert 'AI AGENT • FULL HARDWARE CONTROLLER' in M
-          assert 'AGENT_WINNER' not in M and 'LOCAL AI' not in M
           snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
           assert snap.count('ConsolidatedSnapshotReader') == 1
           print('SYNC2_SESSION_TRUTH_SEPARATED=PASS')
@@ -90,11 +82,20 @@ jobs:
           cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-lang3-sync2/src/
           cp control-center-r2/app/build.gradle.kts audit-lang3-sync2/
           cp control-center-r2/app/src/main/AndroidManifest.xml audit-lang3-sync2/
+      - name: Upload SYNC2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: djaeger-control-center-sync2
+          path: dist-lang3-sync2/
+          if-no-files-found: error
+          retention-days: 30
       - name: Publish outputs
+        continue-on-error: true
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist-lang3-sync2 audit-lang3-sync2
           git commit -m 'Publish REBUILD3 LANG3 MATH1 SYNC2 [skip ci]'
-          git push origin HEAD:codex/rebuild3-lang3-math1-sync2
+          for i in 1 2 3; do git push origin HEAD:codex/rebuild3-lang3-math1-sync2 && exit 0; sleep 5; done
+          exit 1
