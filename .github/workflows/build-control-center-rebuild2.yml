@@ -1,0 +1,102 @@
+name: Build DJAEGER Control Center REBUILD2
+on:
+  push:
+    branches: [codex/rebuild2-gemini-primary-agent-executor]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+
+      - name: Generate exact FIX4 RC1 baseline then apply REBUILD2 minimal patch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py; do
+            python3 scripts/$s
+          done
+          python3 scripts/r34_rebuild2_gemini_primary_agent_executor.py
+
+      - name: REBUILD2 minimal-delta gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('control-center-r2')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          C=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
+          B=(root/'app/build.gradle.kts').read_text()
+          A=(root/'app/src/main/AndroidManifest.xml').read_text()
+          assert 'versionCode = 12251' in B
+          assert '0.12.1-fix4-rc1-rebuild2-gemini-primary-agent-executor' in B
+          for x in ['AI AGENT • AUTONOMOUS EXECUTOR','Decision authority: $decisionAuth','Execution owner: $executionOwner','Decision priority: $priority','Primary brain: GEMINI','Local fallback brain: HERMES H2']:
+              assert x in M,x
+          assert 'AGENT_WINNER' not in M
+          assert 'LOCAL AI' not in M
+          assert 'thoughtSrc=="LOCAL_AI"' not in M
+          assert 'GEMINI • PRIMARY' in M
+          assert 'HERMES H2 • LOCAL FALLBACK' in M
+          start=M.index('@Composable fun Overview(s:RuntimeState)'); end=M.index('@Composable fun StatusCard',start); O=M[start:end]
+          assert O.index('ThoughtsCard(s);') < O.index('AgentRebuild2Card(s);') < O.index('HermesCard(s);')
+          # Baseline transport, freshness, vault, charts and lifecycle stay untouched.
+          assert M.count('private fun runtimeStateStale(')==1
+          assert 'while true; do cat /data/adb/djaeger_ai/fast_telemetry' not in R
+          snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
+          assert 'ConsolidatedSnapshotReader' in snap
+          for sec in ['HERMES_HUMAN_COMFORT','HERMES_COGNITION_STATUS','HERMES_MEMORY_VNEXT','HERMES_REASONING_V2','HERMES_SKILLS_VNEXT','HERMES_LEARNING_V2','HERMES_RESEARCH_V2','HERMES_CTX1_STATUS','HERMES_CTX1_RUNTIME','HERMES_CTX1_SAFETY','HERMES_CTX1_HARDWARE','HERMES_CTX1_MEMORY','HERMES_CTX1_LEARNING','AUTHORITY','SESSION_SAFETY','SUPERVISOR']:
+              assert f's["{sec}"]' in C,sec
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+C+B)
+          print('REBUILD2_FROM_EXACT_FIX4_RC1=PASS')
+          print('REBUILD2_GEMINI_PRIMARY_UI=PASS')
+          print('REBUILD2_AGENT_EXECUTOR_ONLY_UI=PASS')
+          print('REBUILD2_HERMES_FALLBACK_UI=PASS')
+          print('REBUILD2_NO_THIRD_BRAIN_UI=PASS')
+          print('REBUILD2_BASELINE_SNAPSHOT_PATH_PRESERVED=PASS')
+          PY
+
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Sign verify and publish REBUILD2
+        run: |
+          set -euo pipefail
+          rm -rf dist-rebuild2 audit-rebuild2 output-rebuild2
+          mkdir -p dist-rebuild2 audit-rebuild2/src output-rebuild2
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/zipalign" -p -f 4 "$U" output-rebuild2/aligned.apk
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-rebuild2-ci
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/rebuild2.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER REBUILD2, O=DJAEGER, C=ID'
+          "$BT/apksigner" sign --ks /tmp/rebuild2.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out dist-rebuild2/DJAEGER-Control-Center-v0.12.1-FIX4-RC1-REBUILD2.apk output-rebuild2/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs dist-rebuild2/DJAEGER-Control-Center-v0.12.1-FIX4-RC1-REBUILD2.apk > dist-rebuild2/APK_VERIFY.txt
+          unzip -t dist-rebuild2/DJAEGER-Control-Center-v0.12.1-FIX4-RC1-REBUILD2.apk > dist-rebuild2/APK_ZIP_TEST.txt
+          sha256sum dist-rebuild2/DJAEGER-Control-Center-v0.12.1-FIX4-RC1-REBUILD2.apk > dist-rebuild2/SHA256.txt
+          printf '%s\n' 'SOURCE_BASELINE_COMMIT=93c78ff2808022d176d9e08c17be4e488f5ab125' 'SOURCE_BASELINE_VERSION_CODE=12237' 'MATCHED_MODULE_VERSION_CODE=129621' 'CONTROL_CENTER_VERSION_CODE=12251' 'PRIMARY_BRAIN=GEMINI' 'LOCAL_FALLBACK_BRAIN=HERMES_H2' 'THIRD_BRAIN=NONE' 'AGENT_ROLE=AUTONOMOUS_EXECUTOR_ONLY' 'AGENT_DECISION_AUTHORITY=NONE' 'AGENT_EXECUTION_OWNER=YES' 'UI_DELTA=AGENT_EXECUTOR_CARD_AND_SEMANTICS_ONLY' 'SIGNER=REBUILD2_CI' > dist-rebuild2/BUILD_CONTRACT.txt
+          cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-rebuild2/src/
+          cp control-center-r2/app/build.gradle.kts audit-rebuild2/
+          cp control-center-r2/app/src/main/AndroidManifest.xml audit-rebuild2/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist-rebuild2 audit-rebuild2
+          git commit -m 'Publish FIX4 RC1 REBUILD2 [skip ci]'
+          git push origin HEAD:codex/rebuild2-gemini-primary-agent-executor
