@@ -1,0 +1,116 @@
+name: Publish DJAEGER Control Center LANG3 MATH1 SYNC1
+on:
+  push:
+    branches: [codex/rebuild3-lang3-math1-sync1]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+
+      - name: Restore exact audited MWFIX1 source and apply LANG3 MATH1 SYNC1
+        run: |
+          set -euo pipefail
+          APP=control-center-r2/app
+          SRC="$APP/src/main/java/com/djaeger/controlcenter"
+          rm -rf "$SRC"
+          mkdir -p "$SRC"
+          cp -a audit-mwfix1/src/. "$SRC/"
+          cp audit-mwfix1/build.gradle.kts "$APP/build.gradle.kts"
+          cp audit-mwfix1/AndroidManifest.xml "$APP/src/main/AndroidManifest.xml"
+          python3 scripts/r36_rebuild3_lang3_math1_sync1.py
+
+      - name: Matched architecture and safety gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('control-center-r2')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          C=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
+          B=(root/'app/build.gradle.kts').read_text()
+          A=(root/'app/src/main/AndroidManifest.xml').read_text()
+          assert 'versionCode = 12254' in B
+          assert '0.12.1-rebuild3-lang3-mwfix1-math1-sync1' in B
+          assert 'activeClaim && runtimeFresh && fFresh' in R
+          assert 'state.active=="1"&&state.sampleFresh' in M
+          assert 'Engine: $engine • age $ageText' in M
+          assert 'Session: $sessionState' in M
+          assert 'CONTROL CENTER • REBUILD3 • LANG3 • MWFIX1 • MATH1' in M
+          assert 'HERMES H2 • LANG3 + MATH1' in M
+          assert 'NLG_LANG3_CONVERSATIONAL' in M
+          assert 'HERMES_MATH' in C and 'CONTROL_CENTER_SYNC' in C and 'HERMES_LANGUAGE' in C
+          for x in ['AI AGENT • FULL HARDWARE CONTROLLER','Must obey active brain: $mustObey','Can choose brain: $canChoose','Can override brain: $canOverride','GEMINI • PRIMARY / HIGHEST']:
+              assert x in M,x
+          assert 'AGENT_WINNER' not in M
+          assert 'LOCAL AI' not in M
+          snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
+          assert snap.count('ConsolidatedSnapshotReader') == 1
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+C+B)
+          print('MWFIX1_SESSION_FIX_PRESERVED=PASS')
+          print('LANG3_PRESENTATION_SYNC=PASS')
+          print('MATH1_SNAPSHOT_MAPPING=PASS')
+          print('MATCHED_CONTRACT_MAPPING=PASS')
+          print('REBUILD3_AUTHORITY_PRESERVED=PASS')
+          print('SINGLE_ATOMIC_SNAPSHOT_READ=PASS')
+          PY
+
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Sign verify package and prepare audit
+        run: |
+          set -euo pipefail
+          rm -rf dist-lang3-sync1 audit-lang3-sync1 output-lang3-sync1
+          mkdir -p dist-lang3-sync1 audit-lang3-sync1/src output-lang3-sync1
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          test -n "$U"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/zipalign" -p -f 4 "$U" output-lang3-sync1/aligned.apk
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-lang3-sync1-ci
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/lang3-sync1.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER LANG3 MATH1 SYNC1, O=DJAEGER, C=ID'
+          APK=dist-lang3-sync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-LANG3-MWFIX1-MATH1-SYNC1.apk
+          "$BT/apksigner" sign --ks /tmp/lang3-sync1.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out "$APK" output-lang3-sync1/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > dist-lang3-sync1/APK_VERIFY.txt
+          unzip -t "$APK" > dist-lang3-sync1/APK_ZIP_TEST.txt
+          sha256sum "$APK" > dist-lang3-sync1/SHA256.txt
+          printf '%s\n' \
+            'MATCHED_MODULE_VERSION_CODE=129628' \
+            'MATCHED_MODULE_SHA256=609a5a0879a6fb60e34e9ac123fe089cb6a844788e68caa1e14f60a0b0c42cc2' \
+            'CONTROL_CENTER_VERSION_CODE=12254' \
+            'CONTROL_CENTER_VERSION_NAME=0.12.1-rebuild3-lang3-mwfix1-math1-sync1' \
+            'CONTRACT=REBUILD3_LANG3_MWFIX1_MATH1_SYNC1' \
+            'NLG=LANG3_CONVERSATIONAL' \
+            'MATH_CORE=MATH1' \
+            'PRIMARY_BRAIN=GEMINI' \
+            'DEPUTY_LOCAL_BRAIN=HERMES_H2' \
+            'AGENT_HARDWARE_AUTHORITY=FULL' \
+            'THIRD_BRAIN=NONE' \
+            'SNAPSHOT_SOURCE=ATOMIC_CC_SNAPSHOT' \
+            'SIGNER=LANG3_SYNC1_CI_NEW_CERT' > dist-lang3-sync1/BUILD_CONTRACT.txt
+          cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-lang3-sync1/src/
+          cp control-center-r2/app/build.gradle.kts audit-lang3-sync1/
+          cp control-center-r2/app/src/main/AndroidManifest.xml audit-lang3-sync1/
+
+      - name: Publish APK and audited source to branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist-lang3-sync1 audit-lang3-sync1
+          git commit -m 'Publish REBUILD3 LANG3 MATH1 SYNC1 [skip ci]'
+          git push origin HEAD:codex/rebuild3-lang3-math1-sync1
