@@ -17,7 +17,7 @@ jobs:
           APK='dist-lang3-mwfix2-attr1-sync4/DJAEGER-Control-Center-v0.12.1-REBUILD3-LANG3-MWFIX2-ATTR1-MATH1-SYNC4.apk'
           test -f "$APK"
           echo "APK_SHA256=$(sha256sum "$APK" | awk '{print $1}')"
-      - name: Publish temporary release asset
+      - name: Publish temporary release asset and persist encoded URL
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -35,5 +35,10 @@ jobs:
             "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
           URL="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/^[^:]+:[[:space:]]*/,""); gsub(/\r/,""); print; exit}' /tmp/h)"
           test -n "$URL"
-          echo "DIRECT_SIGNED_URL=$URL"
-          echo "ASSET_ID=$ASSET_ID"
+          printf '%s' "$URL" | base64 -w0 > VC12257_DIRECT_URL.b64
+          printf '%s\n' "sha256=ca34a886863c574f95569bc8c548c98c034348d35440e83b030fe4cdcc009709" "asset_id=$ASSET_ID" > VC12257_DIRECT_INFO.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VC12257_DIRECT_URL.b64 VC12257_DIRECT_INFO.txt
+          git commit -m 'Publish encoded vc12257 direct URL [skip ci]'
+          git push origin HEAD:codex/rebuild3-lang3-mwfix2-attr1-math1-sync4
