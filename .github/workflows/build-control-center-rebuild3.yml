@@ -1,0 +1,135 @@
+name: Build DJAEGER Control Center REBUILD3
+on:
+  push:
+    branches: [codex/rebuild3-agent-full-hardware-truth]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+
+      - name: Generate exact FIX4 RC1 baseline then apply REBUILD3 minimal patch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py; do
+            python3 scripts/$s
+          done
+          python3 scripts/r34_rebuild3_agent_full_hardware_truth.py
+
+      - name: REBUILD3 architecture and minimal-delta gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('control-center-r2')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          C=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
+          B=(root/'app/build.gradle.kts').read_text()
+          A=(root/'app/src/main/AndroidManifest.xml').read_text()
+          assert 'versionCode = 12252' in B
+          assert '0.12.1-fix4-rc1-rebuild3-agent-full-hardware-truth' in B
+          for x in [
+              'AI AGENT • FULL HARDWARE CONTROLLER',
+              'Decision authority: $decisionAuth',
+              'Hardware authority: $hwAuthority',
+              'Hardware truth: $truthAuthority • $truthSource',
+              'Must obey active brain: $mustObey',
+              'Can choose brain: $canChoose',
+              'Can override brain: $canOverride',
+              'Gemini feed: COMPACT • DELTA / EVENT DRIVEN',
+              'Hermes feed: RICH • LOCAL',
+              'GEMINI • PRIMARY / HIGHEST',
+              'HERMES H2 • DEPUTY LOCAL BRAIN']:
+              assert x in M,x
+          assert 'AGENT_WINNER' not in M
+          assert 'LOCAL AI' not in M
+          assert 'thoughtSrc=="LOCAL_AI"' not in M
+          start=M.index('@Composable fun Overview(s:RuntimeState)'); end=M.index('@Composable fun StatusCard',start); O=M[start:end]
+          assert O.index('ThoughtsCard(s);') < O.index('AgentRebuild3Card(s);') < O.index('HermesCard(s);')
+          # Preserve FIX4 RC1 consolidated atomic snapshot transport: no second root reader.
+          assert M.count('private fun runtimeStateStale(')==1
+          assert 'while true; do cat /data/adb/djaeger_ai/fast_telemetry' not in R
+          snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
+          assert 'ConsolidatedSnapshotReader' in snap
+          for sec in ['HERMES_HUMAN_COMFORT','HERMES_COGNITION_STATUS','HERMES_MEMORY_VNEXT','HERMES_REASONING_V2','HERMES_SKILLS_VNEXT','HERMES_LEARNING_V2','HERMES_RESEARCH_V2','HERMES_CTX1_STATUS','HERMES_CTX1_RUNTIME','HERMES_CTX1_SAFETY','HERMES_CTX1_HARDWARE','HERMES_CTX1_MEMORY','HERMES_CTX1_LEARNING','AUTHORITY','SESSION_SAFETY','SUPERVISOR']:
+              assert f's["{sec}"]' in C,sec
+          assert 'SYSTEM_ALERT_WINDOW' not in A
+          assert not re.search(r'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}',M+R+C+B)
+          print('REBUILD3_FROM_EXACT_FIX4_RC1=PASS')
+          print('REBUILD3_GEMINI_PRIMARY_HIGHEST_UI=PASS')
+          print('REBUILD3_HERMES_DEPUTY_UI=PASS')
+          print('REBUILD3_AGENT_FULL_HARDWARE_UI=PASS')
+          print('REBUILD3_AGENT_ZERO_DECISION_AUTHORITY_UI=PASS')
+          print('REBUILD3_RICH_HERMES_COMPACT_GEMINI_FEEDS_UI=PASS')
+          print('REBUILD3_NO_THIRD_BRAIN_UI=PASS')
+          print('REBUILD3_BASELINE_SNAPSHOT_PATH_PRESERVED=PASS')
+          PY
+
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Sign verify and publish REBUILD3
+        run: |
+          set -euo pipefail
+          rm -rf dist-rebuild3 audit-rebuild3 output-rebuild3
+          mkdir -p dist-rebuild3 audit-rebuild3/src output-rebuild3
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/zipalign" -p -f 4 "$U" output-rebuild3/aligned.apk
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-rebuild3-ci
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/rebuild3.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER REBUILD3, O=DJAEGER, C=ID'
+          "$BT/apksigner" sign --ks /tmp/rebuild3.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out dist-rebuild3/DJAEGER-Control-Center-v0.12.1-FIX4-RC1-REBUILD3.apk output-rebuild3/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs dist-rebuild3/DJAEGER-Control-Center-v0.12.1-FIX4-RC1-REBUILD3.apk > dist-rebuild3/APK_VERIFY.txt
+          unzip -t dist-rebuild3/DJAEGER-Control-Center-v0.12.1-FIX4-RC1-REBUILD3.apk > dist-rebuild3/APK_ZIP_TEST.txt
+          sha256sum dist-rebuild3/DJAEGER-Control-Center-v0.12.1-FIX4-RC1-REBUILD3.apk > dist-rebuild3/SHA256.txt
+          printf '%s\n' \
+            'SOURCE_BASELINE_COMMIT=93c78ff2808022d176d9e08c17be4e488f5ab125' \
+            'SOURCE_BASELINE_VERSION_CODE=12237' \
+            'MATCHED_MODULE_VERSION_CODE=129622' \
+            'CONTROL_CENTER_VERSION_CODE=12252' \
+            'PRIMARY_BRAIN=GEMINI' \
+            'PRIMARY_BRAIN_AUTHORITY=HIGHEST_WHEN_VALID' \
+            'DEPUTY_LOCAL_BRAIN=HERMES_H2' \
+            'HERMES_MODE_WHEN_GEMINI_VALID=SHADOW_LEARNER' \
+            'HERMES_ACTIVE_ONLY_WHEN_GEMINI_UNAVAILABLE=YES' \
+            'THIRD_BRAIN=NONE' \
+            'AGENT_ROLE=FULL_HARDWARE_CONTROLLER_AUTONOMOUS_EXECUTOR' \
+            'AGENT_DECISION_AUTHORITY=NONE' \
+            'AGENT_EXECUTION_OWNER=YES' \
+            'AGENT_HARDWARE_AUTHORITY=FULL' \
+            'AGENT_MUST_OBEY_ACTIVE_BRAIN=YES' \
+            'AGENT_CAN_CHOOSE_BRAIN=NO' \
+            'AGENT_CAN_OVERRIDE_BRAIN=NO' \
+            'HARDWARE_TRUTH=AI_AGENT_DIRECT_READBACK_AUTHORITATIVE' \
+            'HERMES_FEED=RICH_LOCAL' \
+            'GEMINI_FEED=COMPACT_DELTA_EVENT_DRIVEN' \
+            'UI_DELTA=AGENT_FULL_HARDWARE_CARD_AND_SEMANTICS_ONLY' \
+            'SIGNER=REBUILD3_CI' > dist-rebuild3/BUILD_CONTRACT.txt
+          cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-rebuild3/src/
+          cp control-center-r2/app/build.gradle.kts audit-rebuild3/
+          cp control-center-r2/app/src/main/AndroidManifest.xml audit-rebuild3/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist-rebuild3 audit-rebuild3
+          git commit -m 'Publish FIX4 RC1 REBUILD3 [skip ci]'
+          git push origin HEAD:codex/rebuild3-agent-full-hardware-truth
