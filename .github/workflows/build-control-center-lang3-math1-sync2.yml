@@ -46,15 +46,25 @@ jobs:
           assert 'active=if(sessionFresh)' in R and 'game=if(sessionFresh)' in R and 'window=if(sessionFresh)' in R
           assert 'UNKNOWN / STALE' in M
           ov=M[M.index('@Composable fun Overview('):M.index('@Composable fun Session(',M.index('@Composable fun Overview('))]
-          assert ov.index('ThoughtsCard(s)') < ov.index('NetworkCard(s.network)') < ov.index('StrategyCard(s)')
-          assert ov.index('MetricTile("FPS"') < ov.index('NetworkCard(s.network)')
+          p_thought=ov.index('ThoughtsCard(s)')
+          p_metric=ov.index('Metric("FPS"')
+          p_thermal=ov.index('ThermalRow(s)')
+          p_network=ov.index('NetworkCard(s.network)')
+          p_strategy=ov.index('StrategyCard(s)')
+          p_agent=ov.index('AgentRebuild3Card(s)')
+          assert p_thought < p_metric < p_thermal < p_network < p_strategy < p_agent
+          assert ov.count('StrategyCard(s)')==1 and ov.count('AgentRebuild3Card(s)')==1
+          for required in ['HermesCard(s)','HumanComfortHcc1Card(s)','ContextVNextCard(s)','MemoryVNextCard(s)','ReasoningV2Card(s)','SkillsVNextCard(s)','LearningResearchV2Card(s)','OutcomeLearningCard(s)','StrategyCompositionCard(s)','DecisionPipelineCard(s)']:
+              assert required in ov,required
           assert 'HERMES_MATH' in C and 'CONTROL_CENTER_SYNC' in C
           assert 'AI AGENT • FULL HARDWARE CONTROLLER' in M
           assert 'AGENT_WINNER' not in M and 'LOCAL AI' not in M
           snap=R[R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'):R.index('    suspend fun setUserMode',R.index('    suspend fun snapshot():RuntimeState=withContext(Dispatchers.IO){'))]
           assert snap.count('ConsolidatedSnapshotReader') == 1
           print('SYNC2_SESSION_TRUTH_SEPARATED=PASS')
-          print('SYNC2_UI_ORDER=THOUGHTS>REALTIME_NETWORK>STRATEGY')
+          print('SYNC2_FALSE_WAITING_GAME_PATH_REMOVED=PASS')
+          print('SYNC2_UI_ORDER=THOUGHT>METRICS>THERMAL>NETWORK>STRATEGI')
+          print('SYNC2_EXISTING_OVERVIEW_CARDS_PRESERVED=PASS')
           PY
       - name: Unit tests and release build
         working-directory: control-center-r2
@@ -76,7 +86,7 @@ jobs:
           "$BT/apksigner" verify --verbose --print-certs "$APK" > dist-lang3-sync2/APK_VERIFY.txt
           unzip -t "$APK" > dist-lang3-sync2/APK_ZIP_TEST.txt
           sha256sum "$APK" > dist-lang3-sync2/SHA256.txt
-          printf '%s\n' 'MATCHED_MODULE_VERSION_CODE=129628' 'CONTROL_CENTER_VERSION_CODE=12255' 'CONTROL_CENTER_VERSION_NAME=0.12.1-rebuild3-lang3-mwfix1-math1-sync2' 'CONTRACT=REBUILD3_LANG3_MWFIX1_MATH1_SYNC2' 'FIX=SESSION_TRUTH_SEPARATED_FROM_TELEMETRY_FRAME_FRESHNESS' 'UI_ORDER=THOUGHTS>REALTIME_NETWORK>STRATEGY' 'NLG=LANG3_CONVERSATIONAL' 'MATH_CORE=MATH1' 'PRIMARY_BRAIN=GEMINI' 'DEPUTY_LOCAL_BRAIN=HERMES_H2' 'AGENT_HARDWARE_AUTHORITY=FULL' 'THIRD_BRAIN=NONE' 'SNAPSHOT_SOURCE=ATOMIC_CC_SNAPSHOT' > dist-lang3-sync2/BUILD_CONTRACT.txt
+          printf '%s\n' 'MATCHED_MODULE_VERSION_CODE=129628' 'CONTROL_CENTER_VERSION_CODE=12255' 'CONTROL_CENTER_VERSION_NAME=0.12.1-rebuild3-lang3-mwfix1-math1-sync2' 'CONTRACT=REBUILD3_LANG3_MWFIX1_MATH1_SYNC2' 'FIX=SESSION_TRUTH_SEPARATED_FROM_TELEMETRY_FRAME_FRESHNESS' 'UI_ORDER=THOUGHT>METRICS>THERMAL>NETWORK>STRATEGI' 'NLG=LANG3_CONVERSATIONAL' 'MATH_CORE=MATH1' 'PRIMARY_BRAIN=GEMINI' 'DEPUTY_LOCAL_BRAIN=HERMES_H2' 'AGENT_HARDWARE_AUTHORITY=FULL' 'THIRD_BRAIN=NONE' 'SNAPSHOT_SOURCE=ATOMIC_CC_SNAPSHOT' > dist-lang3-sync2/BUILD_CONTRACT.txt
           cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-lang3-sync2/src/
           cp control-center-r2/app/build.gradle.kts audit-lang3-sync2/
           cp control-center-r2/app/src/main/AndroidManifest.xml audit-lang3-sync2/
