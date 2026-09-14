@@ -19,10 +19,11 @@ jobs:
           test -f gemini37chat/releases/Gemini37Chat-v1.0-debug.apk
           rm -rf gemini37chat/export
           mkdir -p gemini37chat/export
-          base64 -w0 gemini37chat/releases/Gemini37Chat-v1.0-debug.apk | fold -w 7000 | split -d -a 2 - gemini37chat/export/part-
+          base64 -w0 gemini37chat/releases/Gemini37Chat-v1.0-debug.apk > /tmp/Gemini37Chat.apk.b64
+          split -b 7000 -d -a 2 /tmp/Gemini37Chat.apk.b64 gemini37chat/export/part-
           sha256sum gemini37chat/releases/Gemini37Chat-v1.0-debug.apk > gemini37chat/export/SHA256.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add gemini37chat/export
-          git commit -m "Export Gemini chat APK chunks [skip ci]"
+          git add -A gemini37chat/export
+          git commit -m "Export Gemini chat APK chunks v2 [skip ci]"
           git push origin HEAD:gemini37chat-build
