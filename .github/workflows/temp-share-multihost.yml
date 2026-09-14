@@ -1,0 +1,45 @@
+name: TEMP SHARE CCSYNC1 APK MULTIHOST
+on:
+  push:
+    branches:
+      - codex/rebuild3-hk1-sysfs1-ccsync1
+jobs:
+  share:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload and verify APK
+        shell: bash
+        run: |
+          set -u
+          APK='dist-hk1-sysfs1-ccsync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-HK1-SYSFS1-CCSYNC1.apk'
+          test -s "$APK" || { echo APK_MISSING; exit 1; }
+          EXPECT="$(sha256sum "$APK" | awk '{print $1}')"
+          echo "SOURCE_APK_SHA256=$EXPECT"
+          verify_url() {
+            U="$1"
+            [ -n "$U" ] || return 1
+            rm -f verify.apk
+            curl -fL --retry 2 --connect-timeout 15 "$U" -o verify.apk || return 1
+            GOT="$(sha256sum verify.apk | awk '{print $1}')"
+            [ "$GOT" = "$EXPECT" ] || return 1
+            echo "PUBLIC_APK_URL=$U"
+            echo "PUBLIC_APK_SHA256=$GOT"
+            return 0
+          }
+
+          echo 'TRY_HOST=0x0.st'
+          U="$(curl -fsS --retry 2 -F "file=@$APK" https://0x0.st 2>/dev/null | tr -d '\r\n' || true)"
+          if echo "$U" | grep -Eq '^https?://'; then verify_url "$U" && exit 0; fi
+
+          echo 'TRY_HOST=tmpfiles.org'
+          J="$(curl -fsS --retry 2 -F "file=@$APK" https://tmpfiles.org/api/v1/upload 2>/dev/null || true)"
+          U="$(printf '%s' "$J" | jq -r '.data.url // empty' 2>/dev/null || true)"
+          if [ -n "$U" ]; then U="${U/http:\/\/tmpfiles.org\//https:\/\/tmpfiles.org\/dl\/}"; U="${U/https:\/\/tmpfiles.org\//https:\/\/tmpfiles.org\/dl\/}"; verify_url "$U" && exit 0; fi
+
+          echo 'TRY_HOST=bashupload.com'
+          U="$(curl -fsS --retry 2 -T "$APK" https://bashupload.com/ 2>/dev/null | grep -Eo 'https://bashupload.com/[A-Za-z0-9._/-]+' | tail -1 || true)"
+          if [ -n "$U" ]; then verify_url "$U" && exit 0; fi
+
+          echo MULTIHOST_UPLOAD_FAILED
+          exit 1
