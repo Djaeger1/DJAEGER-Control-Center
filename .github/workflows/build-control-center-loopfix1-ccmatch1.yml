@@ -100,7 +100,8 @@ jobs:
             'NEW_RECURRING_ROOT_READS=0' > dist-loopfix1-ccmatch1/BUILD_CONTRACT.txt
           cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-loopfix1-ccmatch1/src/
           cp control-center-r2/app/build.gradle.kts audit-loopfix1-ccmatch1/
-      - name: Upload artifact
+      - name: Upload artifact (optional mirror)
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: djaeger-control-center-loopfix1-ccmatch1
