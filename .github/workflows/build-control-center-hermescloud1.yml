@@ -1,0 +1,136 @@
+name: Build DJAEGER Control Center HERMESCLOUD1
+on:
+  push:
+    branches: [codex/rebuild3-sharedint1-hermescloud1]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Restore validated SHAREDINT1 source then apply HERMESCLOUD1
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py; do python3 scripts/$s; done
+          python3 scripts/r34_rebuild3_agent_full_hardware_truth.py
+          python3 scripts/r35_rebuild3_lang2_mwfix1.py
+          python3 scripts/r36_rebuild3_lang3_math1_sync1.py
+          python3 scripts/r37_sync2_session_truth_ui_order.py
+          python3 scripts/r38_mwfix2_sync3.py
+          python3 scripts/r39_attr1_sync4.py
+          python3 scripts/r40_hk1_sysfs1_ccsync1.py
+          python3 scripts/r41_loopfix1_ccmatch1.py
+          python3 scripts/r42_gamereg1.py
+          python3 scripts/r43_sharedint1.py
+          cp -a control-center-r2 /tmp/control-center-sharedint1
+          python3 scripts/r44_hermescloud1.py
+      - name: HERMESCLOUD1 exact-pair and preservation gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('control-center-r2'); old=Path('/tmp/control-center-sharedint1')
+          M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          B=(root/'app/build.gradle.kts').read_text()
+          R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          C=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
+          assert 'versionCode = 12260' in B
+          assert '0.12.1-rebuild3-hk1-sysfs1-ccsync1-loopfix1-gamereg1-sharedint1-hermescloud1' in B
+          assert 'GAME REGISTRY • MANUAL' in M
+          assert 'SHAREDINT1 • HERMESCLOUD1' in M
+          assert 'REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_GAMEREG1_SHAREDINT1_HERMESCLOUD1' in M
+          assert 'syncModule=="129633"&&syncCc=="12260"' in M
+          assert 'syncHermesCloud=="HERMESCLOUD1"' in M
+          assert 'HERMES CLOUD • ONE HERMES • HERMESCLOUD1' in M
+          assert 'Gemini primary → HERMES H2 cloud → HERMES H2 local → native failsafe' in M
+          assert 'Hardware executor: AI AGENT A1 ONLY' in M
+          assert 'secret never displayed' in M
+          assert 'djaeger-game-registry add-stdin' in R and 'djaeger-game-registry remove-stdin' in R
+          for x in ['HERMES_KERNEL1','AGENT_SYSFS1_CAPABILITY','AGENT_SYSFS1_EXECUTION']: assert x in C
+          def h(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          before={p.relative_to(old).as_posix():h(p) for p in old.rglob('*') if p.is_file()}
+          after={p.relative_to(root).as_posix():h(p) for p in root.rglob('*') if p.is_file()}
+          changed=sorted(k for k in before.keys()&after.keys() if before[k]!=after[k])
+          allowed=sorted(['app/build.gradle.kts','app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'])
+          assert changed==allowed,(changed,allowed)
+          assert set(before)==set(after)
+          print('HERMESCLOUD1_CC_GATE=PASS')
+          print('EXACT_MODULE_VC=129633')
+          print('EXACT_CC_VC=12260')
+          print('SHAREDINT1_PRESERVED=PASS')
+          print('GAMEREG1_PRESERVED=PASS')
+          print('NEW_RECURRING_ROOT_READS=0')
+          PY
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign verify and prepare artifact
+        run: |
+          set -euo pipefail
+          rm -rf dist-hermescloud1 audit-hermescloud1 output-hermescloud1
+          mkdir -p dist-hermescloud1 audit-hermescloud1/src output-hermescloud1
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/zipalign" -p -f 4 "$U" output-hermescloud1/aligned.apk
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-hermescloud1-ci
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/hermescloud1.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER HERMESCLOUD1, O=DJAEGER, C=ID'
+          APK=dist-hermescloud1/DJAEGER-Control-Center-v0.12.1-REBUILD3-SHAREDINT1-HERMESCLOUD1.apk
+          "$BT/apksigner" sign --ks /tmp/hermescloud1.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out "$APK" output-hermescloud1/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > dist-hermescloud1/APK_VERIFY.txt
+          unzip -t "$APK" > dist-hermescloud1/APK_ZIP_TEST.txt
+          sha256sum "$APK" > dist-hermescloud1/SHA256.txt
+          printf '%s\n' \
+            'MATCHED_MODULE_VERSION_CODE=129633' \
+            'CONTROL_CENTER_VERSION_CODE=12260' \
+            'CONTROL_CENTER_VERSION_NAME=0.12.1-rebuild3-hk1-sysfs1-ccsync1-loopfix1-gamereg1-sharedint1-hermescloud1' \
+            'CONTRACT=REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_GAMEREG1_SHAREDINT1_HERMESCLOUD1' \
+            'GAME_REGISTRY=GAMEREG1' \
+            'SHARED_INTELLIGENCE=SHAREDINT1' \
+            'HERMES_CLOUD=HERMESCLOUD1' \
+            'HERMES_CLOUD_ENDPOINT=hermes-cloud-djaeger.moclomper.workers.dev' \
+            'HERMES_CLOUD_ROLE=REMOTE_BACKEND_OF_HERMES_H2_NOT_THIRD_BRAIN' \
+            'HERMES_BACKEND_PRIORITY=CLOUD_THEN_LOCAL_WHEN_GEMINI_INVALID' \
+            'HERMES_ACCESS_KEY=DEVICE_ONLY_SECRET_NOT_PUBLISHED' \
+            'PRIMARY_BRAIN=GEMINI' \
+            'DEPUTY_BRAIN=HERMES_H2' \
+            'EXECUTION_OWNER=AI_AGENT_A1_ONLY' \
+            'AUTHORITY_CHANGE=NONE' \
+            'NEW_RECURRING_ROOT_READS=0' > dist-hermescloud1/BUILD_CONTRACT.txt
+          cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-hermescloud1/src/
+          cp control-center-r2/app/build.gradle.kts audit-hermescloud1/
+      - name: Upload artifact (optional mirror)
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: djaeger-control-center-hermescloud1
+          path: dist-hermescloud1/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish outputs to branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dist-hermescloud1 audit-hermescloud1
+          git commit -m 'Publish HERMESCLOUD1 Control Center [skip ci]'
+          git reset --hard HEAD
+          git clean -fd
+          git pull --rebase origin codex/rebuild3-sharedint1-hermescloud1
+          git push origin HEAD:codex/rebuild3-sharedint1-hermescloud1
