@@ -1,0 +1,18 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v3.2 scheme (APK Signature Scheme v3.2): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+V3.0 Signer: certificate DN: CN=DJAEGER LOOPFIX1 GAMEREG1, O=DJAEGER, C=ID
+V3.0 Signer: certificate SHA-256 digest: 745b2e370f999723c7bd11d855962a29733084e3f1e7135349249dbda6da148d
+V3.0 Signer: certificate SHA-1 digest: b5638802076c441a1e0cfd8c42c960cf87c9e729
+V3.0 Signer: certificate MD5 digest: d57ec3598d391fa4f109cc23be66f979
+V3.0 Signer: key algorithm: RSA
+V3.0 Signer: key size (bits): 4096
+V3.0 Signer: public key SHA-256 digest: f51c8832148bc52b66dbf602393b4531b06b127b54214e24413267572409df08
+V3.0 Signer: public key SHA-1 digest: e0f76469310a087c3658e3be4e7642c64cf03172
+V3.0 Signer: public key MD5 digest: b9abd78de1cdeaeff3a72f544595774a
