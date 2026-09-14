@@ -1,7 +1,7 @@
-name: Build DJAEGER Control Center LOOPFIX1 CCMATCH1
+name: Build DJAEGER Control Center LOOPFIX1 GAMEREG1
 on:
   push:
-    branches: [codex/rebuild3-loopfix1-ccmatch1]
+    branches: [codex/rebuild3-loopfix1-gamereg1]
   workflow_dispatch:
 permissions:
   contents: write
@@ -15,7 +15,7 @@ jobs:
         with: {distribution: temurin, java-version: '17'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
-      - name: Restore vc12257 source and apply CCSYNC1 plus LOOPFIX1 CCMATCH1
+      - name: Restore validated LOOPFIX1 CCMATCH1 source then apply GAMEREG1
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -33,39 +33,44 @@ jobs:
           python3 scripts/r38_mwfix2_sync3.py
           python3 scripts/r39_attr1_sync4.py
           python3 scripts/r40_hk1_sysfs1_ccsync1.py
-          cp -a control-center-r2 /tmp/control-center-ccsync1
           python3 scripts/r41_loopfix1_ccmatch1.py
-      - name: LOOPFIX1 matcher and preservation gates
+          cp -a control-center-r2 /tmp/control-center-ccmatch1
+          python3 scripts/r42_gamereg1.py
+      - name: GAMEREG1 source and preservation gates
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import hashlib
-          root=Path('control-center-r2'); old=Path('/tmp/control-center-ccsync1')
+          root=Path('control-center-r2'); old=Path('/tmp/control-center-ccmatch1')
           M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
           B=(root/'app/build.gradle.kts').read_text()
           R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
           C=(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt').read_text()
           assert 'versionCode = 12258' in B
-          assert '0.12.1-rebuild3-hk1-sysfs1-ccsync1-loopfix1-ccmatch1' in B
+          assert '0.12.1-rebuild3-hk1-sysfs1-ccsync1-loopfix1-gamereg1' in B
+          assert 'GAME REGISTRY • MANUAL' in M
+          assert 'Nama game' in M and 'Package name' in M and 'TAMBAH GAME' in M and 'HAPUS' in M
+          assert '1->Session(state,samples,repo)' in M
+          assert 'djaeger-game-registry list' in R
+          assert 'djaeger-game-registry add-stdin' in R
+          assert 'djaeger-game-registry remove-stdin' in R
+          assert 'pkg+"\\n"+name' in R
+          assert 'ProcessBuilder("su"' in R
           assert 'AGENT-FULL-HW-REBUILD3' not in M
           assert 'exactMatched=syncContract=="REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1"' in M
           assert 'syncModule=="129631"&&syncCc=="12258"' in M
-          assert 'YES • EXACT CONTRACT' in M
-          assert 'YES • REBUILD3 IDENTITY' in M
-          assert 'CHECKING • CONTRACT NOT PUBLISHED' in M
-          assert 'CCSYNC1 • LOOPFIX1' in M
           for x in ['HERMES_KERNEL1','AGENT_SYSFS1_CAPABILITY','AGENT_SYSFS1_EXECUTION']: assert x in C
-          assert 'ProcessBuilder("su"' in R
           def h(p): return hashlib.sha256(p.read_bytes()).hexdigest()
           before={p.relative_to(old).as_posix():h(p) for p in old.rglob('*') if p.is_file()}
           after={p.relative_to(root).as_posix():h(p) for p in root.rglob('*') if p.is_file()}
           changed=sorted(k for k in before.keys()&after.keys() if before[k]!=after[k])
-          allowed=sorted(['app/build.gradle.kts','app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'])
+          allowed=sorted(['app/build.gradle.kts','app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt','app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'])
           assert changed==allowed,(changed,allowed)
           assert set(before)==set(after)
-          print('LOOPFIX1_CCMATCH1_GATE=PASS')
-          print('ONLY_UI_MATCHER_AND_VERSIONNAME_CHANGED=PASS')
+          print('GAMEREG1_CC_GATE=PASS')
+          print('MANUAL_INPUT_NAME_PACKAGE=PASS')
+          print('TRUSTED_STDIN_ONLY=PASS')
           print('MODULE_AUTHORITY_CHANGE=0')
           print('NEW_RECURRING_ROOT_READS=0')
           PY
@@ -77,35 +82,36 @@ jobs:
       - name: Sign verify and prepare artifact
         run: |
           set -euo pipefail
-          rm -rf dist-loopfix1-ccmatch1 audit-loopfix1-ccmatch1 output-loopfix1-ccmatch1
-          mkdir -p dist-loopfix1-ccmatch1 audit-loopfix1-ccmatch1/src output-loopfix1-ccmatch1
+          rm -rf dist-loopfix1-gamereg1 audit-loopfix1-gamereg1 output-loopfix1-gamereg1
+          mkdir -p dist-loopfix1-gamereg1 audit-loopfix1-gamereg1/src output-loopfix1-gamereg1
           U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BT/zipalign" -p -f 4 "$U" output-loopfix1-ccmatch1/aligned.apk
-          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-loopfix1-ccmatch1-ci
-          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/loopfix1-ccmatch1.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER LOOPFIX1 CCMATCH1, O=DJAEGER, C=ID'
-          APK=dist-loopfix1-ccmatch1/DJAEGER-Control-Center-v0.12.1-REBUILD3-LOOPFIX1-CCMATCH1.apk
-          "$BT/apksigner" sign --ks /tmp/loopfix1-ccmatch1.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out "$APK" output-loopfix1-ccmatch1/aligned.apk
-          "$BT/apksigner" verify --verbose --print-certs "$APK" > dist-loopfix1-ccmatch1/APK_VERIFY.txt
-          unzip -t "$APK" > dist-loopfix1-ccmatch1/APK_ZIP_TEST.txt
-          sha256sum "$APK" > dist-loopfix1-ccmatch1/SHA256.txt
+          "$BT/zipalign" -p -f 4 "$U" output-loopfix1-gamereg1/aligned.apk
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-loopfix1-gamereg1-ci
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/loopfix1-gamereg1.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER LOOPFIX1 GAMEREG1, O=DJAEGER, C=ID'
+          APK=dist-loopfix1-gamereg1/DJAEGER-Control-Center-v0.12.1-REBUILD3-LOOPFIX1-GAMEREG1.apk
+          "$BT/apksigner" sign --ks /tmp/loopfix1-gamereg1.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v2-signing-enabled true --v3-signing-enabled true --out "$APK" output-loopfix1-gamereg1/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > dist-loopfix1-gamereg1/APK_VERIFY.txt
+          unzip -t "$APK" > dist-loopfix1-gamereg1/APK_ZIP_TEST.txt
+          sha256sum "$APK" > dist-loopfix1-gamereg1/SHA256.txt
           printf '%s\n' \
             'MATCHED_MODULE_VERSION_CODE=129631' \
             'CONTROL_CENTER_VERSION_CODE=12258' \
-            'CONTROL_CENTER_VERSION_NAME=0.12.1-rebuild3-hk1-sysfs1-ccsync1-loopfix1-ccmatch1' \
+            'CONTROL_CENTER_VERSION_NAME=0.12.1-rebuild3-hk1-sysfs1-ccsync1-loopfix1-gamereg1' \
             'CONTRACT=REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1' \
-            'MATCH_POLICY=EXACT_CONTRACT_OR_STRONG_REBUILD3_IDENTITY' \
-            'LOOPFIX1_RECOGNIZED=YES' \
+            'FEATURE=MANUAL_GAME_REGISTRY' \
+            'INPUT=DISPLAY_NAME+PACKAGE_NAME' \
+            'MODULE_INTERFACE=djaeger-game-registry_STDIN' \
             'AUTHORITY_CHANGE=NONE' \
-            'NEW_RECURRING_ROOT_READS=0' > dist-loopfix1-ccmatch1/BUILD_CONTRACT.txt
-          cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-loopfix1-ccmatch1/src/
-          cp control-center-r2/app/build.gradle.kts audit-loopfix1-ccmatch1/
+            'NEW_RECURRING_ROOT_READS=0' > dist-loopfix1-gamereg1/BUILD_CONTRACT.txt
+          cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-loopfix1-gamereg1/src/
+          cp control-center-r2/app/build.gradle.kts audit-loopfix1-gamereg1/
       - name: Upload artifact (optional mirror)
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: djaeger-control-center-loopfix1-ccmatch1
-          path: dist-loopfix1-ccmatch1/
+          name: djaeger-control-center-loopfix1-gamereg1
+          path: dist-loopfix1-gamereg1/
           if-no-files-found: error
           retention-days: 30
       - name: Publish outputs to branch
@@ -113,9 +119,9 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add dist-loopfix1-ccmatch1 audit-loopfix1-ccmatch1
-          git commit -m 'Publish LOOPFIX1 CCMATCH1 Control Center [skip ci]'
+          git add dist-loopfix1-gamereg1 audit-loopfix1-gamereg1
+          git commit -m 'Publish LOOPFIX1 GAMEREG1 Control Center [skip ci]'
           git reset --hard HEAD
           git clean -fd
-          git pull --rebase origin codex/rebuild3-loopfix1-ccmatch1
-          git push origin HEAD:codex/rebuild3-loopfix1-ccmatch1
+          git pull --rebase origin codex/rebuild3-loopfix1-gamereg1
+          git push origin HEAD:codex/rebuild3-loopfix1-gamereg1
