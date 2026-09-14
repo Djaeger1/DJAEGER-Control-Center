@@ -1,0 +1,26 @@
+name: TEMP SHARE CCSYNC1 APK CATBOX
+on:
+  push:
+    branches:
+      - codex/rebuild3-hk1-sysfs1-ccsync1
+jobs:
+  share:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload APK to Catbox and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='dist-hk1-sysfs1-ccsync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-HK1-SYSFS1-CCSYNC1.apk'
+          EXPECT='74619575bedc6cb1ab935c653326486c0610461072493cf2d0bae16a8285fa35'
+          test -s "$APK"
+          ACTUAL="$(sha256sum "$APK" | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECT"
+          URL="$(curl -fsS --retry 3 -F 'reqtype=fileupload' -F "fileToUpload=@$APK" https://catbox.moe/user/api.php)"
+          echo "$URL" | grep -Eq '^https://files\.catbox\.moe/'
+          curl -fL --retry 3 "$URL" -o verify.apk
+          VERIFY="$(sha256sum verify.apk | awk '{print $1}')"
+          test "$VERIFY" = "$EXPECT"
+          echo "PUBLIC_APK_URL=$URL"
+          echo "PUBLIC_APK_SHA256=$VERIFY"
