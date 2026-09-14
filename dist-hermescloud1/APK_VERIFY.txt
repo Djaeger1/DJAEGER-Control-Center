@@ -1,0 +1,18 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v3.2 scheme (APK Signature Scheme v3.2): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+V3.0 Signer: certificate DN: CN=DJAEGER HERMESCLOUD1, O=DJAEGER, C=ID
+V3.0 Signer: certificate SHA-256 digest: fde2c94e924b882b8cd52fb44665cc2dda070052dff181f8903342b044786a3f
+V3.0 Signer: certificate SHA-1 digest: 1facdb25cdaea97c43e4a58a1af0ae01cf44356e
+V3.0 Signer: certificate MD5 digest: 7271b2827e3830222975cfc731152209
+V3.0 Signer: key algorithm: RSA
+V3.0 Signer: key size (bits): 4096
+V3.0 Signer: public key SHA-256 digest: 6571acea5799729f2f1d40a4ea7a982b486d7cc95f28fee733ce445a98f9b54d
+V3.0 Signer: public key SHA-1 digest: 820cd4a323c2b2112f3bee86c4a39a26cd6644ae
+V3.0 Signer: public key MD5 digest: fa4b330c77b33f81b0b41f67759b16e6
