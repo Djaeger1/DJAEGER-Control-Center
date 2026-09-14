@@ -1,0 +1,41 @@
+name: TEMP SHARE CCSYNC1 APK
+on:
+  push:
+    branches: [codex/rebuild3-hk1-sysfs1-ccsync1]
+permissions:
+  contents: read
+jobs:
+  share:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload APK to temporary host
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='dist-hk1-sysfs1-ccsync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-HK1-SYSFS1-CCSYNC1.apk'
+          test -s "$APK"
+          echo 'Trying qurl.sh...'
+          OUT="$(curl -fsS --retry 2 --upload-file "$APK" https://qurl.sh || true)"
+          if printf '%s' "$OUT" | grep -Eq 'https://'; then
+            URL="$(printf '%s\n' "$OUT" | grep -Eo 'https://[^[:space:]]+' | tail -1)"
+            echo "PUBLIC_APK_URL=$URL"
+            exit 0
+          fi
+          echo 'Trying temp.sh...'
+          OUT="$(curl -fsS --retry 2 -T "$APK" https://temp.sh || true)"
+          if printf '%s' "$OUT" | grep -Eq 'https://'; then
+            URL="$(printf '%s\n' "$OUT" | grep -Eo 'https://[^[:space:]]+' | tail -1)"
+            echo "PUBLIC_APK_URL=$URL"
+            exit 0
+          fi
+          echo 'Trying 0x0.st...'
+          OUT="$(curl -fsS --retry 2 -F "file=@$APK" https://0x0.st || true)"
+          if printf '%s' "$OUT" | grep -Eq 'https://'; then
+            URL="$(printf '%s\n' "$OUT" | grep -Eo 'https://[^[:space:]]+' | tail -1)"
+            echo "PUBLIC_APK_URL=$URL"
+            exit 0
+          fi
+          echo 'TEMP_UPLOAD_FAILED'
+          exit 1
