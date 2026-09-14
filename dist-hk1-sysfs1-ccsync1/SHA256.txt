@@ -1,1 +1,1 @@
-18735a5d4a0e5de3ce2435f1466d743cbf408427c0d739fb17cffb3baa98ead1  dist-hk1-sysfs1-ccsync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-HK1-SYSFS1-CCSYNC1.apk
+c7eed9c694dc06db49bc1d764c2f1914dfb14afd03106e9f62636a9565cc218e  dist-hk1-sysfs1-ccsync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-HK1-SYSFS1-CCSYNC1.apk
