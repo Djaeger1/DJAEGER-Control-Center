@@ -1,0 +1,27 @@
+name: TEMP SHARE CCSYNC1 APK PIXELDRAIN
+on:
+  push:
+    branches:
+      - codex/rebuild3-hk1-sysfs1-ccsync1
+jobs:
+  share:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload APK to Pixeldrain and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='dist-hk1-sysfs1-ccsync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-HK1-SYSFS1-CCSYNC1.apk'
+          test -s "$APK"
+          EXPECT="$(sha256sum "$APK" | awk '{print $1}')"
+          echo "SOURCE_APK_SHA256=$EXPECT"
+          RESP="$(curl -fsS --retry 3 -X POST -F "file=@$APK" https://pixeldrain.com/api/file)"
+          ID="$(printf '%s' "$RESP" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id", ""))')"
+          test -n "$ID"
+          URL="https://pixeldrain.com/api/file/$ID"
+          curl -fL --retry 3 "$URL" -o verify.apk
+          VERIFY="$(sha256sum verify.apk | awk '{print $1}')"
+          test "$VERIFY" = "$EXPECT"
+          echo "PUBLIC_APK_URL=$URL"
+          echo "PUBLIC_APK_SHA256=$VERIFY"
