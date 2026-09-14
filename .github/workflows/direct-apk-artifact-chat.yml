@@ -1,0 +1,36 @@
+name: DIRECT APK ARTIFACT CHAT
+
+on:
+  push:
+    branches:
+      - codex/rebuild3-hk1-sysfs1-ccsync1
+    paths:
+      - '.github/workflows/direct-apk-artifact-chat.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='dist-hk1-sysfs1-ccsync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-HK1-SYSFS1-CCSYNC1.apk'
+          test -f "$APK"
+          ls -lh "$APK"
+          sha256sum "$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Control-Center-vc12258-chat
+          path: dist-hk1-sysfs1-ccsync1/DJAEGER-Control-Center-v0.12.1-REBUILD3-HK1-SYSFS1-CCSYNC1.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
