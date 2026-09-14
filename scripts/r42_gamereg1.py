@@ -70,7 +70,7 @@ card=r'''@Composable fun GameRegistryCard(repo:DjaegerRepository){
     LaunchedEffect(refreshToken){
         busy=true
         val (ok,list)=repo.gameRegistryList()
-        if(ok){entries=list;if(refreshToken==0)status="Registry siap • ${list.count{it.type==\"MANUAL\"}} game manual"}
+        if(ok){entries=list;if(refreshToken==0)status="Registry siap • ${list.count{it.type=="MANUAL"}} game manual"}
         else status="Registry belum tersedia. Pastikan modul GAMEREG1 terpasang."
         busy=false
     }
@@ -85,7 +85,7 @@ card=r'''@Composable fun GameRegistryCard(repo:DjaegerRepository){
                 scope.launch{
                     busy=true
                     val (ok,msg)=repo.addManualGame(packageName,gameName)
-                    status=msg.replace('\n',' • ')
+                    status=msg.replace("\n"," • ")
                     if(ok){gameName="";packageName="";refreshToken++}else busy=false
                 }
             },enabled=!busy&&gameName.isNotBlank()&&packageName.isNotBlank(),modifier=Modifier.weight(1f)){Text(if(busy)"PROSES…" else "TAMBAH GAME")}
@@ -101,7 +101,7 @@ card=r'''@Composable fun GameRegistryCard(repo:DjaegerRepository){
                         Text(e.packageName,color=Muted,style=MaterialTheme.typography.bodySmall)
                         Text(if(e.type=="BUILTIN")"BAWAAN • terkunci" else "MANUAL • dapat dihapus",color=Muted,style=MaterialTheme.typography.labelSmall)
                     }
-                    if(e.type=="MANUAL") TextButton(onClick={scope.launch{busy=true;val (ok,msg)=repo.removeManualGame(e.packageName);status=msg.replace('\n',' • ');if(ok)refreshToken++ else busy=false}},enabled=!busy){Text("HAPUS")}
+                    if(e.type=="MANUAL") TextButton(onClick={scope.launch{busy=true;val (ok,msg)=repo.removeManualGame(e.packageName);status=msg.replace("\n"," • ");if(ok)refreshToken++ else busy=false}},enabled=!busy){Text("HAPUS")}
                 }
             }
         }
