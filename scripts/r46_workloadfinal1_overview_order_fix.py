@@ -81,3 +81,7 @@ print('EXISTING_OVERVIEW_SEQUENCE=PRESERVED')
 print('WORKLOAD_CARD=ADDITIVE_AT_END')
 print('GAME_REGISTRY_VISUAL_FIX=PASS')
 print('REGISTRY_LOGIC=UNCHANGED')
+
+# Apply the Session dual-registry restoration only after the preserved Overview
+# and visual gates above have passed. r48 has its own hard assertions.
+exec(Path('scripts/r48_session_registry_restore.py').read_text(), {'__name__':'__main__'})
