@@ -85,3 +85,7 @@ print('REGISTRY_LOGIC=UNCHANGED')
 # Apply the Session dual-registry restoration only after the preserved Overview
 # and visual gates above have passed. r48 has its own hard assertions.
 exec(Path('scripts/r48_session_registry_restore.py').read_text(), {'__name__':'__main__'})
+
+# Finally repair only the HERMES Cloud display contract: proper line breaks and
+# visible failure reason. This script has its own card-order/authority gates.
+exec(Path('scripts/r49_hermescloud_display_fix.py').read_text(), {'__name__':'__main__'})
