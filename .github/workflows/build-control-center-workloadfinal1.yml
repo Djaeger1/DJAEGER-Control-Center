@@ -121,7 +121,8 @@ jobs:
             'RECURRING_ROOT_PROCESS_COUNT=1' > dist-workloadfinal1/BUILD_CONTRACT.txt
           cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-workloadfinal1/src/
           cp control-center-r2/app/build.gradle.kts audit-workloadfinal1/
-      - name: Upload artifact
+      - name: Upload artifact (optional mirror)
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: djaeger-control-center-workloadfinal1
