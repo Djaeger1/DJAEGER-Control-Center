@@ -387,6 +387,8 @@ private fun compactModuleVersion(raw:String):String=when{
     val stale=runtimeStateStale(s)
     val engine=if(stale) "STALE" else "LIVE"
     val workloadClass=envField(s.workloadContext,"WORKLOAD_CLASS").ifBlank{envField(s.workloadContext,"SUBJECT_CLASS")}.uppercase()
+    val workloadPackage=envField(s.workloadContext,"PACKAGE").ifBlank{"UNKNOWN"}
+    val workloadProfile=envField(s.workloadContext,"WORKLOAD_PROFILE").ifBlank{"UNKNOWN"}
     val sessionState=when{
         stale->"UNKNOWN / STALE"
         s.active=="1"->"GAME ACTIVE"
@@ -397,10 +399,15 @@ private fun compactModuleVersion(raw:String):String=when{
     val sample=when{s.telemetry.epoch>0->SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(Date(s.telemetry.epoch*1000));s.sampleFresh->"LIVE SYSFS";else->"—"}
     val game=if(s.active=="1") s.game else if(stale) "—" else "NA"
     val window=if(s.active=="1") s.window else if(stale) "—" else "INACTIVE"
-    val profile=if(s.active=="1") s.telemetry.profile else "—"
+    val profile=when{
+        s.active=="1"->s.telemetry.profile
+        workloadClass=="APP"||workloadClass=="SYSTEM"->workloadProfile
+        else->"—"
+    }
+    val gameExecution=if(s.active=="1"&&workloadClass=="GAME") "ACTIVE" else "BLOCKED / OBSERVE ONLY"
     val age=if(s.updated>0) (System.currentTimeMillis()/1000-s.updated).coerceAtLeast(0) else -1
     val ageText=if(age>=0) "${age}s" else "—"
-    BoxCard("ENGINE / SESSION",if(s.installed)"Engine: $engine • age $ageText\nSession: $sessionState\nModule: ${compactModuleVersion(s.moduleVersion)}\nGame: $game\nWindow: $window\nProfile: $profile\nLast device sample: $sample\nController PID: ${s.controllerPid.ifBlank{"—"}} • Predictor PID: ${s.predictorPid.ifBlank{"—"}}" else "DJAEGER module not found")
+    BoxCard("ENGINE / SESSION",if(s.installed)"Engine: $engine • age $ageText\nSession: $sessionState\nModule: ${compactModuleVersion(s.moduleVersion)}\nGame: $game\nWindow: $window\nProfile: $profile\nWorkload: $workloadClass • $workloadPackage\nGame execution: $gameExecution\nLast device sample: $sample\nController PID: ${s.controllerPid.ifBlank{"—"}} • Predictor PID: ${s.predictorPid.ifBlank{"—"}}" else "DJAEGER module not found")
 }
 @Composable fun NetworkCard(n:NetworkState){
     val clipboard=LocalClipboardManager.current
@@ -457,7 +464,7 @@ private fun compactModuleVersion(raw:String):String=when{
     Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
             Text("APP REGISTRY • MANUAL",color=Green,fontWeight=FontWeight.Bold)
-            Text("Registry APP terpisah dari GAME. APP tidak menerima game semantics atau policy hardware game.",color=Muted,style=MaterialTheme.typography.bodySmall)
+            Text("Registry APP terpisah dari GAME. APP tetap dipahami/diamati DJAEGER, tetapi tidak menerima game semantics atau policy hardware game.",color=Muted,style=MaterialTheme.typography.bodySmall)
             if(rows.isEmpty()){
                 Text("Belum ada APP manual di app_registry.tsv.",color=Muted)
             }else{
@@ -465,7 +472,7 @@ private fun compactModuleVersion(raw:String):String=when{
                     Column(Modifier.fillMaxWidth()){
                         Text(e.name,color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.SemiBold)
                         Text(e.pkg,color=Muted,style=MaterialTheme.typography.bodySmall)
-                        Text("APP • ${e.profile}",color=Green,style=MaterialTheme.typography.labelSmall)
+                        Text("APP • ${e.profile} • OBSERVE ONLY",color=Green,style=MaterialTheme.typography.labelSmall)
                         if(e.pkg in legacyGame) Text("APP WINS • legacy GAME conflict masih tercatat",color=Red,style=MaterialTheme.typography.labelSmall)
                     }
                     HorizontalDivider()

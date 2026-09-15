@@ -8,11 +8,11 @@ Verified using v4 scheme (APK Signature Scheme v4): false
 Verified for SourceStamp: false
 Number of signers: 1
 V3.0 Signer: certificate DN: CN=DJAEGER WORKLOADFINAL1, O=DJAEGER, C=ID
-V3.0 Signer: certificate SHA-256 digest: 2f9e58c35d83ee201673ddfe1301fc407622a3cee3dd803228bb6223e1048d8f
-V3.0 Signer: certificate SHA-1 digest: d873c09d8e2ee9c8fbe6424f878da0fe8d1ee07f
-V3.0 Signer: certificate MD5 digest: 18f7b58b080be03a178888f4c2d0549d
+V3.0 Signer: certificate SHA-256 digest: 432ba4d7b12f1c2bc4109ec91eddd399066d0415779aced62fcce3f33d7881d0
+V3.0 Signer: certificate SHA-1 digest: f76c517c5cb12d946f273f6c71a3023e7a69c01f
+V3.0 Signer: certificate MD5 digest: 1352f7ea067bc2f93ac8c573fa409c8d
 V3.0 Signer: key algorithm: RSA
 V3.0 Signer: key size (bits): 4096
-V3.0 Signer: public key SHA-256 digest: bbf40041415bc599f4032d6c62cac25b25ae30afe8bdf09e1f8491b68a6a0d76
-V3.0 Signer: public key SHA-1 digest: bcfbfd794c9ff90880503e280ba638e3e9a54aed
-V3.0 Signer: public key MD5 digest: b3c2a29cbbf240c1a4c9db86fea11d3f
+V3.0 Signer: public key SHA-256 digest: be4011fbb2c930fdf1d45bba62befa36e0ea309e93613c8b1f154f7557e21404
+V3.0 Signer: public key SHA-1 digest: 29c1e21778c0481365339c9917c0d6a77614c6b3
+V3.0 Signer: public key MD5 digest: c9646bd17a8039b37e3cc93f7b05922f
