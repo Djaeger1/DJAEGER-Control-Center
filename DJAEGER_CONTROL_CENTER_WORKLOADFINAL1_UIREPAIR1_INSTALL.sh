@@ -6,7 +6,7 @@
 
 set -u
 
-APK=/data/media/0/Download/DJAEGER-Control-Center-v0.12.1-WORKLOADFINAL1-UIREPAIR1.apk
+APK=/data/media/0/Download/DJAEGER-Control-Center-v0.12.1-WORKLOADFINAL1.apk
 PKG=com.djaeger.controlcenter
 M=/data/adb/modules/djaeger_game_stabilizer
 P=/data/adb/djaeger_ai
@@ -51,9 +51,8 @@ move_to_app(){
   echo "MOVED_TO_APP|$_pkg|$_name"
 }
 
-# These are the ordinary apps visible in the broken Session screenshot / prior
-# APP use-case. Only these known identities are migrated; every other custom game
-# remains untouched.
+# Known ordinary apps from the broken Session view / APP workload use-case.
+# Every other custom GAME entry is preserved exactly as-is.
 move_to_app com.openai.chatgpt ChatGPT
 move_to_app com.facebook.katana Facebook
 move_to_app com.google.android.youtube YouTube
@@ -61,7 +60,6 @@ move_to_app com.instagram.android Instagram
 move_to_app com.shopee.id Shopee
 move_to_app com.UCMobile.intl 'UC Browser'
 
-# Hard separation checks.
 for p in com.openai.chatgpt com.facebook.katana com.google.android.youtube com.instagram.android com.shopee.id com.UCMobile.intl; do
   awk -F '\t' -v p="$p" '$1==p{f=1}END{exit !f}' "$APP" || fail "app_missing_after_migration|$p" 30
   if awk -F '\t' -v p="$p" '$1==p{f=1}END{exit !f}' "$GAME"; then fail "still_in_game_registry|$p" 31; fi
@@ -91,7 +89,6 @@ fi
 VC="$(dumpsys package "$PKG" 2>/dev/null | sed -n 's/.*versionCode=\([0-9][0-9]*\).*/\1/p' | head -1)"
 [ "$VC" = "$EXPECTED_VC" ] || fail "version_code|got=${VC:-MISSING}|want=$EXPECTED_VC" 42
 
-# Final no-conflict count for known migrated apps.
 CONFLICT=0
 for p in com.openai.chatgpt com.facebook.katana com.google.android.youtube com.instagram.android com.shopee.id com.UCMobile.intl; do
   if awk -F '\t' -v p="$p" '$1==p{f=1}END{exit !f}' "$GAME"; then CONFLICT=$((CONFLICT+1)); fi
