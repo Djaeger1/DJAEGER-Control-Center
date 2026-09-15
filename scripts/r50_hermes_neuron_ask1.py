@@ -30,7 +30,8 @@ card=r'''@Composable fun HermesStatusCard(s:RuntimeState){
     val used=envField(s.brain,"HERMES_NEURON_USED_EST").ifBlank{"0"}
     val limit=envField(s.brain,"HERMES_NEURON_LIMIT").ifBlank{"10000"}
     val tier=envField(s.brain,"HERMES_NEURON_TIER").ifBlank{"NORMAL"}
-    BoxCard("HERMES: ${if(s.installed) "ONLINE" else "OFFLINE"}","Route    $route\nCloud    $cloud\nNeurons  $used / $limit • EST",true)
+    val online=if(s.installed) "ONLINE" else "OFFLINE"
+    BoxCard("HERMES: $online","Route    $route\nCloud    $cloud\nNeurons  $used / $limit • EST",true)
 }
 
 '''
