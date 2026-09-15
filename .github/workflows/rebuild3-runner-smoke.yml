@@ -1,0 +1,9 @@
+name: REBUILD3 RUNNER SMOKE
+on:
+  push:
+    branches: [codex/hermes-neuron-ask-rebuild3]
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo REBUILD3_RUNNER_OK
