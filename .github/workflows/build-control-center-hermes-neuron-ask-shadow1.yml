@@ -4,9 +4,10 @@ on:
     branches: [codex/hermes-neuron-ask-shadow1]
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   shadow-build:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +57,6 @@ jobs:
           M=(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
           R=(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
           B=(root/'app/build.gradle.kts').read_text()
-
           assert 'versionCode = 12261' in B
           assert 'neurongov1-askhermes1' in B
           assert 'Ask DJAEGER Gemini' in M
@@ -69,20 +69,17 @@ jobs:
           assert 'djaeger-hermes-cloud chat-stdin' in R
           assert 'djaeger-hermes-cloud chat-clear' in R
           assert '/sys/' not in R and '/proc/sys/' not in R
-
           ov=M[M.index('@Composable fun Overview(s:RuntimeState)'):M.index('private fun compactModuleVersion',M.index('@Composable fun Overview(s:RuntimeState)'))]
           expected=['StatusCard(s)','ThoughtsCard(s)','Metric("FPS"','ThermalRow(s)','NetworkCard(s.network)','StrategyCard(s)','HermesStatusCard(s)','AgentRebuild3Card(s)','HermesCloudCard(s)','KernelAgentSyncCard(s)','HermesCard(s)','HumanComfortHcc1Card(s)','ContextVNextCard(s)','MemoryVNextCard(s)','ReasoningV2Card(s)','SkillsVNextCard(s)','LearningResearchV2Card(s)','OutcomeLearningCard(s)','StrategyCompositionCard(s)','DecisionPipelineCard(s)','BoxCard("PERFORMANCE"','BoxCard("POWER"','BoxCard("FRAME INTELLIGENCE • RECENT"','WorkloadIntelligenceCard(s)']
           pos=[ov.index(x) for x in expected]
           assert pos==sorted(pos),pos
           assert ov.count('HermesStatusCard(s)')==1
           assert ov.index('StrategyCard(s)') < ov.index('HermesStatusCard(s)') < ov.index('AgentRebuild3Card(s)')
-
           ai=M[M.index('@Composable fun AI(s:RuntimeState)'):M.index('private fun aiSummary',M.index('@Composable fun AI(s:RuntimeState)'))]
           assert ai.count('Ask DJAEGER Gemini')==1
           assert ai.count('Ask DJAEGER Hermes')==1
           assert ai.index('Ask DJAEGER Gemini') < ai.index('GEMINI CONVERSATION') < ai.index('Ask DJAEGER Hermes') < ai.index('HERMES CONVERSATION')
           assert 'ASK GEMINI' in ai and 'ASK HERMES' in ai
-
           def h(p): return hashlib.sha256(p.read_bytes()).hexdigest()
           before={p.relative_to(old).as_posix():h(p) for p in old.rglob('*') if p.is_file()}
           after={p.relative_to(root).as_posix():h(p) for p in root.rglob('*') if p.is_file()}
@@ -90,7 +87,6 @@ jobs:
           allowed=sorted(['app/build.gradle.kts','app/src/main/java/com/djaeger/controlcenter/MainActivity.kt','app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt'])
           assert changed==allowed,(changed,allowed)
           assert set(before)==set(after)
-
           print('SHADOW_R50_GATE=PASS')
           print('OVERVIEW_ORDER_PRESERVED=PASS')
           print('HERMES_STATUS_POSITION=IMMEDIATELY_AFTER_STRATEGY')
@@ -108,7 +104,7 @@ jobs:
           gradle :app:testReleaseUnitTest --stacktrace
           gradle :app:assembleRelease --stacktrace
 
-      - name: Sign verify and package shadow artifact
+      - name: Sign verify and package shadow output
         run: |
           set -euo pipefail
           rm -rf dist-hermes-neuron-ask-shadow1 output-hermes-neuron-ask-shadow1
@@ -138,10 +134,11 @@ jobs:
           CONTROL_CENTER_VERSION_CODE=12261
           EOF
 
-      - name: Upload isolated shadow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: djaeger-hermes-neuron-ask-shadow1
-          path: dist-hermes-neuron-ask-shadow1/
-          if-no-files-found: error
-          retention-days: 30
+      - name: Publish verified shadow output to shadow branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f dist-hermes-neuron-ask-shadow1
+          git commit -m 'Publish verified HERMES NEURON ASK shadow APK [skip ci]'
+          git push origin HEAD:codex/hermes-neuron-ask-shadow1
