@@ -1,0 +1,44 @@
+name: DIRECT HERMES NEURON APK HANDOFF
+
+on:
+  push:
+    branches:
+      - codex/hermes-neuron-ask-shadow1
+    paths:
+      - '.github/workflows/direct-hermes-neuron-apk-stocare.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  handoff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout verified shadow branch
+        uses: actions/checkout@v4
+
+      - name: Upload and independently verify final APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='dist-hermes-neuron-ask-shadow1/DJAEGER-Control-Center-v0.12.1-HERMES-NEURON-ASK-SHADOW1.apk'
+          EXPECTED='858f6c1763a599a123c30b8feb4d6418593e487b5b1ed9be50560011854d0a11'
+          test -f "$APK"
+          SRC_SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          SRC_SIZE="$(stat -c %s "$APK")"
+          echo "SOURCE_SHA256=$SRC_SHA"
+          echo "SOURCE_SIZE=$SRC_SIZE"
+          test "$SRC_SHA" = "$EXPECTED"
+          RESP="$(curl --fail --silent --show-error --retry 3 -T "$APK" https://ul.sto.care)"
+          echo "UPLOAD_RESPONSE=$RESP"
+          URL="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["url"])' <<<"$RESP")"
+          test -n "$URL"
+          curl --fail --location --silent --show-error --retry 3 "$URL" -o /tmp/verify.apk
+          DST_SHA="$(sha256sum /tmp/verify.apk | awk '{print $1}')"
+          DST_SIZE="$(stat -c %s /tmp/verify.apk)"
+          echo "DOWNLOADED_SHA256=$DST_SHA"
+          echo "DOWNLOADED_SIZE=$DST_SIZE"
+          test "$SRC_SHA" = "$DST_SHA"
+          test "$SRC_SIZE" = "$DST_SIZE"
+          echo "VERIFIED_URL=$URL"
+          echo "HANDOFF_STATUS=PASS"
