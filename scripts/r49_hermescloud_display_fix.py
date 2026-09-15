@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# HERMESCLOUD DISPLAY FIX1 — presentation-only repair for the WORKLOADFINAL1 pair.
 main=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
 m=main.read_text()
 
