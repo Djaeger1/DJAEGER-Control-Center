@@ -386,7 +386,14 @@ private fun compactModuleVersion(raw:String):String=when{
 @Composable fun StatusCard(s:RuntimeState){
     val stale=runtimeStateStale(s)
     val engine=if(stale) "STALE" else "LIVE"
-    val sessionState=when{stale->"UNKNOWN / STALE";s.active=="1"->"ACTIVE";else->"WAITING GAME"}
+    val workloadClass=envField(s.workloadContext,"WORKLOAD_CLASS").ifBlank{envField(s.workloadContext,"SUBJECT_CLASS")}.uppercase()
+    val sessionState=when{
+        stale->"UNKNOWN / STALE"
+        s.active=="1"->"GAME ACTIVE"
+        workloadClass=="APP"->"APP ACTIVE • OBSERVE ONLY"
+        workloadClass=="SYSTEM"->"SYSTEM ACTIVE • OBSERVE ONLY"
+        else->"WAITING GAME"
+    }
     val sample=when{s.telemetry.epoch>0->SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(Date(s.telemetry.epoch*1000));s.sampleFresh->"LIVE SYSFS";else->"—"}
     val game=if(s.active=="1") s.game else if(stale) "—" else "NA"
     val window=if(s.active=="1") s.window else if(stale) "—" else "INACTIVE"
@@ -429,6 +436,45 @@ private fun compactModuleVersion(raw:String):String=when{
     }
 }
 
+@Composable fun AppRegistryListCard(s:RuntimeState){
+    data class AppRow(val pkg:String,val profile:String,val name:String)
+    val rows=s.appRegistry.lineSequence().mapNotNull{line->
+        val raw=line.trim()
+        if(raw.isBlank()||raw.startsWith("#")) null else {
+            val p=raw.split('\t')
+            val pkg=p.getOrNull(0).orEmpty().trim()
+            if(pkg.isBlank()) null else AppRow(
+                pkg=pkg,
+                profile=p.getOrNull(1).orEmpty().ifBlank{"APP_INTERACTIVE"},
+                name=p.getOrNull(2).orEmpty().ifBlank{pkg}
+            )
+        }
+    }.toList()
+    val legacyGame=s.gameRegistryManual.lineSequence().mapNotNull{line->
+        line.trim().takeIf{it.isNotBlank()&&!it.startsWith("#")}?.split('\t')?.firstOrNull()?.trim()?.takeIf{it.isNotBlank()}
+    }.toSet()
+
+    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
+        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+            Text("APP REGISTRY • MANUAL",color=Green,fontWeight=FontWeight.Bold)
+            Text("Registry APP terpisah dari GAME. APP tidak menerima game semantics atau policy hardware game.",color=Muted,style=MaterialTheme.typography.bodySmall)
+            if(rows.isEmpty()){
+                Text("Belum ada APP manual di app_registry.tsv.",color=Muted)
+            }else{
+                rows.forEach{e->
+                    Column(Modifier.fillMaxWidth()){
+                        Text(e.name,color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.SemiBold)
+                        Text(e.pkg,color=Muted,style=MaterialTheme.typography.bodySmall)
+                        Text("APP • ${e.profile}",color=Green,style=MaterialTheme.typography.labelSmall)
+                        if(e.pkg in legacyGame) Text("APP WINS • legacy GAME conflict masih tercatat",color=Red,style=MaterialTheme.typography.labelSmall)
+                    }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
 @Composable fun GameRegistryCard(repo:DjaegerRepository){
     val scope=rememberCoroutineScope()
     var gameName by remember{mutableStateOf("")}
@@ -447,7 +493,7 @@ private fun compactModuleVersion(raw:String):String=when{
     }
 
     Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(14.dp)).padding(14.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){
-        Text("GAME REGISTRY • MANUAL",fontWeight=FontWeight.Bold)
+        Text("GAME REGISTRY • MANUAL",color=Green,fontWeight=FontWeight.Bold)
         Text("Tambahkan game baru tanpa rebuild modul. Package harus sudah terpasang. Game manual masuk ke session detector, frame observer, Gemini/Hermes, Agent, readback dan learning yang sama.",color=Muted,style=MaterialTheme.typography.bodySmall)
         OutlinedTextField(value=gameName,onValueChange={gameName=it},label={Text("Nama game")},placeholder={Text("Contoh: Game Baru")},singleLine=true,modifier=Modifier.fillMaxWidth(),enabled=!busy)
         OutlinedTextField(value=packageName,onValueChange={packageName=it},label={Text("Package name")},placeholder={Text("com.developer.game")},singleLine=true,modifier=Modifier.fillMaxWidth(),enabled=!busy)
@@ -468,7 +514,7 @@ private fun compactModuleVersion(raw:String):String=when{
             entries.forEach{e->
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
                     Column(Modifier.weight(1f)){
-                        Text(e.displayName,fontWeight=FontWeight.SemiBold)
+                        Text(e.displayName,color=MaterialTheme.colorScheme.onSurface,fontWeight=FontWeight.SemiBold)
                         Text(e.packageName,color=Muted,style=MaterialTheme.typography.bodySmall)
                         Text(if(e.type=="BUILTIN")"BAWAAN • terkunci" else "MANUAL • dapat dihapus",color=Muted,style=MaterialTheme.typography.labelSmall)
                     }
@@ -485,6 +531,7 @@ private fun compactModuleVersion(raw:String):String=when{
     val anomalies=anomalySummary(s,samples)
     Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
         DualRegistrySummaryCard(s)
+        AppRegistryListCard(s)
         GameRegistryCard(repo)
         BoxCard("MONITOR SESSION","Samples: ${samples.size} / 60\nWindow: ${s.window} • Game: ${s.game}\nObserved phase: $phase\nThis phase is a monitor-side interpretation, not a command to DJAEGER.")
         BoxCard("60-SECOND STATISTICS","FPS avg/min/max: ${stat3(fps,"")}\nFrame avg/peak: ${stat2(frame," ms")}\nCPU avg/peak: ${stat2(cpu,"°C")}\nGPU avg/peak: ${stat2(gpu,"°C")}\nSkin avg/peak: ${stat2(skin,"°C")}")
