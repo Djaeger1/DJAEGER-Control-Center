@@ -8,11 +8,11 @@ Verified using v4 scheme (APK Signature Scheme v4): false
 Verified for SourceStamp: false
 Number of signers: 1
 V3.0 Signer: certificate DN: CN=DJAEGER HERMES NEURON ASK SHADOW1, O=DJAEGER, C=ID
-V3.0 Signer: certificate SHA-256 digest: b69a9735c2131e001f5001a50839ecbed280ccff58fafebfe4d9fb5d542f0741
-V3.0 Signer: certificate SHA-1 digest: b4aafa62eeb86650db4e94e53d26ba4eac38398b
-V3.0 Signer: certificate MD5 digest: 35d88e0c5bc0314bab11ebccf07e2f1f
+V3.0 Signer: certificate SHA-256 digest: 0d28793150c863b1352d2a8336b9347cc69abd089e44932465980b28b8f5c608
+V3.0 Signer: certificate SHA-1 digest: 2e33e37049888dbd5f56bc3382f9827494ddde6b
+V3.0 Signer: certificate MD5 digest: 17f76b835c463b22d4a972bbc26f452a
 V3.0 Signer: key algorithm: RSA
 V3.0 Signer: key size (bits): 4096
-V3.0 Signer: public key SHA-256 digest: 9cb17dd05c329062121b34b8b54fdf9711d65883a758690f424584a38246dfae
-V3.0 Signer: public key SHA-1 digest: e82abfc924d0dedff285accd8fde97e9458754dc
-V3.0 Signer: public key MD5 digest: 033e0bcdae9e6ac1c2ed251a0bc54680
+V3.0 Signer: public key SHA-256 digest: 3d2366f9abe5393663fede81ffce86e79e28830d34b21b2871c574f6147e7a7c
+V3.0 Signer: public key SHA-1 digest: a76441691f13eca4ee12aa4d8d2ddfdb9b6b9d11
+V3.0 Signer: public key MD5 digest: a8ec2067a31e554666032f7bac76c4eb
