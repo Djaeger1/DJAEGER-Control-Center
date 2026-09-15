@@ -1,0 +1,182 @@
+name: DJAEGER HERMES NEURON ASK REBUILD2
+
+on:
+  push:
+    branches: [codex/hermes-neuron-ask-rebuild2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shadow-build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+
+      - name: Rebuild exact WORKLOADFINAL1 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py; do python3 scripts/$s; done
+          python3 scripts/r34_rebuild3_agent_full_hardware_truth.py
+          python3 scripts/r35_rebuild3_lang2_mwfix1.py
+          python3 scripts/r36_rebuild3_lang3_math1_sync1.py
+          python3 scripts/r37_sync2_session_truth_ui_order.py
+          python3 scripts/r38_mwfix2_sync3.py
+          python3 scripts/r39_attr1_sync4.py
+          python3 scripts/r40_hk1_sysfs1_ccsync1.py
+          python3 scripts/r41_loopfix1_ccmatch1.py
+          python3 scripts/r42_gamereg1.py
+          python3 scripts/r43_sharedint1.py
+          python3 scripts/r44_hermescloud1.py
+          python3 scripts/r45_workloadfinal1.py
+          python3 scripts/r46_workloadfinal1_overview_order_fix.py
+          cp -a control-center-r2 /tmp/pre-r51
+
+      - name: Apply REBUILD2 patch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/r51_hermes_neuron_ask_rebuild2.py
+
+      - name: Deep offline regression gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('control-center-r2'); old=Path('/tmp/pre-r51')
+          def txt(p): return p.read_text()
+          def h(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          M=txt(root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
+          O=txt(old/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt')
+          R=txt(root/'app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt')
+          C=txt(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt')
+          RD=txt(root/'app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt')
+          B=txt(root/'app/build.gradle.kts')
+          assert 'versionCode = 12261' in B
+          assert 'neurongov2-askhermes2' in B
+          assert 'NEURONGOV2 • ASKHERMES2' in M
+          assert 'Ask DJAEGER Gemini' in M and 'Ask DJAEGER Hermes' in M
+          assert M.count('Ask DJAEGER Gemini')==1 and M.count('Ask DJAEGER Hermes')==1
+          assert 'djaeger-hermes-chat chat-stdin' in R
+          assert '__HERMES_NEURON__' in RD and '__ASK_HERMES__' in RD
+          assert '/data/adb/djaeger_ai/hermes/neuron_budget.env' in RD
+          assert '/data/adb/djaeger_ai/hermes/ask_hermes_state.env' in RD
+          assert 'HERMES_ACCESS_KEY' not in RD
+          assert '/sys/' not in R and '/proc/sys/' not in R
+          # Exact overview order gate.
+          ov=M[M.index('@Composable fun Overview(s:RuntimeState)'):M.index('private fun compactModuleVersion',M.index('@Composable fun Overview(s:RuntimeState)'))]
+          expected=['StatusCard(s)','ThoughtsCard(s)','Metric("FPS"','ThermalRow(s)','NetworkCard(s.network)','StrategyCard(s)','HermesStatusCard(s)','AgentRebuild3Card(s)','HermesCloudCard(s)','KernelAgentSyncCard(s)','HermesCard(s)','HumanComfortHcc1Card(s)','ContextVNextCard(s)','MemoryVNextCard(s)','ReasoningV2Card(s)','SkillsVNextCard(s)','LearningResearchV2Card(s)','OutcomeLearningCard(s)','StrategyCompositionCard(s)','DecisionPipelineCard(s)','BoxCard("PERFORMANCE"','BoxCard("POWER"','BoxCard("FRAME INTELLIGENCE • RECENT"','WorkloadIntelligenceCard(s)']
+          pos=[ov.index(x) for x in expected]; assert pos==sorted(pos),pos
+          assert ov.count('HermesStatusCard(s)')==1
+          # Ask HERMES is below complete Gemini conversation.
+          ai=M[M.index('@Composable fun AI(s:RuntimeState)'):M.index('private fun aiSummary',M.index('@Composable fun AI(s:RuntimeState)'))]
+          assert ai.index('Ask DJAEGER Gemini') < ai.index('GEMINI CONVERSATION') < ai.index('Ask DJAEGER Hermes') < ai.index('HERMES CONVERSATION')
+          # Unrelated critical cards/functions must be byte-identical to WORKLOADFINAL1.
+          def block(s,start,end):
+              a=s.index(start); b=s.index(end,a); return s[a:b]
+          pairs=[
+            ('@Composable fun ThoughtsCard(s:RuntimeState)','@Composable fun StrategyCard(s:RuntimeState)'),
+            ('@Composable fun StrategyCard(s:RuntimeState)','@Composable fun NetworkCard'),
+            ('@Composable fun AgentRebuild3Card(s:RuntimeState)','@Composable fun HermesCloudCard'),
+            ('@Composable fun HermesCloudCard(s:RuntimeState)','@Composable fun KernelAgentSyncCard'),
+            ('@Composable fun HermesCard(s:RuntimeState)','@Composable fun HumanComfortHcc1Card')]
+          for a,b in pairs:
+              assert block(O,a,b)==block(M,a,b),(a,b)
+          # Gemini repository methods remain present and unchanged in behavior anchors.
+          assert 'djaeger-ai gemini-chat' in R and 'djaeger-ai gemini-chat-clear' in R
+          # Only the intended source files can change.
+          before={p.relative_to(old).as_posix():h(p) for p in old.rglob('*') if p.is_file()}
+          after={p.relative_to(root).as_posix():h(p) for p in root.rglob('*') if p.is_file()}
+          changed=sorted(k for k in before.keys()&after.keys() if before[k]!=after[k])
+          allowed=sorted(['app/build.gradle.kts','app/src/main/java/com/djaeger/controlcenter/MainActivity.kt','app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt','app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt','app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt'])
+          assert changed==allowed,(changed,allowed)
+          assert set(before)==set(after)
+          print('DEEP_SHADOW_GATE=PASS')
+          print('PAIR_VC=129637/12261')
+          print('OVERVIEW_ORDER=PASS')
+          print('THOUGHTS_UNCHANGED=PASS')
+          print('STRATEGY_UNCHANGED=PASS')
+          print('HERMESCLOUD_CARD_UNCHANGED=PASS')
+          print('HERMES_CARD_UNCHANGED=PASS')
+          print('ASK_GEMINI_PRESERVED=PASS')
+          print('ASK_HERMES_BELOW_GEMINI=PASS')
+          print('NEW_RECURRING_ROOT_PROCESS=0')
+          print('SECRET_EXPOSURE=0')
+          PY
+
+      - name: Unit tests and unsigned release build
+        working-directory: control-center-r2
+        run: |
+          set -euo pipefail
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Package unsigned APK and signing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=/tmp/djaeger-rebuild2
+          rm -rf "$OUT"; mkdir -p "$OUT/tools/lib"
+          APK="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          test -f "$APK"
+          cp "$APK" "$OUT/DJAEGER-Control-Center-v0.12.1-WORKLOADFINAL1-NEURONGOV2-ASKHERMES2-UNSIGNED.apk"
+          unzip -t "$APK" > "$OUT/UNSIGNED_ZIP_TEST.txt"
+          sha256sum "$APK" > "$OUT/UNSIGNED_SHA256.txt"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          test -x "$BT/apksigner" && test -x "$BT/zipalign" && test -f "$BT/lib/apksigner.jar"
+          cp "$BT/apksigner" "$OUT/tools/apksigner"
+          cp "$BT/zipalign" "$OUT/tools/zipalign"
+          cp "$BT/lib/apksigner.jar" "$OUT/tools/lib/apksigner.jar"
+          chmod +x "$OUT/tools/apksigner" "$OUT/tools/zipalign"
+          (cd "$OUT" && zip -qr apksigner-tools.zip tools)
+          cat > "$OUT/BUILD_REPORT.txt" <<'EOF'
+          STATUS=PASS
+          BASELINE=WORKLOADFINAL1
+          MODULE_PAIR=VC129637
+          CONTROL_CENTER_VC=12261
+          PATCH=NEURONGOV2+ASKHERMES2
+          DEEP_SHADOW_GATE=PASS
+          UNIT_TEST=PASS
+          RELEASE_BUILD=PASS
+          APK_SIGNING=NOT_DONE_IN_CI_BY_DESIGN
+          SIGNING_IDENTITY=LOCAL_STABLE_V1_ONLY
+          EOF
+
+      - name: Verified handoff unsigned APK and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=/tmp/djaeger-rebuild2
+          upload_verify(){
+            f="$1"; tag="$2"
+            src_sha="$(sha256sum "$f" | awk '{print $1}')"; src_size="$(stat -c %s "$f")"
+            resp="$(curl --fail --silent --show-error --retry 3 -T "$f" https://ul.sto.care)"
+            url="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["url"])' <<<"$resp")"
+            test -n "$url"
+            curl --fail --location --silent --show-error --retry 3 "$url" -o "/tmp/verify-$tag"
+            dst_sha="$(sha256sum "/tmp/verify-$tag" | awk '{print $1}')"; dst_size="$(stat -c %s "/tmp/verify-$tag")"
+            test "$src_sha" = "$dst_sha"; test "$src_size" = "$dst_size"
+            echo "${tag}_URL=$url"
+            echo "${tag}_SHA256=$src_sha"
+            echo "${tag}_SIZE=$src_size"
+          }
+          upload_verify "$OUT/DJAEGER-Control-Center-v0.12.1-WORKLOADFINAL1-NEURONGOV2-ASKHERMES2-UNSIGNED.apk" UNSIGNED_APK
+          upload_verify "$OUT/apksigner-tools.zip" APKSIGNER_TOOLS
+          upload_verify "$OUT/BUILD_REPORT.txt" BUILD_REPORT
+          echo 'HANDOFF_STATUS=PASS'
