@@ -39,6 +39,7 @@ jobs:
           python3 scripts/r44_hermescloud1.py
           cp -a control-center-r2 /tmp/control-center-hermescloud1
           python3 scripts/r45_workloadfinal1.py
+          python3 scripts/r46_workloadfinal1_overview_order_fix.py
       - name: WORKLOADFINAL1 synchronization and authority gates
         run: |
           set -euo pipefail
@@ -64,6 +65,13 @@ jobs:
           assert 'djaeger-root-authority' not in S and 'djaeger-agent-sysfs' not in S
           assert 'GAME REGISTRY • MANUAL' in M
           assert 'djaeger-game-registry add-stdin' in R and 'djaeger-game-registry remove-stdin' in R
+          ov=M[M.index('@Composable fun Overview(s:RuntimeState)'):M.index('private fun compactModuleVersion',M.index('@Composable fun Overview(s:RuntimeState)'))]
+          expected=['StatusCard(s)','ThoughtsCard(s)','Metric("FPS"','ThermalRow(s)','NetworkCard(s.network)','StrategyCard(s)','AgentRebuild3Card(s)','HermesCloudCard(s)','KernelAgentSyncCard(s)','HermesCard(s)','HumanComfortHcc1Card(s)','ContextVNextCard(s)','MemoryVNextCard(s)','ReasoningV2Card(s)','SkillsVNextCard(s)','LearningResearchV2Card(s)','OutcomeLearningCard(s)','StrategyCompositionCard(s)','DecisionPipelineCard(s)','BoxCard("PERFORMANCE"','BoxCard("POWER"','BoxCard("FRAME INTELLIGENCE • RECENT"','WorkloadIntelligenceCard(s)']
+          pos=[ov.index(x) for x in expected]
+          assert pos==sorted(pos),pos
+          assert ov.count('WorkloadIntelligenceCard(s)')==1
+          assert 'StatusCard(s);ThoughtsCard(s);' in ov
+          assert 'StatusCard(s);WorkloadIntelligenceCard(s);' not in ov
           def h(p): return hashlib.sha256(p.read_bytes()).hexdigest()
           before={p.relative_to(old).as_posix():h(p) for p in old.rglob('*') if p.is_file()}
           after={p.relative_to(root).as_posix():h(p) for p in root.rglob('*') if p.is_file()}
@@ -78,6 +86,8 @@ jobs:
           assert changed==allowed,(changed,allowed)
           assert set(before)==set(after)
           print('WORKLOADFINAL1_CC_GATE=PASS')
+          print('OVERVIEW_ORDER_PRESERVED=PASS')
+          print('WORKLOAD_CARD_POSITION=AFTER_EXISTING_OVERVIEW')
           print('EXACT_MODULE_VC=129637')
           print('EXACT_CC_VC=12261')
           print('SINGLE_RECURRING_ROOT_PROCESS=PASS')
@@ -118,7 +128,9 @@ jobs:
             'LEARNING_ISOLATION=GAME_SESSION_ONLY' \
             'CONTROL_CENTER_WORKLOAD_AUTHORITY=READ_ONLY' \
             'DIRECT_SYSFS_AUTHORITY=NONE' \
-            'RECURRING_ROOT_PROCESS_COUNT=1' > dist-workloadfinal1/BUILD_CONTRACT.txt
+            'RECURRING_ROOT_PROCESS_COUNT=1' \
+            'OVERVIEW_ORDER_PRESERVED=YES' \
+            'WORKLOAD_CARD_POSITION=AFTER_EXISTING_OVERVIEW' > dist-workloadfinal1/BUILD_CONTRACT.txt
           cp -a control-center-r2/app/src/main/java/com/djaeger/controlcenter/. audit-workloadfinal1/src/
           cp control-center-r2/app/build.gradle.kts audit-workloadfinal1/
       - name: Upload artifact (optional mirror)
