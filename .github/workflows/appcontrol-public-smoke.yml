@@ -1,0 +1,22 @@
+name: APPCONTROL Public Runner Smoke
+
+on:
+  push:
+    branches:
+      - codex/hermescloud1-appcontrol1-rc1
+    paths:
+      - '.github/workflows/appcontrol-public-smoke.yml'
+      - 'scripts/r47_appcontrol1.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Public runner check
+        run: |
+          echo 'PUBLIC_RUNNER=PASS'
+          echo 'HEADER_TARGET=CONTROL CENTER'
