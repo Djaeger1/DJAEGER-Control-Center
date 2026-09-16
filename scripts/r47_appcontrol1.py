@@ -36,10 +36,10 @@ insert='''                printf "PREEXEC_WORKLOAD_GUARD='ACTIVE'\\n"\n         
 assert anchor in rd
 rd=rd.replace(anchor,insert,1)
 
-# Header identity only; preserve the established Overview ordering.
+# Keep the top Overview label compact; build identity remains available in the cards/contract.
 header='CONTROL CENTER • REBUILD3 • LANG3 • MWFIX2 • ATTR1 • MATH1 • KERNEL1 • SYSFS1 • LOOPFIX1 • GAMEREG1 • SHAREDINT1 • HERMESCLOUD1 • WORKLOADFINAL1'
 assert header in m
-m=m.replace(header,header+' • APPCONTROL1',1)
+m=m.replace(header,'CONTROL CENTER',1)
 
 # Shared helpers for truthful GAME / APP / SYSTEM session presentation.
 insert_at=m.index('@Composable fun ThoughtsCard')
@@ -131,7 +131,8 @@ assert 'APP execution: $appExec' in m and 'Game execution: $gameExec' in m
 assert 'APP control: $appControl' in m
 assert 'VC129638 / VC12262' in m
 assert new_contract in m
-assert ' • APPCONTROL1' in m
+assert 'CONTROL CENTER • REBUILD3' not in m
+assert 'CONTROL CENTER' in m
 assert 'ProcessBuilder("su"' not in m  # UI composition remains read-only; root I/O stays repository/reader owned.
 assert rd.count('ProcessBuilder("su"') == 1
 assert '/sys/' not in rd and '/proc/sys/' not in rd
