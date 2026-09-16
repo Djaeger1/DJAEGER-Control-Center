@@ -1,5 +1,5 @@
 from pathlib import Path
-import hashlib
+import re
 
 root=Path('control-center-r2')
 main=root/'app/src/main/java/com/djaeger/controlcenter/MainActivity.kt'
@@ -29,50 +29,57 @@ new_state='data class NetworkState(val ping:String="—",val avg:String="—",va
 assert old_state in r
 r=r.replace(old_state,new_state,1)
 
-class_anchor='class DjaegerRepository'
-ci=r.index(class_anchor)
-brace=r.index('{',ci)
-r=r[:brace+1]+'\n    private var lastGoodNetwork:NetworkState?=null\n    private var lastGoodNetworkAt:Long=0L'+r[brace+1:]
+# Add a tiny in-memory cache inside the APK repository only.
+class_match=re.search(r'class DjaegerRepository[^\{]*\{',r)
+assert class_match
+pos=class_match.end()
+r=r[:pos]+'\n    private var lastGoodNetwork:NetworkState?=null\n    private var lastGoodNetworkAt:Long=0L'+r[pos:]
 
-old_network='val network=if(netFresh) NetworkState(nkv["PING_CURRENT_MS"]?:"—",nkv["PING_AVG_MS"]?:"—",nkv["PING_P95_MS"]?:"—",nkv["JITTER_MS"]?:"—",nkv["PACKET_LOSS_PCT"]?:"—",nkv["QUALITY"]?:"UNKNOWN",true) else NetworkState()'
-new_network='''val liveNetwork=if(netFresh) NetworkState(nkv["PING_CURRENT_MS"]?:"—",nkv["PING_AVG_MS"]?:"—",nkv["PING_P95_MS"]?:"—",nkv["JITTER_MS"]?:"—",nkv["PACKET_LOSS_PCT"]?:"—",nkv["QUALITY"]?:"UNKNOWN",true,false,0L) else null
-        if(liveNetwork!=null){lastGoodNetwork=liveNetwork;lastGoodNetworkAt=nowNet}
-        val runtimeSessionActive=(rt["ACTIVE"]?:rt["active"]?:"0")=="1"
-        val holdAge=if(lastGoodNetworkAt>0L) nowNet-lastGoodNetworkAt else Long.MAX_VALUE
+network_pattern=re.compile(r'''        val network = if\(netFresh\) NetworkState\(\n            ping=nkv\["PING_CURRENT_MS"\] \?: "—",\n            avg=nkv\["PING_AVG_MS"\] \?: "—",\n            p95=nkv\["PING_P95_MS"\] \?: "—",\n            jitter=nkv\["JITTER_MS"\] \?: "—",\n            loss=nkv\["PACKET_LOSS_PCT"\] \?: "—",\n            quality=nkv\["QUALITY"\] \?: "UNKNOWN",\n            fresh=true\n        \) else NetworkState\(\)''')
+match=network_pattern.search(r)
+assert match, 'network-baseline-anchor-not-found'
+new_network='''        val liveNetwork = if(netFresh) NetworkState(
+            ping=nkv["PING_CURRENT_MS"] ?: "—",
+            avg=nkv["PING_AVG_MS"] ?: "—",
+            p95=nkv["PING_P95_MS"] ?: "—",
+            jitter=nkv["JITTER_MS"] ?: "—",
+            loss=nkv["PACKET_LOSS_PCT"] ?: "—",
+            quality=nkv["QUALITY"] ?: "UNKNOWN",
+            fresh=true,
+            held=false,
+            lastAgeSec=0L
+        ) else null
+        if(liveNetwork!=null){lastGoodNetwork=liveNetwork;lastGoodNetworkAt=now}
+        val runtimeSessionActive=(rt["ACTIVE"] ?: rt["active"] ?: "0")=="1"
+        val holdAge=if(lastGoodNetworkAt>0L) now-lastGoodNetworkAt else Long.MAX_VALUE
         val network=when{
-            liveNetwork!=null->liveNetwork
-            runtimeSessionActive&&lastGoodNetwork!=null&&holdAge in 1L..10L->lastGoodNetwork!!.copy(fresh=false,held=true,lastAgeSec=holdAge,quality="${lastGoodNetwork!!.quality} • HOLD ${holdAge}s")
-            else->NetworkState()
+            liveNetwork!=null -> liveNetwork
+            runtimeSessionActive && lastGoodNetwork!=null && holdAge in 1L..10L -> lastGoodNetwork!!.copy(
+                fresh=false,
+                held=true,
+                lastAgeSec=holdAge,
+                quality="${lastGoodNetwork!!.quality} • HOLD ${holdAge}s"
+            )
+            else -> NetworkState()
         }'''
-assert old_network in r
-r=r.replace(old_network,new_network,1)
+r=r[:match.start()]+new_network+r[match.end():]
 
-old_ui='''@Composable fun NetworkCard(n:NetworkState){
-    val clipboard=LocalClipboardManager.current
-    val body="Ping ${n.ping} ms • Avg ${n.avg} ms • P95 ${n.p95} ms • Jitter ${n.jitter} ms • Loss ${n.loss}% • Quality ${n.quality}"
-    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("NETWORK",color=Green,fontWeight=FontWeight.Bold);TextButton(onClick={clipboard.setText(AnnotatedString(body))}){Text("COPY")}}
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){NetworkMetric("Ping",if(n.fresh) "${n.ping} ms" else "—");NetworkMetric("Avg",if(n.fresh) "${n.avg} ms" else "—");NetworkMetric("P95",if(n.fresh) "${n.p95} ms" else "—");NetworkMetric("Jitter",if(n.fresh) "${n.jitter} ms" else "—");NetworkMetric("Loss",if(n.fresh) "${n.loss}%" else "—")}
-        Spacer(Modifier.height(8.dp));Text("Quality: ${n.quality}",color=if(n.fresh) Green else Muted,fontWeight=FontWeight.Bold)
-    }}
-}'''
-new_ui='''@Composable fun NetworkCard(n:NetworkState){
-    val clipboard=LocalClipboardManager.current
-    val show=n.fresh||n.held
-    val body="Ping ${if(show)n.ping else "—"} ms • Avg ${if(show)n.avg else "—"} ms • P95 ${if(show)n.p95 else "—"} ms • Jitter ${if(show)n.jitter else "—"} ms • Loss ${if(show)n.loss else "—"}% • Quality ${n.quality}"
-    val qualityColor=when{n.fresh->Green;n.held->Amber;else->Muted}
-    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("NETWORK",color=Green,fontWeight=FontWeight.Bold);TextButton(onClick={clipboard.setText(AnnotatedString(body))}){Text("COPY")}}
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){NetworkMetric("Ping",if(show) "${n.ping} ms" else "—");NetworkMetric("Avg",if(show) "${n.avg} ms" else "—");NetworkMetric("P95",if(show) "${n.p95} ms" else "—");NetworkMetric("Jitter",if(show) "${n.jitter} ms" else "—");NetworkMetric("Loss",if(show) "${n.loss}%" else "—")}
-        Spacer(Modifier.height(8.dp));Text("Quality: ${n.quality}",color=qualityColor,fontWeight=FontWeight.Bold)
-    }}
-}'''
-assert old_ui in m
-m=m.replace(old_ui,new_ui,1)
+# Modify NetworkCard only. Other cards and Overview order remain byte-for-byte source-equivalent.
+ui_start=m.index('@Composable fun NetworkCard(n:NetworkState)')
+ui_end=m.index('@Composable fun NetworkMetric',ui_start)
+ui=m[ui_start:ui_end]
+assert 'val clipboard=LocalClipboardManager.current' in ui
+ui=ui.replace('val clipboard=LocalClipboardManager.current','val clipboard=LocalClipboardManager.current\n    val show=n.fresh||n.held',1)
+assert ui.count('if(n.fresh)') >= 6
+ui=ui.replace('if(n.fresh)','if(show)')
+old_quality='color=if(show) Green else Muted'
+assert old_quality in ui
+ui=ui.replace(old_quality,'color=when{n.fresh->Green;n.held->Amber;else->Muted}',1)
+m=m[:ui_start]+ui+m[ui_end:]
 
 # Regression gates: no module/hardware authority added and matched identity is unchanged.
 assert long_header not in m
-assert 'Text("CONTROL CENTER"' in m or '"CONTROL CENTER"' in m
+assert 'CONTROL CENTER' in m
 assert 'VC129637 / VC12261' in m
 assert 'versionCode = 12261' in b
 assert 'workloadfinal1' in b
@@ -80,6 +87,7 @@ assert 'ProcessBuilder("su"' not in m
 assert '/sys/' not in m and '/proc/sys/' not in m
 assert 'HOLD ${holdAge}s' in r
 assert 'holdAge in 1L..10L' in r
+assert 'n.fresh||n.held' in m
 
 main.write_text(m)
 repo.write_text(r)
