@@ -34,9 +34,7 @@ jobs:
         run: |
           set -e
           SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          fi
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; fi
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
@@ -57,12 +55,12 @@ jobs:
           cd shadow4-legacy-src
           python3 shadow4_facebook526_lsposed192_patch.py
 
-      - name: Pre-build legacy and structural assertions
+      - name: Pre-build legacy structural and Marketplace safety assertions
         working-directory: shadow4-legacy-src
         run: |
           set -e
           grep -q 'applicationId = "com.djaeger.facebookadshield526.shadow4.legacy"' app/build.gradle.kts
-          grep -q 'versionName = "526-SHADOW4-LSPOSED192-MENU1"' app/build.gradle.kts
+          grep -q 'versionName = "526-SHADOW4-LSPOSED192-MENU2-MPSAFE1"' app/build.gradle.kts
           grep -q 'com.github.deltazefiro:XposedBridge:main-SNAPSHOT' app/build.gradle.kts
           grep -q 'android:name="xposedmodule"' app/src/main/AndroidManifest.xml
           grep -q 'android:name="xposedminversion"' app/src/main/AndroidManifest.xml
@@ -75,10 +73,12 @@ jobs:
           grep -q 'GRAPHQL_FEED_UNIT_EDGE_CLASS' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
           grep -q 'FeedCSRCacheFilter' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
           grep -q 'NewsFeedFeedUnitComponent' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
-          grep -q 'fb526_shadow4_legacy_structural_guard_v1_2026_09_18' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
+          grep -q 'fb526_shadow4_legacy_structural_guard_mpsafe1_2026_09_18' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
           grep -q '"sponsored_data"' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
-          grep -q '"ADVERTISEMENT"' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
-          grep -q '"BANNER"' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
+          grep -q 'MARKETPLACE_NET_GUARD_DISABLED_FB526' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
+          grep -q 'MARKETPLACE_NET_GUARD_DISABLED_FB526' app/src/main/java/tn/loukious/facebookappadsremover/Module.java
+          ! grep -q 'runCatching { installMarketplaceAdsQueryBlock(classLoader, bridge) }' app/src/main/java/tn/loukious/facebookappadsremover/Patches.kt
+          ! grep -q 'loadCachedMarketplaceNetGuard(application);' app/src/main/java/tn/loukious/facebookappadsremover/Module.java
           grep -q '@drawable/ic_djaeger_shield' app/src/main/AndroidManifest.xml
           test -f app/src/main/res/drawable/ic_djaeger_shield.xml
 
@@ -94,28 +94,29 @@ jobs:
           mkdir -p output
           APK="$(find shadow4-legacy-src/app/build/outputs/apk/debug -type f -name '*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4-LSPosed192-MENU1.apk
-          unzip -l output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4-LSPosed192-MENU1.apk | grep -q 'assets/xposed_init'
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4-LSPosed192-MENU1.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4-LSPosed192-MENU1.apk | tee output/BADGING.txt
+          OUT=output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4-LSPosed192-MENU2-MPSAFE1.apk
+          cp "$APK" "$OUT"
+          unzip -l "$OUT" | grep -q 'assets/xposed_init'
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$OUT"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$OUT" | tee output/BADGING.txt
           grep -q "package: name='com.djaeger.facebookadshield526.shadow4.legacy'" output/BADGING.txt
           grep -q "sdkVersion:'30'" output/BADGING.txt
           grep -q "launchable-activity: name='tn.loukious.facebookappadsremover.LegacyMainActivity'" output/BADGING.txt
-          sha256sum output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4-LSPosed192-MENU1.apk | tee output/SHA256.txt
+          sha256sum "$OUT" | tee output/SHA256.txt
           printf '%s\n' \
             'Target: com.facebook.katana 526.1.0.66.75' \
-            'Framework target: LSPosed 1.9.2 / legacy Xposed API (min 93)' \
-            'Mode: structural GraphQL/Litho + CSR/late-feed layered guards' \
-            'Launcher: LegacyMainActivity / Android framework-only menu' \
-            'Source baseline: Loukious FacebookAppAdsRemover legacy commit 688fa93070de760389471aa7c9555994855d8575' \
-            'DJAEGER patch: fb526_shadow4_legacy_structural_guard_v1_2026_09_18' \
+            'Framework: LSPosed 1.9.2 / legacy Xposed API 93' \
+            'News Feed: structural GraphQL/Litho + CSR/late-feed layered guards' \
+            'Marketplace: MPSAFE1; organic RN Networking requests untouched; cached net guard disabled' \
+            'Marketplace ad-specific Litho render guards retained' \
+            'Launcher: LegacyMainActivity' \
             'Package: com.djaeger.facebookadshield526.shadow4.legacy' \
             > output/BUILD_INFO.txt
 
       - name: Upload SHADOW4 LSPosed192 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-Facebook-Ad-Shield-526-SHADOW4-LSPosed192-MENU1
+          name: DJAEGER-Facebook-Ad-Shield-526-SHADOW4-LSPosed192-MENU2-MPSAFE1
           path: output/*
           if-no-files-found: error
           retention-days: 14
