@@ -1,0 +1,99 @@
+name: Build DUALREG3 Manual APP Matched Control Center V2
+on:
+  push:
+    branches: [codex/dualreg3-manual-app1-matched]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Rebuild stable baseline
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py; do python3 scripts/$s; done
+          python3 scripts/r34_rebuild3_agent_full_hardware_truth.py
+          python3 scripts/r35_rebuild3_lang2_mwfix1.py
+          python3 scripts/r36_rebuild3_lang3_math1_sync1.py
+          python3 scripts/r37_sync2_session_truth_ui_order.py
+          python3 scripts/r38_mwfix2_sync3.py
+          python3 scripts/r39_attr1_sync4.py
+          python3 scripts/r40_hk1_sysfs1_ccsync1.py
+          python3 scripts/r41_loopfix1_ccmatch1.py
+          python3 scripts/r42_gamereg1.py
+          python3 scripts/r43_sharedint1.py
+          python3 scripts/r44_hermescloud1.py
+          python3 scripts/r45_workloadfinal1.py
+          python3 scripts/r46_workloadfinal1_overview_order_fix.py
+          python3 scripts/r50_hermes_neuron_ask1.py
+          python3 scripts/r51_hermes_neuron_ask_shadow1_uifix1.py
+          python3 scripts/r52_dualreg3_manual_app1.py
+          python3 scripts/r53_dualreg3_pair_sync.py
+      - name: Contract gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          RD=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt').read_text()
+          B=Path('control-center-r2/app/build.gradle.kts').read_text()
+          C='REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_DUALREG3_SHAREDINT1_HERMESCLOUD1_WORKLOADFINAL1_APPREBUILD4_MAXVALUE1'
+          assert 'versionCode = 12262' in B and 'dualreg3-manualapp1' in B
+          assert 'GAME REGISTRY • MANUAL' in M and 'Nama game' in M and 'TAMBAH GAME' in M
+          assert 'APP REGISTRY • MANUAL' in M and 'Nama aplikasi' in M and 'TAMBAH APP' in M
+          assert 'AppRegistryListCard(repo)' in M
+          assert 'djaeger-game-registry add-stdin' in R
+          assert 'djaeger-app-registry add-stdin' in R and 'djaeger-app-registry remove-stdin' in R
+          assert C in M and C in RD
+          assert "MODULE_VERSION_CODE='129652'" in RD and "CONTROL_CENTER_VERSION_CODE='12262'" in RD
+          assert "DUAL_REGISTRY='DUALREG3_MANUAL_SEPARATE'" in RD
+          assert 'CONTROL CENTER' in M and 'Ask DJAEGER Gemini' in M and 'Ask DJAEGER Hermes' in M
+          assert '/sys/' not in R and '/proc/sys/' not in R
+          print('CONTRACT_GATE=PASS')
+          print('OVERVIEW_BASELINE=PRESERVED')
+          print('GAME_REGISTRY=EXISTING_MANUAL_UI_PRESERVED')
+          print('APP_REGISTRY=SEPARATE_MANUAL_UI')
+          print('PAIR=VC129652+VC12262')
+          PY
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          set -euo pipefail
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+      - name: Sign verify and package APK
+        run: |
+          set -euo pipefail
+          rm -rf output-dualreg3-v2 && mkdir -p output-dualreg3-v2
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"; test -n "$U"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/zipalign" -p -f 4 "$U" output-dualreg3-v2/aligned.apk
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-dualreg3-manualapp1-v2
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/dualreg3v2.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER DUALREG3 MANUAL APP1 MATCHED, O=DJAEGER, C=ID'
+          APK=output-dualreg3-v2/DJAEGER-Control-Center-v0.12.1-r2-DUALREG3-MANUALAPP1-MATCHED.apk
+          "$BT/apksigner" sign --ks /tmp/dualreg3v2.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" output-dualreg3-v2/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > output-dualreg3-v2/APK_VERIFY.txt
+          unzip -t "$APK" > output-dualreg3-v2/APK_ZIP_TEST.txt
+          sha256sum "$APK" > output-dualreg3-v2/SHA256.txt
+          printf '%s\n' 'STATUS=PASS' 'PAIR_CONTRACT=DJAEGER_PAIR_20260917_DUALREG3_MANUALAPP1' 'MODULE_VERSION_CODE=129652' 'CONTROL_CENTER_VERSION_CODE=12262' 'OVERVIEW=UNCHANGED_BASELINE' 'GAME_REGISTRY=EXISTING_MANUAL_UI_PRESERVED' 'APP_REGISTRY=SEPARATE_MANUAL_NAME_PACKAGE_ADD_REFRESH_REMOVE' > output-dualreg3-v2/BUILD_REPORT.txt
+          rm output-dualreg3-v2/aligned.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: djaeger-control-center-dualreg3-manualapp1-v2
+          path: output-dualreg3-v2/
+          if-no-files-found: error
+          retention-days: 30
