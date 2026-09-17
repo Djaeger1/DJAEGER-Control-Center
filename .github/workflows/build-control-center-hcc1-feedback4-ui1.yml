@@ -1,4 +1,4 @@
-name: Build DUALREG3 HCC1 Feedback4 UI1 Matched
+name: Build DUALREG3 HCC1 Feedback4 UI1 CLOUDFREEZE1 Matched
 on:
   push:
     branches: [codex/dualreg3-hcc1-feedback4-ui1-matched]
@@ -14,7 +14,7 @@ jobs:
         with: {distribution: temurin, java-version: '17'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
-      - name: Rebuild proven baseline and apply HCC1 Feedback4 UI1
+      - name: Rebuild proven baseline and apply HCC1 Feedback4 UI1 CLOUDFREEZE1
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -44,6 +44,7 @@ jobs:
           python3 scripts/r53_dualreg3_pair_sync.py
           python3 scripts/r54_pre_normalize_game_title.py
           python3 scripts/r54_hcc1_feedback4_ui1.py
+          python3 scripts/r55_cloudfreeze1_pair.py
       - name: Exact requested-change gates
         run: |
           set -euo pipefail
@@ -53,9 +54,9 @@ jobs:
           R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
           RD=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt').read_text()
           B=Path('control-center-r2/app/build.gradle.kts').read_text()
-          assert 'versionCode = 12263' in B
-          assert 'syncModule=="129653"' in M and 'syncCc=="12263"' in M
-          assert "MODULE_VERSION_CODE='129653'" in RD and "CONTROL_CENTER_VERSION_CODE='12263'" in RD
+          assert 'versionCode = 12264' in B
+          assert 'syncModule=="129654"' in M and 'syncCc=="12264"' in M
+          assert "MODULE_VERSION_CODE='129654'" in RD and "CONTROL_CENTER_VERSION_CODE='12264'" in RD
           assert 'GameTitlePink=Color(0xFFFF8CC6)' in M and 'color=GameTitlePink' in M
           assert 'AppTitleLightBlue=Color(0xFF7DD3FC)' in M and 'color=AppTitleLightBlue' in M
           assert 'visibleComfortPreset=="BASELINE"' in M and 'visibleComfortPreset=="COOL_STABLE"' in M
@@ -65,7 +66,7 @@ jobs:
           assert 'djaeger-game-registry add-stdin' in R and 'djaeger-app-registry add-stdin' in R
           assert '/sys/' not in R and '/proc/sys/' not in R
           print('REQUESTED_CHANGE_GATE=PASS')
-          print('PAIR=VC129653+VC12263')
+          print('PAIR=VC129654+VC12264')
           PY
       - name: Unit tests and release build
         working-directory: control-center-r2
@@ -76,22 +77,22 @@ jobs:
       - name: Sign verify and package APK
         run: |
           set -euo pipefail
-          rm -rf output-hcc1-feedback4-ui1 && mkdir -p output-hcc1-feedback4-ui1
+          rm -rf output-hcc1-feedback4-ui1-cloudfreeze1 && mkdir -p output-hcc1-feedback4-ui1-cloudfreeze1
           U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"; test -n "$U"
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BT/zipalign" -p -f 4 "$U" output-hcc1-feedback4-ui1/aligned.apk
-          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-hcc1-feedback4-ui1
-          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/hcc1-feedback4-ui1.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER HCC1 FEEDBACK4 UI1 MATCHED, O=DJAEGER, C=ID'
-          APK=output-hcc1-feedback4-ui1/DJAEGER-Control-Center-v0.12.1-r2-DUALREG3-HCC1-FEEDBACK4-UI1-MATCHED.apk
-          "$BT/apksigner" sign --ks /tmp/hcc1-feedback4-ui1.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" output-hcc1-feedback4-ui1/aligned.apk
-          "$BT/apksigner" verify --verbose --print-certs "$APK" > output-hcc1-feedback4-ui1/APK_VERIFY.txt
-          unzip -t "$APK" > output-hcc1-feedback4-ui1/APK_ZIP_TEST.txt
-          sha256sum "$APK" > output-hcc1-feedback4-ui1/SHA256.txt
-          printf '%s\n' 'STATUS=PASS' 'PAIR=VC129653+VC12263' 'HCC1_PRESET_SELECTED_STATE=BACKEND_TRUTH' 'HCC1_FEEDBACK_UI=TRANSIENT' 'GAME_TITLE=PINK' 'APP_TITLE=LIGHT_BLUE' > output-hcc1-feedback4-ui1/BUILD_REPORT.txt
-          rm output-hcc1-feedback4-ui1/aligned.apk
+          "$BT/zipalign" -p -f 4 "$U" output-hcc1-feedback4-ui1-cloudfreeze1/aligned.apk
+          PASS="$(openssl rand -hex 24)"; ALIAS=djaeger-hcc1-feedback4-ui1-cloudfreeze1
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/hcc1-feedback4-ui1-cloudfreeze1.p12 -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER HCC1 FEEDBACK4 UI1 CLOUDFREEZE1 MATCHED, O=DJAEGER, C=ID'
+          APK=output-hcc1-feedback4-ui1-cloudfreeze1/DJAEGER-Control-Center-v0.12.1-r2-DUALREG3-HCC1-FEEDBACK4-UI1-CLOUDFREEZE1-MATCHED.apk
+          "$BT/apksigner" sign --ks /tmp/hcc1-feedback4-ui1-cloudfreeze1.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" output-hcc1-feedback4-ui1-cloudfreeze1/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > output-hcc1-feedback4-ui1-cloudfreeze1/APK_VERIFY.txt
+          unzip -t "$APK" > output-hcc1-feedback4-ui1-cloudfreeze1/APK_ZIP_TEST.txt
+          sha256sum "$APK" > output-hcc1-feedback4-ui1-cloudfreeze1/SHA256.txt
+          printf '%s\n' 'STATUS=PASS' 'PAIR=VC129654+VC12264' 'HCC1_PRESET_SELECTED_STATE=BACKEND_TRUTH' 'HCC1_FEEDBACK_UI=TRANSIENT' 'GAME_TITLE=PINK' 'APP_TITLE=LIGHT_BLUE' 'CLOUDFREEZE1=MODULE_SIDE_UPGRADE_ISOLATION' > output-hcc1-feedback4-ui1-cloudfreeze1/BUILD_REPORT.txt
+          rm output-hcc1-feedback4-ui1-cloudfreeze1/aligned.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: djaeger-control-center-hcc1-feedback4-ui1
-          path: output-hcc1-feedback4-ui1/
+          name: djaeger-control-center-hcc1-feedback4-ui1-cloudfreeze1
+          path: output-hcc1-feedback4-ui1-cloudfreeze1/
           if-no-files-found: error
           retention-days: 30
