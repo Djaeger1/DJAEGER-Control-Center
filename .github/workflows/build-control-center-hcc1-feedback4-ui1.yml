@@ -42,6 +42,7 @@ jobs:
           python3 scripts/r51_hermes_neuron_ask_shadow1_uifix1.py
           python3 scripts/r52_dualreg3_manual_app1.py
           python3 scripts/r53_dualreg3_pair_sync.py
+          python3 scripts/r54_pre_normalize_game_title.py
           python3 scripts/r54_hcc1_feedback4_ui1.py
       - name: Exact requested-change gates
         run: |
