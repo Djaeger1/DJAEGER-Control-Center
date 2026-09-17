@@ -12,6 +12,9 @@ jobs:
   build-shadow4:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout DJAEGER build branch
         uses: actions/checkout@v4
@@ -22,13 +25,17 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android 36 platform
+      - name: Prepare Android SDK 36
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+          set -e
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-36' 'build-tools;35.0.0' 'platform-tools'
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
 
       - name: Fetch pinned structural ad-filter source
         run: |
@@ -36,7 +43,7 @@ jobs:
           git clone --filter=blob:none https://github.com/Loukious/FacebookAppAdsRemover.git shadow4-src
           cd shadow4-src
           git checkout be51ed2858ef33e0df812d6385b6b609e64be0ec
-          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = "be51ed2858ef33e0df812d6385b6b609e64be0ec"
 
       - name: Apply Facebook 526 SHADOW4 compatibility patch
         run: |
