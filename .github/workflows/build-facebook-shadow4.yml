@@ -1,0 +1,88 @@
+name: Build DJAEGER Facebook Ad Shield 526 SHADOW4
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [shadow4-facebook526]
+    paths:
+      - '.github/workflows/build-facebook-shadow4.yml'
+      - 'scripts/shadow4_facebook526_patch.py'
+
+jobs:
+  build-shadow4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout DJAEGER build branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 36 platform
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+
+      - name: Fetch pinned structural ad-filter source
+        run: |
+          rm -rf shadow4-src
+          git clone --filter=blob:none https://github.com/Loukious/FacebookAppAdsRemover.git shadow4-src
+          cd shadow4-src
+          git checkout be51ed2858ef33e0df812d6385b6b609e64be0ec
+          git rev-parse HEAD
+
+      - name: Apply Facebook 526 SHADOW4 compatibility patch
+        run: |
+          cp scripts/shadow4_facebook526_patch.py shadow4-src/shadow4_facebook526_patch.py
+          cd shadow4-src
+          python3 shadow4_facebook526_patch.py
+
+      - name: Pre-build structural assertions
+        working-directory: shadow4-src
+        run: |
+          grep -q 'applicationId = "com.djaeger.facebookadshield526.shadow4"' app/build.gradle.kts
+          grep -q 'versionName = "526-SHADOW4"' app/build.gradle.kts
+          grep -q 'com.facebook.graphql.model.GraphQLFeedUnitEdge' app/src/main/java/tn/loukious/facebookappadsremover/core/Targets.kt
+          grep -q 'com.crossapp.graphql.facebook.enums.GraphQLFeedStoryCategory' app/src/main/java/tn/loukious/facebookappadsremover/core/Targets.kt
+          grep -q 'Added stories to FUC' app/src/main/java/tn/loukious/facebookappadsremover/hooks/NewsfeedFilterHook.kt
+          grep -q '"PROMOTION" to Settings.ADS_ENABLED' app/src/main/java/tn/loukious/facebookappadsremover/hooks/NewsfeedFilterHook.kt
+          grep -q 'FB526_STRUCTURAL_FEED_SHADOW4' app/src/main/res/values/strings.xml
+          grep -q 'com.facebook.katana' app/src/main/AndroidManifest.xml
+
+      - name: Build SHADOW4 APK
+        working-directory: shadow4-src
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Collect and validate APK
+        run: |
+          set -e
+          mkdir -p output
+          APK="$(find shadow4-src/app/build/outputs/apk/debug -type f -name '*.apk' | head -1)"
+          test -n "$APK"
+          cp "$APK" output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4.apk
+          unzip -l output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4.apk | grep -q 'META-INF/xposed/'
+          unzip -p output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4.apk resources.arsc > /dev/null
+          sha256sum output/DJAEGER-Facebook-Ad-Shield-526-SHADOW4.apk | tee output/SHA256.txt
+          printf '%s\n' \
+            'Target: com.facebook.katana 526.1.0.66.75' \
+            'Mode: structural feed interception + layered feed guards' \
+            'Baseline: pinned FacebookAppAdsRemover be51ed2858ef33e0df812d6385b6b609e64be0ec' \
+            'DJAEGER patch: SHADOW4 / FB526_STRUCTURAL_FEED_SHADOW4' \
+            > output/BUILD_INFO.txt
+
+      - name: Upload SHADOW4 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Facebook-Ad-Shield-526-SHADOW4
+          path: output/*
+          if-no-files-found: error
+          retention-days: 14
