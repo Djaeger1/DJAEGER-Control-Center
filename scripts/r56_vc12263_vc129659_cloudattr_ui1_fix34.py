@@ -10,7 +10,6 @@ m=main.read_text()
 rd=reader.read_text()
 b=build.read_text()
 
-# Preserve exact installed-compatible app versionCode; pair it to VC129659.
 assert 'versionCode = 12263' in b
 b=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "0.12.1-r2-vc12263-vc129659-cloudattr-ui1-fix34"',b,count=1)
 
@@ -56,7 +55,6 @@ new='''    val cloudState=envField(s.brain,"CLOUD_PLAN_STATE").ifBlank{"UNAVAILA
 assert old in block, 'cloud attribution anchor missing'
 block=block.replace(old,new,1)
 
-# Keep language engine/backend untouched; remove only its user-facing metadata lines.
 block=re.sub(
     r'\n    val lang=envField\(s\.thoughts,"LANGUAGE"\).*?\n    val langEngine=envField\(s\.thoughts,"LANGUAGE_ENGINE"\).*?\n',
     '\n',
@@ -64,10 +62,10 @@ block=re.sub(
     count=1,
 )
 
-old_body='''Cloud plan: $cloudState\n\n$thoughtTitle • $statusLabel\n$text\n\nThought source: ${thoughtSrc.ifBlank{"—"}}\nConfidence: ${conf.ifBlank{"—"}}%\nLanguage: $lang • $langEngine\n$mem'''
-new_body='''Cloud plan: $cloudPlan\n\n$thoughtTitle • $statusLabel\n$text\n\nThought source: ${thoughtSrc.ifBlank{"—"}}\nConfidence: ${conf.ifBlank{"—"}}%\n$mem'''
-assert old_body in block, 'THOUGHT body anchor missing'
-block=block.replace(old_body,new_body,1)
+assert 'Cloud plan: $cloudState' in block
+block=block.replace('Cloud plan: $cloudState','Cloud plan: $cloudPlan',1)
+assert r'\nLanguage: $lang • $langEngine' in block
+block=block.replace(r'\nLanguage: $lang • $langEngine','',1)
 
 m=m[:start]+block+m[end:]
 
@@ -75,7 +73,6 @@ main.write_text(m)
 reader.write_text(rd)
 build.write_text(b)
 
-# Surgical gates.
 M=main.read_text(); RD=reader.read_text(); B=build.read_text()
 S=M[M.index('@Composable fun ThoughtsCard(s:RuntimeState)'):M.index('@Composable fun AgentRebuild3Card',M.index('@Composable fun ThoughtsCard(s:RuntimeState)'))]
 assert 'versionCode = 12263' in B
