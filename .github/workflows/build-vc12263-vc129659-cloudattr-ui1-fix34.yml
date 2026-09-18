@@ -111,14 +111,13 @@ jobs:
           grep -q "versionCode='12263'" "$OUT/AAPT_BADGING.txt"
           grep -q "sdkVersion:'26'" "$OUT/AAPT_BADGING.txt"
           grep -q "targetSdkVersion:'33'" "$OUT/AAPT_BADGING.txt"
-          grep -q 'Verified using v1 scheme (JAR signing): true' "$OUT/APKSIGNER_VERIFY.txt"
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$OUT/APKSIGNER_VERIFY.txt"
           grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' "$OUT/APKSIGNER_VERIFY.txt"
 
           sha256sum "$APK" > "$OUT/SHA256.txt"
           rm "$OUT/aligned.apk"
 
-          printf '%s\n'             'STATUS=PASS'             'SOURCE_PARENT=VC12263_PROVEN_377835d547d3131c138b06c2056110bf87fe6ef0'             'PAIR=VC129659+VC12263'             'AAPT_BADGING=PASS'             'AAPT_MANIFEST_TREE=PASS'             'ZIPALIGN=PASS'             'APK_SIGNATURE_V1=PASS'             'APK_SIGNATURE_V2=PASS'             'APK_SIGNATURE_V3=PASS'             'LANGUAGE_UI_REMOVED=YES'             'CLOUD_CONTROL_PROVIDER_AWARE=YES'             'CLOUD_PLAN_PROVIDER_AWARE=YES'             'LAYOUT_CHANGED=NO' > "$OUT/BUILD_REPORT.txt"
+          printf '%s\n'             'STATUS=PASS'             'SOURCE_PARENT=VC12263_PROVEN_377835d547d3131c138b06c2056110bf87fe6ef0'             'PAIR=VC129659+VC12263'             'AAPT_BADGING=PASS'             'AAPT_MANIFEST_TREE=PASS'             'ZIPALIGN=PASS'             'APK_SIGNATURE_V1=NOT_REQUIRED_MINSDK26'             'APK_SIGNATURE_V2=PASS'             'APK_SIGNATURE_V3=PASS'             'LANGUAGE_UI_REMOVED=YES'             'CLOUD_CONTROL_PROVIDER_AWARE=YES'             'CLOUD_PLAN_PROVIDER_AWARE=YES'             'LAYOUT_CHANGED=NO' > "$OUT/BUILD_REPORT.txt"
 
       - uses: actions/upload-artifact@v4
         with:
