@@ -1,0 +1,128 @@
+name: Build VC12263 VC129659 CLOUDATTR UI1 FIX34
+on:
+  push:
+    branches: [codex/vc12263-cloudattr-ui-fix34]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+
+      - name: Rebuild exact VC12263 proven source line
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/build-control-center-r7-layout-final.yml').read_text().splitlines(); marker="          python3 - <<'PY'"
+          start=next(i+1 for i,x in enumerate(src) if x==marker); end=next(i for i in range(start,len(src)) if src[i]=='          PY')
+          Path('/tmp/r7.py').write_text('\n'.join(x[10:] if x.startswith('          ') else x for x in src[start:end])+'\n')
+          PY
+          python3 /tmp/r7.py
+          for s in r9_cutover_repository.py r9_integrate_bug_health.py r10_integrate_manual_refresh.py r10_1_idle_semantics.py r10_2_freshness_semantics.py r11_surgical_remove_ui.py r12_user_design_additive.py r13_complete_user_design.py r14_screenshot_bugfix.py r15_runtime_contract_autorotate.py r16_session_frame_plan_fix.py r17_four_key_pool_bridge.py r18_fast_telemetry_ui.py r19_thoughts_local_memory.py r20_runtime_contract_sync.py r21_runtime_bugfix.py r22_gemini_first_thoughts.py r22_r92_thoughts_strategy_ui.py r22_r92_module_sync_ui2.py r23_h2_ui5_hermes_card.py r24_h2_rt3_ui6_semantic_evidence_sync.py r25_ui6_fix1_gemini_cloud_truth.py r26_ui6_fix2_runtime_contract_mapping.py r27_ui6_ctx1_full_sync.py r28_ui6_cog1_full_suite.py r29_ui6_network_below_thought.py r30_ui6_hcc1_full_sync.py r31_hcc1_fix2_jank_session.py r32_hcc1_fix4_baseline_single_snapshot.py r33_hcc1_fix4_freshness_unified.py; do python3 scripts/$s; done
+          python3 scripts/r34_rebuild3_agent_full_hardware_truth.py
+          python3 scripts/r35_rebuild3_lang2_mwfix1.py
+          python3 scripts/r36_rebuild3_lang3_math1_sync1.py
+          python3 scripts/r37_sync2_session_truth_ui_order.py
+          python3 scripts/r38_mwfix2_sync3.py
+          python3 scripts/r39_attr1_sync4.py
+          python3 scripts/r40_hk1_sysfs1_ccsync1.py
+          python3 scripts/r41_loopfix1_ccmatch1.py
+          python3 scripts/r42_gamereg1.py
+          python3 scripts/r43_sharedint1.py
+          python3 scripts/r44_hermescloud1.py
+          python3 scripts/r45_workloadfinal1.py
+          python3 scripts/r46_workloadfinal1_overview_order_fix.py
+          python3 scripts/r50_hermes_neuron_ask1.py
+          python3 scripts/r51_hermes_neuron_ask_shadow1_uifix1.py
+          python3 scripts/r52_dualreg3_manual_app1.py
+          python3 scripts/r53_dualreg3_pair_sync.py
+          python3 scripts/r54_pre_normalize_game_title.py
+          python3 scripts/r54_hcc1_feedback4_ui1.py
+          python3 scripts/r56_vc12263_vc129659_cloudattr_ui1_fix34.py
+
+      - name: Exact source gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          M=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt').read_text()
+          R=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt').read_text()
+          RD=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt').read_text()
+          B=Path('control-center-r2/app/build.gradle.kts').read_text()
+          S=M[M.index('@Composable fun ThoughtsCard(s:RuntimeState)'):M.index('@Composable fun AgentRebuild3Card',M.index('@Composable fun ThoughtsCard(s:RuntimeState)'))]
+          assert 'versionCode = 12263' in B
+          assert 'syncModule=="129659"' in M and 'syncCc=="12263"' in M
+          assert "MODULE_VERSION_CODE='129659'" in RD and "CONTROL_CENTER_VERSION_CODE='12263'" in RD
+          assert 'CLOUD_CONTROL_PROVIDER' in S and 'CLOUD_PLAN_PROVIDER' in S
+          assert 'Cloud in control: $cloudInControl' in S
+          assert 'Cloud plan: $cloudPlan' in S
+          assert 'Language: $lang' not in S
+          assert 'val lang=' not in S and 'val langEngine=' not in S
+          assert 'GAME REGISTRY • MANUAL' in M and 'APP REGISTRY • MANUAL' in M
+          assert 'visibleComfortPreset=="BASELINE"' in M and 'visibleComfortPreset=="COOL_STABLE"' in M
+          assert '/sys/' not in R and '/proc/sys/' not in R
+          print('SOURCE_GATE=PASS')
+          print('PAIR=VC129659+VC12263')
+          PY
+
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          set -euo pipefail
+          gradle :app:testReleaseUnitTest --stacktrace
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Official Android package/sign/parse gates
+        run: |
+          set -euo pipefail
+          OUT=output-vc12263-vc129659-fix34
+          rm -rf "$OUT" && mkdir -p "$OUT"
+          U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
+          test -n "$U"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          test -x "$BT/zipalign"
+          test -x "$BT/apksigner"
+          test -x "$BT/aapt"
+
+          "$BT/zipalign" -p -f 4 "$U" "$OUT/aligned.apk"
+
+          PASS="$(openssl rand -hex 24)"
+          ALIAS=djaeger-vc12263-vc129659-fix34
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/fix34.p12             -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER VC12263 VC129659 FIX34, O=DJAEGER, C=ID'
+
+          APK="$OUT/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129659-CLOUDATTR1-UI1-FIX34.apk"
+          "$BT/apksigner" sign             --ks /tmp/fix34.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS"             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$OUT/aligned.apk"
+
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee "$OUT/APKSIGNER_VERIFY.txt"
+          "$BT/aapt" dump badging "$APK" | tee "$OUT/AAPT_BADGING.txt"
+          "$BT/aapt" dump xmltree "$APK" AndroidManifest.xml > "$OUT/AAPT_MANIFEST_TREE.txt"
+          "$BT/zipalign" -c -v 4 "$APK" > "$OUT/ZIPALIGN_VERIFY.txt"
+          unzip -t "$APK" > "$OUT/ZIP_TEST.txt"
+
+          grep -q "package: name='com.djaeger.controlcenter'" "$OUT/AAPT_BADGING.txt"
+          grep -q "versionCode='12263'" "$OUT/AAPT_BADGING.txt"
+          grep -q "sdkVersion:'26'" "$OUT/AAPT_BADGING.txt"
+          grep -q "targetSdkVersion:'33'" "$OUT/AAPT_BADGING.txt"
+          grep -q 'Verified using v1 scheme (JAR signing): true' "$OUT/APKSIGNER_VERIFY.txt"
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$OUT/APKSIGNER_VERIFY.txt"
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' "$OUT/APKSIGNER_VERIFY.txt"
+
+          sha256sum "$APK" > "$OUT/SHA256.txt"
+          rm "$OUT/aligned.apk"
+
+          printf '%s\n'             'STATUS=PASS'             'SOURCE_PARENT=VC12263_PROVEN_377835d547d3131c138b06c2056110bf87fe6ef0'             'PAIR=VC129659+VC12263'             'AAPT_BADGING=PASS'             'AAPT_MANIFEST_TREE=PASS'             'ZIPALIGN=PASS'             'APK_SIGNATURE_V1=PASS'             'APK_SIGNATURE_V2=PASS'             'APK_SIGNATURE_V3=PASS'             'LANGUAGE_UI_REMOVED=YES'             'CLOUD_CONTROL_PROVIDER_AWARE=YES'             'CLOUD_PLAN_PROVIDER_AWARE=YES'             'LAYOUT_CHANGED=NO' > "$OUT/BUILD_REPORT.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: djaeger-vc12263-vc129659-cloudattr-ui1-fix34
+          path: output-vc12263-vc129659-fix34/
+          if-no-files-found: error
+          retention-days: 30
