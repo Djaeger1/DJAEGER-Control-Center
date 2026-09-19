@@ -1,0 +1,43 @@
+#!/system/bin/sh
+# DJAEGER NEURONTRUTH1 — preserve canonical device-side Neuron accounting truth.
+# No sysfs/hardware writes. Never derives USED_EST from provider quota state.
+M="${DJAEGER_MODDIR:-/data/adb/modules/djaeger_game_stabilizer}"
+P="${DJAEGER_STATE_DIR:-/data/adb/djaeger_ai}"
+H="$P/hermes"; N="$H/neuron_budget.env"
+HC="$M/system/bin/djaeger-hermes-cloud"
+q(){ [ -r "$1" ] && awk -F= -v k="$2" '$1==k{v=substr($0,index($0,"=")+1);gsub(/^[[:space:]\047\042]+|[[:space:]\047\042]+$/,"",v);print v;exit}' "$1"; }
+num(){ case "${1:-}" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
+validate(){
+ [ -x "$HC" ] || return 1
+ sh -n "$HC" >/dev/null 2>&1 || return 1
+ grep -Fq 'NEURONUSAGEFIX1' "$HC" || return 1
+ grep -Fq 'neuron_record "$_bill_route"' "$HC" || return 1
+ grep -Fq 'neuron_record "$_route" "$_ic" "$_oc"' "$HC" || return 1
+ grep -Fq 'neuron_record "$_route" "$_probe_in" "$_probe_out"' "$HC" || return 1
+ # Provider quota must never be a writer of canonical usage.
+ _body="$(sed -n '/^quota_mark(){/,/^}/p' "$HC")"
+ printf '%s' "$_body" | grep -Eq 'USED_EST|neuron_mark_exhausted' && return 1
+ return 0
+}
+repair(){
+ validate || { echo 'NEURONTRUTH1=REJECTED_HELPER'; exit 1; }
+ mkdir -p "$H" 2>/dev/null || exit 2
+ # Ask canonical owner to perform only its normal UTC-day rollover/publication.
+ DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$HC" neuron-status >/dev/null 2>&1 || true
+ U="$(q "$N" USED_EST)"; L="$(q "$N" LIMIT)"
+ num "$U" || { echo 'NEURONTRUTH1=INVALID_USED_EST'; exit 3; }
+ num "$L" || { echo 'NEURONTRUTH1=INVALID_LIMIT'; exit 4; }
+ [ "$L" -gt 0 ] 2>/dev/null || exit 5
+ [ "$U" -le "$L" ] 2>/dev/null || exit 6
+ echo "NEURONTRUTH1=PASS"
+ echo "USED_EST=$U"
+ echo "LIMIT=$L"
+}
+selftest(){
+ PSS=0; F=0; ok(){ echo "PASS|$1"; PSS=$((PSS+1)); }; bad(){ echo "FAIL|$1"; F=$((F+1)); }
+ validate && ok helper_success_accounting || bad helper_success_accounting
+ if grep -Eq '(^|[;[:space:]])(reboot|poweroff)|/sys/|/proc/sys/' "$0"; then bad no_hardware_or_reboot; else ok no_hardware_or_reboot; fi
+ grep -Fq 'Provider quota must never be a writer' "$0" && ok provider_usage_decoupled || bad provider_usage_decoupled
+ echo "PASS_COUNT=$PSS"; echo "FAIL_COUNT=$F"; [ "$F" -eq 0 ]
+}
+case "${1:-repair}" in repair|check) repair;; selftest) selftest;; *) exit 2;; esac
