@@ -158,6 +158,32 @@ async function request(path, options = {}) {
     });
     assert(badJson.status === 400, 'invalid_json_not_rejected');
 
+    const manifestRaw = await fetch(base + '/v1/device/update/manifest.txt', { headers });
+    const manifestText = await manifestRaw.text();
+    assert(manifestRaw.status === 200 && manifestText.includes("SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'"), 'update_manifest_failed');
+    assert(manifestText.includes("SEQ='1'") && manifestText.includes("TARGET_VC='129659'"), 'update_manifest_contract_wrong');
+
+    const ack = await request('/v1/device/update/ack', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        device_id: 'SELFTEST',
+        seq: 1,
+        release: 'REMOTEBOOT1_BASE',
+        state: 'APPLIED',
+        detail: 'PASS',
+        module_version_code: '129659'
+      })
+    });
+    assert(ack.status === 200 && ack.body && ack.body.ok === true, 'update_ack_failed');
+
+    const updateStatus = await request('/v1/device/update/status', { headers });
+    assert(updateStatus.status === 200 && updateStatus.body.last_ack && updateStatus.body.last_ack.seq === 1, 'update_status_failed');
+
+    const config = await request('/v1/config', { headers });
+    assert(config.status === 200 && config.body.remote_software_repairs === true, 'remote_software_repairs_not_enabled');
+    assert(config.body.remote_hardware_commands === false, 'remote_hardware_commands_regression');
+
     const unauth = await request('/v1/device/state');
     assert(unauth.status === 401, 'auth_regression');
 
@@ -172,6 +198,10 @@ async function request(path, options = {}) {
     console.log('PASS|last_known_good_baseline');
     console.log('PASS|zero_neuron_accounting_context');
     console.log('PASS|provider_quota_decoupled_observability');
+    console.log('PASS|railway_update_manifest');
+    console.log('PASS|railway_update_ack');
+    console.log('PASS|railway_update_status');
+    console.log('PASS|remote_software_repairs_enabled');
     console.log('PASS|reject_neurons_over_limit');
     console.log('PASS|reject_invalid_json');
     console.log('PASS|auth_guard');
