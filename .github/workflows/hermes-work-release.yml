@@ -28,22 +28,22 @@ jobs:
           cp worker/handoff.sh out/payload/worker/handoff.sh
           cp config/work.env out/payload/config/work.env
           cd out
-          zip -qr ../HERMES_WORK_RUNTIME_v1.0.0_READY.zip manifest.json payload
+          zip -qr ../HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v1.0.0_READY.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v1.0.0_READY.zip.sha256
+          sha256sum HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD.zip.sha256
           cat > channel.json <<EOF
-          {"channel":"stable","version":"v1.0.0-ready","bundle":"HERMES_WORK_RUNTIME_v1.0.0_READY.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v1.0.0_READY.zip.sha256)"}
+          {"channel":"stable","version":"v1.1.0-dashboard","bundle":"HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD.zip.sha256)"}
           EOF
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_INSTALLER_v1.0.0
-          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v1.0.0_READY.zip
+          name: HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD
+          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD.zip
           retention-days: 30
       - name: Publish channel files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v1.0.0_READY.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v1.0.0_READY.zip.sha256 hermes-work-runtime/channel.json
+          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v1.1.0_DASHBOARD.zip.sha256 hermes-work-runtime/channel.json
           git commit -m "Publish HERMES WORK runtime v0.2.0" || exit 0
           git push
