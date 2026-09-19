@@ -1,6 +1,7 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='15'
-RELEASE='GEMINIFINALDIAG1'
+SEQ='16'
+RELEASE='AUDITFIX1'
 TARGET_VC='129659'
-FILE_COUNT='1'
+FILE_COUNT='2'
+FILE|predictor-auditfix1|predictor.sh|8ea55c19f2c4cadd8282963a332fabe974931fe6565e707dfa31fb50f4aacd00|755
 FILE|djaeger-railway-bridge-geminidiag1|system/bin/djaeger-railway-bridge|42da6cabf9adbb6195eea1e239f1b39dfd69d292538a8bf65e27b07c3231c11d|755
