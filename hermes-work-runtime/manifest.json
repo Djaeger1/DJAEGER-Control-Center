@@ -1,1 +1,1 @@
-{"version":"v0.5.0-research-core","description":"HERMES WORK research core: guarded collector, persistent JSONL store, deduplication, categorization and research summary API","restart":false}
+{"version":"v0.6.0-workflow-core","description":"HERMES WORK workflow core with guarded collector, dedup, categorization, scoring, content brief, scheduler status, native updater and rollback","restart":false}
