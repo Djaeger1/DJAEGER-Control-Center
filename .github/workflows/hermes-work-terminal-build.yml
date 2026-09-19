@@ -42,23 +42,23 @@ jobs:
         run: |
           set -euo pipefail
           SRC=hermes-work-terminal/app/src/main/java/com/hermes/workdashboard/MainActivity.java
-          grep -q 'String\[\] labels = {"WORK", "RESEARCH", "PLANNER", "INSIGHTS", "SYSTEM", "UPDATE"};' "$SRC"
-          grep -q 'case 0: buildWork(body);' "$SRC"
-          grep -q 'case 1: buildResearch(body);' "$SRC"
-          grep -q 'case 2: buildPlanner(body);' "$SRC"
-          grep -q 'case 3: buildInsights(body);' "$SRC"
-          grep -q 'case 4: buildSystem(body);' "$SRC"
-          grep -q 'case 5: buildUpdate(body);' "$SRC"
-          grep -q '/api/work/run-research' "$SRC"
-          grep -q '/api/work/brief' "$SRC"
-          grep -q '/api/work/channel' "$SRC"
-          grep -q '/api/work/knowledge' "$SRC"
-          grep -q '/api/work/recovery' "$SRC"
-          grep -q '/api/work/update' "$SRC"
-          grep -q 'DJAEGER WORK' "$SRC"
-          grep -q 'showPage(currentPage)' "$SRC"
-          grep -q 'applicationId "com.hermes.workdashboard"' hermes-work-terminal/app/build.gradle
-          grep -q 'versionName "1.2.5"' hermes-work-terminal/app/build.gradle
+          grep -Fq 'String\[\] labels = {"WORK", "RESEARCH", "PLANNER", "INSIGHTS", "SYSTEM", "UPDATE"};' "$SRC"
+          grep -Fq 'case 0: buildWork(body);' "$SRC"
+          grep -Fq 'case 1: buildResearch(body);' "$SRC"
+          grep -Fq 'case 2: buildPlanner(body);' "$SRC"
+          grep -Fq 'case 3: buildInsights(body);' "$SRC"
+          grep -Fq 'case 4: buildSystem(body);' "$SRC"
+          grep -Fq 'case 5: buildUpdate(body);' "$SRC"
+          grep -Fq '/api/work/run-research' "$SRC"
+          grep -Fq '/api/work/brief' "$SRC"
+          grep -Fq '/api/work/channel' "$SRC"
+          grep -Fq '/api/work/knowledge' "$SRC"
+          grep -Fq '/api/work/recovery' "$SRC"
+          grep -Fq '/api/work/update' "$SRC"
+          grep -Fq 'DJAEGER WORK' "$SRC"
+          grep -Fq 'showPage(currentPage)' "$SRC"
+          grep -Fq 'applicationId "com.hermes.workdashboard"' hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionName "1.2.5"' hermes-work-terminal/app/build.gradle
 
       - name: Build signed release APK
         working-directory: hermes-work-terminal
@@ -74,9 +74,9 @@ jobs:
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$BT/apksigner" verify --verbose --print-certs "$APK"
           "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
-          grep -q "package: name='com.hermes.workdashboard'" /tmp/badging.txt
-          grep -q "versionName='1.2.5'" /tmp/badging.txt
-          grep -q "application-label:'DJAEGER WORK'" /tmp/badging.txt
+          grep -Fq "package: name='com.hermes.workdashboard'" /tmp/badging.txt
+          grep -Fq "versionName='1.2.5'" /tmp/badging.txt
+          grep -Fq "application-label:'DJAEGER WORK'" /tmp/badging.txt
           cp "$APK" DJAEGER_WORK_Dashboard_v1.2.5.apk
           sha256sum DJAEGER_WORK_Dashboard_v1.2.5.apk | tee SHA256.txt
 
