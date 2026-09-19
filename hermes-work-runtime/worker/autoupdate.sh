@@ -5,10 +5,17 @@ ROOT="${HERMES_ROOT:-/data/adb/hermes_work}"
 STATE="$ROOT/state"
 LOG="$ROOT/logs/autoupdate.log"
 PID="$STATE/autoupdate.pid"
+OWNER="$STATE/autoupdate.owner"
 LOCK="$STATE/autoupdate.lock"
 FAILED="$STATE/autoupdate_failed_version"
 mkdir -p "$STATE" "$ROOT/logs" "$ROOT/updates" "$ROOT/releases" "$ROOT/backups"
-echo $$ > "$PID"
+OLD_OWNER="$(cat "$OWNER" 2>/dev/null)"
+if [ -n "$OLD_OWNER" ] && [ "$OLD_OWNER" != "$" ] && kill -0 "$OLD_OWNER" 2>/dev/null; then
+  echo "$(date '+%Y-%m-%dT%H:%M:%S%z') duplicate updater exit owner=$OLD_OWNER self=$" >> "$LOG"
+  exit 0
+fi
+echo $ > "$OWNER"
+echo $ > "$PID"
 
 ts(){ date '+%Y-%m-%dT%H:%M:%S%z'; }
 log(){ echo "$(ts) $*" >> "$LOG"; }
@@ -28,7 +35,8 @@ publish(){
   mv -f "$TMP" "$STATE/autoupdate.json"
 }
 cleanup(){ rm -rf "$LOCK" 2>/dev/null; }
-trap cleanup EXIT HUP INT TERM
+owner_cleanup(){ cleanup; CUR_OWNER="$(cat "$OWNER" 2>/dev/null)"; [ "$CUR_OWNER" = "$" ] && rm -f "$OWNER" 2>/dev/null; }
+trap owner_cleanup EXIT HUP INT TERM
 
 initial="$(cfg AUTO_UPDATE_INITIAL_DELAY_SECONDS)"; [ -n "$initial" ] || initial=45
 case "$initial" in *[!0-9]*|'') initial=45;; esac
@@ -142,7 +150,6 @@ while true; do
   if ! mv "$NEW" "$DEST"; then
     rm -rf "$STAGE" "$NEW"; publish "ERROR" "ACTIVATION_MOVE_FAILED" "$VER"; cleanup; sleep "$interval"; continue
   fi
-  printf '%s\n' "$VER" > "$ROOT/current_release"
   rm -rf "$STAGE"
   publish "ACTIVATING" "SELFTEST_PENDING" "$VER"
   log "install $PREV -> $VER sha256=$SHA"
@@ -151,16 +158,11 @@ while true; do
 
   HEALTHY=0
   TRY=0
-  while [ "$TRY" -lt 20 ]; do
+  while [ "$TRY" -lt 30 ]; do
     sleep 1
-    ACTIVE="$(cat "$ROOT/current_release" 2>/dev/null | tr -d '\r\n')"
     STATUS_JSON="$(/system/bin/wget -qO- http://127.0.0.1:8766/api/work/status 2>/dev/null)"
+    ACTIVE="$(cat "$ROOT/current_release" 2>/dev/null | tr -d '\r\n')"
     if [ "$ACTIVE" = "$VER" ] && printf '%s' "$STATUS_JSON" | grep -Fq "\"release\":\"$VER\""; then
-      HEALTHY=1
-      break
-    fi
-    # Handoff's own PASS is also accepted, but current_release must still be the target.
-    if [ "$ACTIVE" = "$VER" ] && tail -n 8 "$ROOT/logs/handoff.log" 2>/dev/null | grep -Fq "PASS $VER "; then
       HEALTHY=1
       break
     fi
@@ -178,15 +180,15 @@ while true; do
     fi
   else
     ACTIVE="$(cat "$ROOT/current_release" 2>/dev/null | tr -d '\r\n')"
-    if [ "$ACTIVE" != "$VER" ]; then
+    STATUS_JSON="$(/system/bin/wget -qO- http://127.0.0.1:8766/api/work/status 2>/dev/null)"
+    if [ "$ACTIVE" = "$PREV" ] && printf '%s' "$STATUS_JSON" | grep -Fq "\"release\":\"$PREV\""; then
       printf '%s\n' "$VER" > "$FAILED"
-      publish "QUARANTINED" "HANDOFF_ROLLED_BACK" "$VER"
-      log "FAIL $VER rollback=$PREV"
+      publish "QUARANTINED" "VERIFIED_ROLLBACK_TO_PREVIOUS" "$VER"
+      log "FAIL $VER verified_rollback=$PREV"
     else
-      # Target is active but health probe was inconclusive: do not falsely quarantine a live release.
       rm -f "$FAILED"
-      publish "VERIFYING" "TARGET_ACTIVE_HEALTH_PROBE_INCONCLUSIVE" "$VER"
-      log "WARN $VER active_probe_inconclusive"
+      publish "VERIFYING" "HANDOFF_STATE_INCONCLUSIVE_NO_QUARANTINE" "$VER"
+      log "WARN $VER no_false_quarantine active=$ACTIVE"
     fi
     cleanup
     sleep 120
