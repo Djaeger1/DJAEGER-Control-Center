@@ -3,6 +3,10 @@ package com.hermes.workdashboard;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.widget.Toast;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -526,9 +530,12 @@ public class MainActivity extends Activity {
         Button resume = actionButton("RESUME", false);
         Button recover = actionButton("RECOVER RUNTIME", false);
         Button diag = actionButton("DIAGNOSTICS", false);
+        Button refreshReport = actionButton("REFRESH UPDATE RESULT", false);
+        Button copyReport = actionButton("COPY RESULT FOR CHATGPT", true);
         actions.addView(update); actions.addView(backup); actions.addView(rollback);
         actions.addView(safe); actions.addView(resume); actions.addView(recover); actions.addView(diag);
-        TextView out = mono("Ready.");
+        actions.addView(refreshReport); actions.addView(copyReport);
+        TextView out = mono("Ready.\n\nAfter update, tap REFRESH UPDATE RESULT, then COPY RESULT FOR CHATGPT.");
         actions.addView(out);
         body.addView(actions);
 
@@ -551,8 +558,9 @@ public class MainActivity extends Activity {
                     out.postDelayed(() -> {
                         loadRecovery(current, previous);
                         refreshOnlineOnly();
+                        generateUpdateReport(out, null);
                         update.setEnabled(true);
-                    }, 5000);
+                    }, 7000);
                 } else {
                     out.setText("Native updater unavailable. Using bootstrap recovery updater…\n\n" + s.trim());
                     bootstrapFallbackUpdate(out, update, current, previous);
@@ -566,8 +574,15 @@ public class MainActivity extends Activity {
         resume.setOnClickListener(v -> action("resume", out, current, previous));
         recover.setOnClickListener(v -> recover(out, current, previous));
         diag.setOnClickListener(v -> apiAsync("GET", "/api/work/diagnostics", null, true, (code, s) -> out.setText(s.trim())));
+        refreshReport.setOnClickListener(v -> generateUpdateReport(out, null));
+        copyReport.setOnClickListener(v -> generateUpdateReport(out, report -> {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(ClipData.newPlainText("HERMES WORK update result", report));
+            Toast.makeText(this, "Update result copied. Paste it into ChatGPT.", Toast.LENGTH_LONG).show();
+        }));
 
         loadRecovery(current, previous);
+        generateUpdateReport(out, null);
     }
 
     private void bootstrapFallbackUpdate(TextView out, Button update, TextView current, TextView previous) {
@@ -623,6 +638,95 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private interface ReportCallback { void done(String report); }
+
+    private void generateUpdateReport(TextView out, ReportCallback cb) {
+        out.setText("Collecting update result…");
+        io.execute(() -> {
+            StringBuilder report = new StringBuilder();
+            report.append("===== HERMES WORK UPDATE RESULT =====\n");
+            report.append("APP_VERSION=1.2.3\n");
+            report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
+            report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
+
+            try {
+                HttpResult st = request("GET", runtimeUrl() + "/api/work/status", null, false);
+                report.append("[STATUS]\nHTTP=").append(st.code).append("\n");
+                if (st.code == 200) {
+                    JSONObject j = new JSONObject(st.body);
+                    report.append("SERVICE=").append(j.optString("service","—")).append("\n");
+                    report.append("RELEASE=").append(j.optString("release","—")).append("\n");
+                    report.append("CONTROL_CENTER=").append(j.optString("control_center","—")).append("\n");
+                    report.append("TETHER=").append(j.optString("tether_state","—")).append("\n");
+                    report.append("TETHER_IP=").append(j.optString("tether_ip","—")).append("\n");
+                    report.append("TEMP_C=").append(j.opt("temperature_c")).append("\n");
+                    report.append("FREE_RAM_MB=").append(j.opt("mem_available_mb")).append("\n");
+                    report.append("WORKER_PAUSED=").append(j.optBoolean("worker_paused")).append("\n");
+                    report.append("SAFE_MODE=").append(j.optBoolean("safe_mode")).append("\n");
+                    report.append("BRIDGE_ENABLED=").append(j.optBoolean("bridge_enabled")).append("\n");
+                    report.append("BRIDGE_STATE=").append(j.optString("bridge_state","—")).append("\n");
+                    report.append("BRIDGE_LAST_SYNC=").append(String.valueOf(j.opt("bridge_last_sync"))).append("\n");
+                    report.append("BRIDGE_MODE=").append(j.optString("bridge_mode","—")).append("\n");
+                    report.append("BRIDGE_AI_USED=").append(j.optBoolean("bridge_ai_used")).append("\n");
+                    report.append("BRIDGE_NEURONS_USED=").append(j.optInt("bridge_neurons_used",-1)).append("\n");
+                } else {
+                    report.append("BODY=").append(compact(st.body, 1200)).append("\n");
+                }
+            } catch (Exception e) {
+                report.append("[STATUS]\nERROR=").append(e.getMessage()).append("\n");
+            }
+
+            try {
+                HttpResult rec = request("GET", runtimeUrl() + "/api/work/recovery", null, false);
+                report.append("\n[RECOVERY]\nHTTP=").append(rec.code).append("\n");
+                if (rec.code == 200) {
+                    JSONObject j = new JSONObject(rec.body);
+                    report.append("CURRENT=").append(j.optString("current","—")).append("\n");
+                    report.append("PREVIOUS=").append(j.optString("previous","—")).append("\n");
+                    report.append("SAFE_MODE=").append(j.optBoolean("safe_mode")).append("\n");
+                    report.append("WORKER_PAUSED=").append(j.optBoolean("worker_paused")).append("\n");
+                } else {
+                    report.append("BODY=").append(compact(rec.body, 1200)).append("\n");
+                }
+            } catch (Exception e) {
+                report.append("\n[RECOVERY]\nERROR=").append(e.getMessage()).append("\n");
+            }
+
+            try {
+                HttpResult br = request("GET", runtimeUrl() + "/api/work/bridge", null, false);
+                report.append("\n[BRIDGE]\nHTTP=").append(br.code).append("\n");
+                if (br.code == 200) {
+                    JSONObject j = new JSONObject(br.body);
+                    report.append("STATE=").append(j.optString("state","—")).append("\n");
+                    report.append("REASON=").append(j.optString("reason","—")).append("\n");
+                    report.append("MODE=").append(j.optString("mode","—")).append("\n");
+                    report.append("HTTP_CODE=").append(j.optInt("http_code",0)).append("\n");
+                    report.append("LAST_SYNC=").append(j.optString("last_sync","—")).append("\n");
+                    report.append("AI_USED=").append(j.optBoolean("ai_used")).append("\n");
+                    report.append("NEURONS_USED=").append(j.optInt("neurons_used",-1)).append("\n");
+                    report.append("UPDATED_AT=").append(j.optString("updated_at","—")).append("\n");
+                } else {
+                    report.append("BODY=").append(compact(br.body, 1200)).append("\n");
+                }
+            } catch (Exception e) {
+                report.append("\n[BRIDGE]\nERROR=").append(e.getMessage()).append("\n");
+            }
+
+            report.append("\n===== END HERMES WORK UPDATE RESULT =====");
+            String finalReport = report.toString();
+            ui(() -> {
+                out.setText(finalReport);
+                if (cb != null) cb.done(finalReport);
+            });
+        });
+    }
+
+    private String compact(String s, int max) {
+        if (s == null) return "";
+        String x = s.replace('\r',' ').replace('\n',' ').trim();
+        return x.length() <= max ? x : x.substring(0, max) + "…";
     }
 
     private void loadRecovery(TextView current, TextView previous) {
