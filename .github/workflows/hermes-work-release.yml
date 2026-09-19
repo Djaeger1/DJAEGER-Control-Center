@@ -31,22 +31,22 @@ jobs:
           cp config/work.env out/payload/config/work.env
           sh -n worker/tick.sh worker/handoff.sh worker/autoupdate.sh
           cd out
-          zip -qr ../HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP.zip manifest.json payload
+          zip -qr ../HERMES_WORK_RUNTIME_v1.8.0_SCRIPT.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP.zip.sha256
+          sha256sum HERMES_WORK_RUNTIME_v1.8.0_SCRIPT.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v1.8.0_SCRIPT.zip.sha256
           cat > channel.json <<EOF
-          {"channel":"stable","version":"v1.7.0-scriptprep","bundle":"HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP.zip.sha256)"}
+          {"channel":"stable","version":"v1.8.0-script","bundle":"HERMES_WORK_RUNTIME_v1.8.0_SCRIPT.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v1.8.0_SCRIPT.zip.sha256)"}
           EOF
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP
-          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP.zip
+          name: HERMES_WORK_RUNTIME_v1.8.0_SCRIPT
+          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v1.8.0_SCRIPT.zip
           retention-days: 30
       - name: Publish channel files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v1.7.0_SCRIPTPREP.zip.sha256 hermes-work-runtime/channel.json
-          git commit -m "Publish HERMES WORK runtime v1.7.0 scriptprep" || exit 0
+          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v1.8.0_SCRIPT.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v1.8.0_SCRIPT.zip.sha256 hermes-work-runtime/channel.json
+          git commit -m "Publish HERMES WORK runtime v1.8.0 script" || exit 0
           git push
