@@ -1,13 +1,15 @@
 #!/system/bin/sh
 # DJAEGER NEURONUSAGEFIX2 + CLOUDTRUTH1 remote hotfix wrapper.
 # Installed through REMOTEBOOT1. Software-state only; no hardware/sysfs authority.
+# CLOCK_KNOWLEDGE_CONTEXT: delegated to the patched HERMES Cloud base implementation.
 M="${DJAEGER_MODDIR:-/data/adb/modules/djaeger_game_stabilizer}"
 P="${DJAEGER_STATE_DIR:-/data/adb/djaeger_ai}"
 LIVEP="${DJAEGER_REMOTE_BASE_STATE_DIR:-/data/adb/djaeger_ai}"
 RUNTIME="$LIVEP/railway/runtime"
 BASE="$RUNTIME/djaeger-hermes-cloud.seq3.base"
 PATCHED="$RUNTIME/djaeger-hermes-cloud.neuronusagefix2"
-ROLLBACK_BASE="$LIVEP/railway/rollback/3/system/bin/djaeger-hermes-cloud"
+ROLLBACK_BASE="$LIVEP/railway/rollback/4/system/bin/djaeger-hermes-cloud"
+[ -r "$ROLLBACK_BASE" ] || ROLLBACK_BASE="$LIVEP/railway/rollback/3/system/bin/djaeger-hermes-cloud"
 
 qget(){
   [ -r "$1" ] || return 0
