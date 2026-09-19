@@ -3,7 +3,7 @@ name: DJAEGER WORK Native Dashboard APK
 on:
   push:
     branches:
-      - djaeger-work-native-v1.2.6
+      - djaeger-work-native-v1.2.7-id
     paths:
       - 'hermes-work-terminal/**'
       - '.github/workflows/hermes-work-terminal-build.yml'
@@ -47,7 +47,7 @@ jobs:
           p=sys.argv[1]
           s=open(p,encoding='utf-8').read()
           required=[
-            'String[] labels = {"WORK", "RESEARCH", "PLANNER", "INSIGHTS", "SYSTEM", "UPDATE"};',
+            'String[] labels = {"KERJA", "RISET", "RENCANA", "WAWASAN", "SISTEM", "PEMBARUAN"};',
             'case 0: buildWork(body);',
             'case 1: buildResearch(body);',
             'case 2: buildPlanner(body);',
@@ -66,6 +66,13 @@ jobs:
             '/api/work/knowledge',
             '/api/work/recovery',
             'DJAEGER WORK',
+            'RINGKASAN HARIAN',
+            'MENGAPA INI PENTING',
+            'FORMAT DISARANKAN',
+            'LANGKAH BERIKUTNYA',
+            'localizeCategory(',
+            'localizeWhy(',
+            'localizeFormat(',
             'showPage(currentPage)'
           ]
           missing=[x for x in required if x not in s]
@@ -75,7 +82,7 @@ jobs:
           print('Six menus and original page builders preserved.')
           PY
           grep -Fq 'applicationId "com.hermes.workdashboard"' hermes-work-terminal/app/build.gradle
-          grep -Fq 'versionName "1.2.6"' hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionName "1.2.7"' hermes-work-terminal/app/build.gradle
 
       - name: Build signed release APK
         working-directory: hermes-work-terminal
@@ -92,16 +99,16 @@ jobs:
           "$BT/apksigner" verify --verbose --print-certs "$APK"
           "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
           grep -Fq "package: name='com.hermes.workdashboard'" /tmp/badging.txt
-          grep -Fq "versionName='1.2.6'" /tmp/badging.txt
+          grep -Fq "versionName='1.2.7'" /tmp/badging.txt
           grep -Fq "application-label:'DJAEGER WORK'" /tmp/badging.txt
-          cp "$APK" DJAEGER_WORK_Dashboard_v1.2.6.apk
-          sha256sum DJAEGER_WORK_Dashboard_v1.2.6.apk | tee SHA256.txt
+          cp "$APK" DJAEGER_WORK_Dashboard_v1.2.7_ID.apk
+          sha256sum DJAEGER_WORK_Dashboard_v1.2.7_ID.apk | tee SHA256.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-WORK-Native-v1.2.6-APK
+          name: DJAEGER-WORK-Native-v1.2.7-ID-APK
           path: |
-            DJAEGER_WORK_Dashboard_v1.2.6.apk
+            DJAEGER_WORK_Dashboard_v1.2.7_ID.apk
             SHA256.txt
           retention-days: 30
