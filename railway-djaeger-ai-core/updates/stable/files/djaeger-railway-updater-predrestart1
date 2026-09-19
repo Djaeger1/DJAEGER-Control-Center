@@ -106,6 +106,15 @@ restart_changed(){
     rm -rf "$P/app_control/run/daemon.lock" 2>/dev/null; rm -f "$P/app_control/run/daemon.pid" 2>/dev/null
     nohup sh "$M/system/etc/djaeger/appcontrolrc2/bin/djaeger-app-control" daemon >/dev/null 2>&1 </dev/null &
   }
+  grep -q '^predictor.sh|' "$_list" 2>/dev/null && {
+    _pid="$(cat "$P/predictor.pid" 2>/dev/null)"
+    case "$_pid" in ''|*[!0-9]*) :;; *)
+      if [ "$_pid" -gt 1 ] 2>/dev/null && kill -0 "$_pid" 2>/dev/null; then
+        _cmd="$(tr '\000' ' ' <"/proc/$_pid/cmdline" 2>/dev/null)"
+        case "$_cmd" in *djaeger_game_stabilizer/predictor.sh*) kill "$_pid" 2>/dev/null || true;; esac
+      fi
+    ;; esac
+  }
 }
 check_once(){
   ensure || { write_state ERROR 0 NONE CONFIG_INIT_FAILED; return 2; }
@@ -152,7 +161,7 @@ check_once(){
   return 0
 }
 predictor_restart_once(){
-  _mark="$RDIR/predictor_restart_transportfix_v1"
+  _mark="$RDIR/predictor_restart_policyrefresh_v1"
   [ -e "$_mark" ] && return 0
   _pid="$(cat "$P/predictor.pid" 2>/dev/null)"
   case "$_pid" in ''|*[!0-9]*) :;; *)
