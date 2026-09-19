@@ -1,9 +1,6 @@
 #!/system/bin/sh
 ROOT="$1"; VER="$2"; PREV="$3"; DEST="$ROOT/releases/$VER"; LOG="$ROOT/logs/handoff.log"; PID="$ROOT/state/workd.pid"
 sleep 1
-if [ -x "$DEST/worker/bridge-deploy.sh" ] && [ ! -f "$ROOT/state/bridge_worker_deployed" ]; then
-  HERMES_ROOT="$ROOT" nohup /system/bin/sh "$DEST/worker/bridge-deploy.sh" >/dev/null 2>&1 &
-fi
 OLD="$(cat "$PID" 2>/dev/null)"
 [ -n "$OLD" ] && kill "$OLD" 2>/dev/null
 sleep 1
