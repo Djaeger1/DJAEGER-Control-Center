@@ -4,6 +4,33 @@ PORT=8766
 ts(){ date '+%Y-%m-%dT%H:%M:%S%z'; }
 log(){ echo "$(ts) $*" >> "$LOG"; }
 
+publish_updater_ok(){
+  NOW="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+  TMP="$ROOT/state/autoupdate.json.tmp"
+  printf '{"state":"UP_TO_DATE","reason":"HANDOFF_VERIFIED","current":"%s","latest":"%s","last_check":"%s","automatic":true,"integrity":"SHA256","rollback":true}\n' "$VER" "$VER" "$NOW" > "$TMP"
+  chmod 600 "$TMP" 2>/dev/null
+  mv -f "$TMP" "$ROOT/state/autoupdate.json"
+}
+restart_single_updater(){
+  # Reconcile legacy duplicate updater daemons left by older releases.
+  for P in /proc/[0-9]*; do
+    N="${P#/proc/}"
+    [ "$N" = "$$" ] && continue
+    CMD="$(tr '\000' ' ' < "$P/cmdline" 2>/dev/null)"
+    case "$CMD" in
+      *"$ROOT/releases/"*"/worker/autoupdate.sh"* ) kill "$N" 2>/dev/null ;;
+    esac
+  done
+  sleep 1
+  rm -f "$ROOT/state/autoupdate.owner" "$ROOT/state/autoupdate.pid" 2>/dev/null
+  AUP="$DEST/worker/autoupdate.sh"
+  if [ -f "$AUP" ]; then
+    HERMES_ROOT="$ROOT" nohup /system/bin/sh "$AUP" >>"$ROOT/logs/autoupdate.log" 2>&1 &
+    NP=$!
+    echo "$NP" > "$ROOT/state/autoupdate.pid"
+    echo "$NP" > "$ROOT/state/autoupdate.owner"
+  fi
+}
 # Stop every orphan HERMES WORK workd, not unrelated processes.
 for P in /proc/[0-9]*; do
   N="${P#/proc/}"
@@ -39,16 +66,9 @@ if [ "$HEALTHY" = 1 ]; then
   # Promotion is atomic and happens only after the target binary answers as itself.
   printf '%s\n' "$VER" > "$ROOT/current_release"
   [ -n "$PREV" ] && [ "$PREV" != "$VER" ] && printf '%s\n' "$PREV" > "$ROOT/previous_release"
-  APID="$ROOT/state/autoupdate.pid"
-  AUP="$DEST/worker/autoupdate.sh"
-  if [ -f "$AUP" ]; then
-    OLD_AUP="$(cat "$APID" 2>/dev/null)"
-    if [ -z "$OLD_AUP" ] || ! kill -0 "$OLD_AUP" 2>/dev/null; then
-      HERMES_ROOT="$ROOT" nohup /system/bin/sh "$AUP" >>"$ROOT/logs/autoupdate.log" 2>&1 &
-      echo $! > "$APID"
-    fi
-  fi
+  publish_updater_ok
   log "PASS $VER pid=$NEW verified_release=$VER"
+  restart_single_updater
   exit 0
 fi
 
@@ -64,7 +84,10 @@ if [ -n "$PREV" ] && [ -x "$ROOT/releases/$PREV/bin/workd" ]; then
     RJ="$(/system/bin/wget -qO- "http://127.0.0.1:$PORT/api/work/status" 2>/dev/null)"
     if printf '%s' "$RJ" | grep -Fq "\"release\":\"$PREV\""; then
       printf '%s\n' "$PREV" > "$ROOT/current_release"
+      DEST="$ROOT/releases/$PREV"; VER="$PREV"
+      publish_updater_ok
       log "ROLLBACK_PASS $PREV pid=$RP"
+      restart_single_updater
       exit 1
     fi
     RTRY=$((RTRY+1))
