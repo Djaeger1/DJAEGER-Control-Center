@@ -69,3 +69,16 @@ const server = http.createServer(async (req,res)=>{
 });
 
 server.listen(PORT,"0.0.0.0",()=>console.log(`relay listening on ${PORT}`));
+
+
+async function logLatestSnapshot() {
+  try {
+    const snap = safeSnapshot(await latestSnapshot());
+    console.log("HERMES_SNAPSHOT " + JSON.stringify(snap));
+  } catch (e) {
+    console.log("HERMES_SNAPSHOT_ERROR " + String(e?.message || e));
+  }
+}
+
+setTimeout(logLatestSnapshot, 3000);
+setInterval(logLatestSnapshot, 60000);
