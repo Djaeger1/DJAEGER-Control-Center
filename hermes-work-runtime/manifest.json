@@ -1,1 +1,1 @@
-{"version":"v2.2.0-publication","description":"HERMES WORK Publication + Channel Connector V1: publication records, platform metadata, channel analytics import, planner publish synchronization, feedback handoff and zero HERMES Neurons","restart":false}
+{"version":"v2.2.1-handofffix","description":"HERMES WORK atomic handoff repair: actual serving release identity, single-listener cleanup, duplicate-updater guard, atomic promotion after health verification, verified rollback only, false-quarantine prevention","restart":false}
