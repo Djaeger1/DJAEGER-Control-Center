@@ -8,7 +8,7 @@ func (s *S)bridgeCred()(string,string){ep:=readenv(filepath.Join(s.Rel,"config",
 func (s *S)researchTotal()int{b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));n:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if strings.TrimSpace(l)!=""{n++}};return n}
 func (s *S)bridgeInfo()map[string]any{v:=map[string]any{"state":"STARTING","mode":"DATA_ONLY","ai_used":false,"neurons_used":0};b,e:=os.ReadFile(filepath.Join(s.Root,"state","bridge.json"));if e==nil{_ = json.Unmarshal(b,&v)};return v}
 func (s *S)writeBridge(st,reason string,httpCode int){ep,_:=s.bridgeCred();v:=map[string]any{"state":st,"reason":reason,"endpoint":ep,"mode":"DATA_ONLY","ai_used":false,"neurons_used":0,"http_code":httpCode,"updated_at":time.Now().Format(time.RFC3339)};if st=="CONNECTED"{v["last_sync"]=time.Now().Format(time.RFC3339)};b,_:=json.Marshal(v);os.MkdirAll(filepath.Join(s.Root,"state"),0700);tmp:=filepath.Join(s.Root,"state","bridge.json.tmp");_ = os.WriteFile(tmp,b,0600);_ = os.Rename(tmp,filepath.Join(s.Root,"state","bridge.json"))}
-func (s *S)bridgeSnapshot()map[string]any{ts,_:=iface("rndis0");worker:="READY";if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"};au:=s.autoUpdateInfo();return map[string]any{"sent_at":time.Now().Format(time.RFC3339),"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","daily_brief_state":s.dailyBriefInfo()["state"],"ideas_ready":s.dailyBriefInfo()["ideas_ready"],"top_opportunity":s.dailyBriefInfo()["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1","planner_state":s.plannerInfo()["state"],"planner_queue":s.plannerInfo()["queue_total"],"next_for_script":s.plannerInfo()["next_for_script"],"planner_engine":"PLANNER_V1","auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v2","ai_used":false,"neurons_used":0}}
+func (s *S)bridgeSnapshot()map[string]any{ts,_:=iface("rndis0");worker:="READY";if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"};au:=s.autoUpdateInfo();db:=s.dailyBriefInfo();pl:=s.plannerInfo();return map[string]any{"sent_at":time.Now().Format(time.RFC3339),"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","daily_brief_state":db["state"],"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1","planner_state":pl["state"],"planner_queue":pl["queue_total"],"next_for_script":pl["next_for_script"],"planner_engine":"PLANNER_V1","auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v2","ai_used":false,"neurons_used":0}}
 func (s *S)ntfyTopic(key string)string{h:=sha256.Sum256([]byte("HERMES_WORK_NTFY:"+key));return "hermes-work-"+hex.EncodeToString(h[:24])}
 func (s *S)pushNtfy(key string)(int,string,error){topic:=s.ntfyTopic(key);snap,_:=json.Marshal(s.bridgeSnapshot());u:="https://ntfy.sh/"+topic;req,e:=http.NewRequest("POST",u,strings.NewReader(string(snap)));if e!=nil{return 0,"",e};req.Header.Set("Content-Type","text/plain; charset=utf-8");req.Header.Set("Title","HERMES WORK status");req.Header.Set("Tags","computer");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,"",e};io.Copy(io.Discard,io.LimitReader(resp.Body,4096));resp.Body.Close();readURL:="https://ntfy.sh/"+topic+"/json?poll=1&since=10m";if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,readURL,nil};return resp.StatusCode,readURL,fmt.Errorf("ntfy http %d",resp.StatusCode)}
 func (s *S)pushCloud(ep,key string)(int,error){b,_:=json.Marshal(s.bridgeSnapshot());req,e:=http.NewRequest("POST",ep+"/v1/bridge/push",strings.NewReader(string(b)));if e!=nil{return 0,e};req.Header.Set("Authorization","Bearer "+key);req.Header.Set("Content-Type","application/json");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,e};body,_:=io.ReadAll(io.LimitReader(resp.Body,4096));resp.Body.Close();if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,nil};return resp.StatusCode,fmt.Errorf("cloud http %d %s",resp.StatusCode,strings.TrimSpace(string(body)))}
@@ -176,18 +176,18 @@ func (s *S)dailyBriefInfo()map[string]any{
 }
 func (s *S)opportunities(w http.ResponseWriter,r *http.Request){js(w,s.dailyBriefInfo())}
 type PlanItem struct{
- ID string \`json:"id"\`
- Title string \`json:"title"\`
- Category string \`json:"category"\`
- Priority int \`json:"priority"\`
- Score float64 \`json:"score"\`
- Demand string \`json:"demand"\`
- TargetAge string \`json:"target_age"\`
- Format string \`json:"format"\`
- Keywords []string \`json:"keywords"\`
- Stage string \`json:"stage"\`
- CreatedAt string \`json:"created_at"\`
- UpdatedAt string \`json:"updated_at"\`
+ ID string `json:"id"`
+ Title string `json:"title"`
+ Category string `json:"category"`
+ Priority int `json:"priority"`
+ Score float64 `json:"score"`
+ Demand string `json:"demand"`
+ TargetAge string `json:"target_age"`
+ Format string `json:"format"`
+ Keywords []string `json:"keywords"`
+ Stage string `json:"stage"`
+ CreatedAt string `json:"created_at"`
+ UpdatedAt string `json:"updated_at"`
 }
 func planID(title string)string{h:=sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(title))));return hex.EncodeToString(h[:6])}
 func (s *S)plannerPath()string{return filepath.Join(s.Root,"data","planner","queue.json")}
@@ -221,7 +221,7 @@ func validStage(x string)bool{switch x{case"IDEA_READY","SCRIPT_READY","PRODUCTI
 func (s *S)planner(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.plannerInfo());return}
  if !s.auth(r){http.Error(w,"unauthorized",401);return}
- var q struct{ID string \`json:"id"\`;Stage string \`json:"stage"\`}
+ var q struct{ID string `json:"id"`;Stage string `json:"stage"`}
  if json.NewDecoder(io.LimitReader(r.Body,65536)).Decode(&q)!=nil||q.ID==""||!validStage(q.Stage){http.Error(w,"invalid planner update",400);return}
  a:=s.syncPlanner();found:=false;now:=time.Now().Format(time.RFC3339)
  for i:=range a{if a[i].ID==q.ID{a[i].Stage=q.Stage;a[i].UpdatedAt=now;found=true;break}}
@@ -233,7 +233,14 @@ func (s *S)planner(w http.ResponseWriter,r *http.Request){
 func (s *S)brief(w http.ResponseWriter,r *http.Request){js(w,s.dailyBriefInfo())}
 func (s *S)schedule(w http.ResponseWriter,r *http.Request){ok,reason:=guard(s);next:=readenv(filepath.Join(s.Rel,"config","work.env"),"RESEARCH_SCHEDULE");js(w,map[string]any{"enabled":true,"schedule":next,"guard_ready":ok,"guard_reason":reason,"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research")))})}
 
-func (s *S)daily(w http.ResponseWriter,r *http.Request){js(w,s.dailyBriefInfo())}
+func (s *S)daily(w http.ResponseWriter,r *http.Request){
+ var last any=map[string]any{"state":"NO_RESEARCH_YET"}
+ if b,e:=os.ReadFile(filepath.Join(s.Root,"state","last_research_result.json"));e==nil{_ = json.Unmarshal(b,&last)}
+ b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));cats:=map[string]int{};total:=0
+ for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)==nil{total++;if x,ok:=z["category"].(string);ok{cats[x]++}}}
+ db:=s.dailyBriefInfo()
+ js(w,map[string]any{"generated_at":time.Now().Format(time.RFC3339),"last_run":last,"total_research_items":total,"categories":cats,"brief":db,"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"brief_endpoint":"/api/work/brief"})
+}
 func (s *S)channel(w http.ResponseWriter,r *http.Request){p:=filepath.Join(s.Root,"data","channel","metrics.json");b,e:=os.ReadFile(p);if e!=nil{js(w,map[string]any{"state":"NOT_CONNECTED","views":"NOT_AVAILABLE","retention":"NOT_AVAILABLE","ctr":"NOT_AVAILABLE","watch_time":"NOT_AVAILABLE","best_topic":"NOT_AVAILABLE","weak_topic":"NOT_AVAILABLE"});return};var v any;if json.Unmarshal(b,&v)!=nil{js(w,map[string]any{"state":"INVALID_DATA"});return};js(w,map[string]any{"state":"CONNECTED","metrics":v})}
 func (s *S)knowledge(w http.ResponseWriter,r *http.Request){b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));seen:=map[string]bool{};cats:=map[string]int{};total:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)!=nil{continue};total++;if u,_:=z["url"].(string);u!=""{seen[u]=true};if x,_:=z["category"].(string);x!=""{cats[x]++}};js(w,map[string]any{"research_items":total,"unique_keys":len(seen),"categories":cats,"produced":"NOT_CONNECTED","successful":"NOT_CONNECTED","underperforming":"NOT_CONNECTED","ideas_not_produced":"NOT_CONNECTED"})}
 func (s *S)recovery(w http.ResponseWriter,r *http.Request){js(w,map[string]any{"current":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"previous":strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release"))),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"handoff_log":tail(filepath.Join(s.Root,"logs","handoff.log"),20)})}
@@ -278,10 +285,11 @@ const page=`<!doctype html>
 
 <section id="planner" class="card"><h3>Content Opportunities / Planner</h3><div class="grid">
 <div class="box"><div class="k">Ideas Ready</div><div id="ideas" class="v">-</div></div>
-<div class="box"><div class="k">Scripts Ready</div><div class="v warn">NOT_CONNECTED</div></div>
-<div class="box"><div class="k">Produced</div><div class="v warn">NOT_CONNECTED</div></div>
-<div class="box"><div class="k">Uploaded</div><div class="v warn">NOT_CONNECTED</div></div>
-</div><div id="brief"></div></section>
+<div class="box"><div class="k">Scripts Ready</div><div id="scriptsready" class="v">-</div></div>
+<div class="box"><div class="k">Production</div><div id="production" class="v">-</div></div>
+<div class="box"><div class="k">Published</div><div id="published" class="v">-</div></div>
+<div class="box"><div class="k">Next For Script</div><div id="nextscript" class="v small">-</div></div>
+</div><div id="brief"></div><div id="plannerqueue"></div></section>
 
 <section id="channel" class="card"><h3>My Channel</h3><div class="grid">
 <div class="box"><div class="k">Connection</div><div id="channelstate" class="v">-</div></div>
@@ -338,6 +346,13 @@ async function researchData(){
   let b=await getj('/api/work/brief');let ideas=b.ideas||[];$('ideas').textContent=ideas.length;$('brief').innerHTML=ideas.length?'<table><tr><th>Score</th><th>Category</th><th>Idea</th></tr>'+ideas.map(x=>'<tr><td>'+Math.round(x.Score||x.score||0)+'</td><td>'+txt(x.Category||x.category)+'</td><td>'+txt(x.Title||x.title)+'</td></tr>').join('')+'</table>':'<p class="warn">No ideas yet. Run research.</p>';
  }catch(e){$('researchout').textContent='Research data error: '+e}
 }
+async function plannerData(){
+ try{
+  let p=await getj('/api/work/planner');let cc=p.counts||{};
+  $('scriptsready').textContent=txt(cc.SCRIPT_READY??0);$('production').textContent=txt(cc.PRODUCTION??0);$('published').textContent=txt(cc.PUBLISHED??0);$('nextscript').textContent=txt(p.next_for_script);
+  let a=p.items||[];$('plannerqueue').innerHTML=a.length?'<table><tr><th>#</th><th>Stage</th><th>Demand</th><th>Topic</th></tr>'+a.slice(0,10).map(x=>'<tr><td>'+txt(x.priority)+'</td><td>'+txt(x.stage)+'</td><td>'+txt(x.demand)+'</td><td>'+txt(x.title)+'</td></tr>').join('')+'</table>':'<p class="warn">Planner queue empty.</p>';
+ }catch(e){$('plannerqueue').innerHTML='<p class="warn">Planner error: '+e+'</p>'}
+}
 async function channel(){
  try{let j=await getj('/api/work/channel');$('channelstate').textContent=j.state;$('views').textContent=txt(j.views||j.metrics?.views);$('retention').textContent=txt(j.retention||j.metrics?.retention);$('ctr').textContent=txt(j.ctr||j.metrics?.ctr);$('watchtime').textContent=txt(j.watch_time||j.metrics?.watch_time);$('besttopic').textContent=txt(j.best_topic||j.metrics?.best_topic)}catch(e){}
 }
@@ -350,11 +365,11 @@ async function automation(){
 async function recovery(){
  try{let j=await getj('/api/work/recovery');$('currel').textContent=txt(j.current);$('prevrel').textContent=txt(j.previous)}catch(e){}
 }
-async function refresh(){await status();await Promise.all([researchData(),channel(),knowledge(),automation(),recovery()])}
+async function refresh(){await status();await Promise.all([researchData(),plannerData(),channel(),knowledge(),automation(),recovery()])}
 async function act(a){let r=await fetch('/api/work/action',{method:'POST',headers:h(),body:JSON.stringify({action:a})});$('out').textContent=await r.text();refresh()}
 $('backup').onclick=()=>act('backup');$('safe').onclick=()=>act('safe_mode');$('resume').onclick=()=>act('resume');$('rollback').onclick=()=>act('rollback');
 $('diag').onclick=async()=>{$('out').textContent=await(await fetch('/api/work/diagnostics',{headers:h()})).text()};
 $('research').onclick=async()=>{$('researchout').textContent='Running research...';let r=await fetch('/api/work/run-research',{method:'POST',headers:h()});$('researchout').textContent=await r.text();researchData()};
 $('update').onclick=async()=>{$('out').textContent='Updating...';let r=await fetch('/api/work/update',{method:'POST',headers:h()});$('out').textContent=await r.text()};
-refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),automation(),recovery()]),30000);
+refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),plannerData(),automation(),recovery()]),30000);
 </script></body></html>`
