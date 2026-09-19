@@ -1,1 +1,1 @@
-{"version":"v2.5.0-remotelink","description":"DJAEGER WORK Remote Link: outbound-only Railway tunnel for provider/mobile-data access, automatic LOCAL/REMOTE pairing support, preserves modem/research/planner/insights/system/update features, no inbound device port exposure","restart":false}
+{"version":"v2.5.1-repo-migration","description":"DJAEGER WORK one-time repository cutover bridge: preserves v2.5.0 remote-link behavior and moves automatic updates to Djaeger1/DJAEGER-WORK; no modem/root framework changes","restart":false}

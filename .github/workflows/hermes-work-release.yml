@@ -1,24 +1,46 @@
-name: HERMES WORK Release Channel
+name: HERMES WORK Repository Cutover Bootstrap
+
 on:
   push:
     branches: [hermes-work-release-channel]
     paths:
       - 'hermes-work-runtime/**'
       - '.github/workflows/hermes-work-release.yml'
+
 permissions:
   contents: write
+
+concurrency:
+  group: hermes-work-cutover-bootstrap
+  cancel-in-progress: false
+
 jobs:
   build:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.23.x'
-      - name: Build ARMv7 runtime
+          cache: false
+
+      - name: Validate cutover target
+        shell: bash
         run: |
-          set -eux
+          set -euo pipefail
+          grep -Fq 'UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/Djaeger1/DJAEGER-WORK/main/release/channel.json' hermes-work-runtime/config/work.env
+          grep -Fq '"version":"v2.5.1-repo-migration"' hermes-work-runtime/manifest.json
+          sh -n hermes-work-runtime/worker/tick.sh
+          sh -n hermes-work-runtime/worker/handoff.sh
+          sh -n hermes-work-runtime/worker/autoupdate.sh
+          sh -n hermes-work-runtime/worker/bridge-deploy.sh
+
+      - name: Build one-time cutover runtime
+        shell: bash
+        run: |
+          set -euo pipefail
           cd hermes-work-runtime
           rm -rf out
           mkdir -p out/payload/bin out/payload/worker out/payload/config
@@ -29,24 +51,47 @@ jobs:
           cp worker/autoupdate.sh out/payload/worker/autoupdate.sh
           cp worker/bridge-deploy.sh out/payload/worker/bridge-deploy.sh
           cp config/work.env out/payload/config/work.env
-          sh -n worker/tick.sh worker/handoff.sh worker/autoupdate.sh
+          chmod 755 out/payload/bin/workd out/payload/worker/*.sh
           cd out
-          zip -qr ../HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK.zip manifest.json payload
+          zip -Xqr ../HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK.zip.sha256
-          cat > channel.json <<EOF
-          {"channel":"stable","version":"v2.5.0-remotelink","bundle":"HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK.zip.sha256)"}
-          EOF
-      - name: Upload installable package
+          sha256sum HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip.sha256
+          printf '{"channel":"stable","version":"v2.5.1-repo-migration","bundle":"HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip","sha256":"%s"}\n' "$(cat HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip.sha256)" > channel.json
+
+      - name: Upload cutover package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK
-          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK.zip
+          name: HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION
+          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip
           retention-days: 30
-      - name: Publish channel files
+
+      - name: Publish one-time cutover channel
+        shell: bash
         run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cp hermes-work-runtime/HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip "$tmp/"
+          cp hermes-work-runtime/HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip.sha256 "$tmp/"
+          cp hermes-work-runtime/channel.json "$tmp/"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v2.5.0_REMOTELINK.zip.sha256 hermes-work-runtime/channel.json
-          git commit -m "Publish HERMES WORK runtime v2.5.0 remotelink" || exit 0
-          git push
+
+          for attempt in 1 2 3; do
+            git fetch origin hermes-work-release-channel
+            git checkout -B hermes-work-release-channel origin/hermes-work-release-channel
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip" hermes-work-runtime/
+            cp "$tmp/HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip.sha256" hermes-work-runtime/
+            cp "$tmp/channel.json" hermes-work-runtime/
+            git add hermes-work-runtime/HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v2.5.1_REPO_MIGRATION.zip.sha256 hermes-work-runtime/channel.json
+            if git diff --cached --quiet; then
+              echo "Cutover channel already current."
+              exit 0
+            fi
+            git commit -m "Publish one-time DJAEGER WORK repository cutover"
+            if git push origin HEAD:hermes-work-release-channel; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          echo "Cutover publish failed after retries." >&2
+          exit 1
