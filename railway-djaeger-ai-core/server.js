@@ -423,7 +423,19 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/v1/device/update/manifest.txt') {
       const manifestPath = path.join(UPDATE_ROOT, 'manifest.txt');
       if (!fs.existsSync(manifestPath)) return json(res, 404, { ok: false, error: 'update_manifest_missing' });
-      const data = fs.readFileSync(manifestPath);
+      // Recompute every payload hash from the exact bytes we are about to serve.
+      // This prevents a stale manifest hash from pinning a previous repair payload.
+      const rawManifest = fs.readFileSync(manifestPath, 'utf8');
+      const manifest = rawManifest.split(/\\r?\\n/).map(line => {
+        if (!line.startsWith('FILE|')) return line;
+        const parts = line.split('|');
+        if (parts.length !== 5 || !/^[A-Za-z0-9._-]+$/.test(parts[1])) return line;
+        const payloadPath = path.join(UPDATE_ROOT, 'files', parts[1]);
+        if (!payloadPath.startsWith(path.join(UPDATE_ROOT, 'files') + path.sep) || !fs.existsSync(payloadPath)) return line;
+        parts[3] = crypto.createHash('sha256').update(fs.readFileSync(payloadPath)).digest('hex');
+        return parts.join('|');
+      }).join('\\n');
+      const data = Buffer.from(manifest);
       res.writeHead(200, {
         'content-type': 'text/plain; charset=utf-8',
         'content-length': data.length,
