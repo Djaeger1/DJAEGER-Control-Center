@@ -220,7 +220,7 @@ public class MainActivity extends Activity {
         topLabel.setPadding(0, dp(10), 0, dp(3));
         briefCard.addView(topLabel);
 
-        TextView topTitle = text("Belum ada brief.", 18, TEXT, true);
+        TextView topTitle = text("Belum ada ringkasan.", 18, TEXT, true);
         topTitle.setPadding(0, 0, 0, dp(8));
         briefCard.addView(topTitle);
 
@@ -324,7 +324,7 @@ public class MainActivity extends Activity {
                     briefFormat.setText("—");
                     briefAction.setText("Jalankan riset untuk membuat Ringkasan Harian.");
                     briefList.setText("Belum ada ide.");
-                    briefGenerated.setText("Generated: —");
+                    briefGenerated.setText("Dibuat: —");
                     return;
                 }
 
@@ -366,11 +366,11 @@ public class MainActivity extends Activity {
 
                 String action;
                 if ("HIGH".equalsIgnoreCase(demand)) {
-                    action = "Prioritaskan hari ini → lanjutkan ke PLANNER dan siapkan script.";
+                    action = "Prioritaskan hari ini → lanjutkan ke RENCANA dan siapkan naskah.";
                 } else if ("MEDIUM".equalsIgnoreCase(demand)) {
-                    action = "Layak diuji → jadwalkan di PLANNER lalu bandingkan performanya.";
+                    action = "Layak diuji → jadwalkan di RENCANA lalu bandingkan performanya.";
                 } else {
-                    action = "Discovery test → validasi lagi sebelum masuk produksi.";
+                    action = "Uji eksplorasi → validasi lagi sebelum masuk produksi.";
                 }
                 briefAction.setText(action);
 
@@ -390,8 +390,8 @@ public class MainActivity extends Activity {
                 String generated = j.optString("generated_at", "");
                 briefGenerated.setText("Dibuat: " + (generated.isEmpty() ? "—" : generated));
             } catch (Exception e) {
-                topTitle.setText("Daily Brief belum dapat dibaca.");
-                briefAction.setText("Coba refresh setelah research selesai.");
+                topTitle.setText("Ringkasan Harian belum dapat dibaca.");
+                briefAction.setText("Coba segarkan setelah riset selesai.");
             }
         });
     }
@@ -457,7 +457,7 @@ public class MainActivity extends Activity {
                 any = true;
                 String k = it.next();
                 LinearLayout line = row();
-                TextView name = text(k.toUpperCase(Locale.US), 13, TEXT, true);
+                TextView name = text(localizeCategory(k).toUpperCase(Locale.US), 13, TEXT, true);
                 TextView count = text(String.valueOf(c.optInt(k)), 15, ACCENT, true);
                 line.addView(name, new LinearLayout.LayoutParams(0, dp(38), 1f));
                 line.addView(count, new LinearLayout.LayoutParams(dp(70), dp(38)));
@@ -637,7 +637,7 @@ public class MainActivity extends Activity {
                     Iterator<String> it = c.keys();
                     while (it.hasNext()) {
                         String k = it.next();
-                        x.append(k.toUpperCase(Locale.US).replace('_',' ')).append("  ·  ").append(c.optString(k)).append("\n");
+                        x.append(k.toUpperCase(Locale.US).replace('_',' ')).append("  ·  ").append(localizeStatus(c.optString(k))).append("\n");
                     }
                     comp.setText(x.toString().trim());
                 }
@@ -653,7 +653,7 @@ public class MainActivity extends Activity {
     }
 
     private void buildUpdate(LinearLayout body) {
-        body.addView(sectionTitle("Pembaruan & Pemulihan", "Halaman terakhir khusus pembaruan, cadangan, rollback, mode aman, dan diagnostik."));
+        body.addView(sectionTitle("Pembaruan & Pemulihan", "Halaman terakhir khusus pembaruan, cadangan, pengembalian versi, mode aman, dan diagnostik."));
 
         LinearLayout rel = card();
         rel.addView(text("STATUS RILIS", 11, MUTED, true));
@@ -665,7 +665,7 @@ public class MainActivity extends Activity {
 
         LinearLayout conn = card();
         conn.addView(text("KONEKSI", 11, MUTED, true));
-        EditText runtime = field("Runtime URL", runtimeUrl(), false);
+        EditText runtime = field("URL Runtime", runtimeUrl(), false);
         EditText token = field("TOKEN ADMIN", token(), true);
         conn.addView(runtime);
         conn.addView(token);
@@ -715,8 +715,8 @@ public class MainActivity extends Activity {
         refreshReport.setOnClickListener(v -> generateUpdateReport(out, null));
         copyReport.setOnClickListener(v -> generateUpdateReport(out, report -> {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            cm.setPrimaryClip(ClipData.newPlainText("HERMES WORK update result", report));
-            Toast.makeText(this, "Update result copied. Paste it into ChatGPT.", Toast.LENGTH_LONG).show();
+            cm.setPrimaryClip(ClipData.newPlainText("Hasil pembaruan DJAEGER WORK", report));
+            Toast.makeText(this, "Hasil pembaruan disalin. Tempelkan ke ChatGPT.", Toast.LENGTH_LONG).show();
         }));
 
         loadRecovery(current, previous);
@@ -728,13 +728,13 @@ public class MainActivity extends Activity {
             try {
                 String channelUrl = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-Control-Center/hermes-work-release-channel/hermes-work-runtime/channel.json";
                 HttpResult ch = request("GET", channelUrl, null, false);
-                if (ch.code != 200) throw new Exception("Channel HTTP " + ch.code);
+                if (ch.code != 200) throw new Exception("HTTP kanal " + ch.code);
                 JSONObject j = new JSONObject(ch.body);
                 String ver = j.getString("version");
                 String bundle = j.getString("bundle");
                 String sha = j.getString("sha256").toLowerCase(Locale.US);
                 if (!ver.matches("[A-Za-z0-9._-]+") || !bundle.matches("[A-Za-z0-9._-]+") || !sha.matches("[0-9a-f]{64}")) {
-                    throw new Exception("Invalid release metadata");
+                    throw new Exception("Metadata rilis tidak valid");
                 }
                 String raw = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-Control-Center/hermes-work-release-channel/hermes-work-runtime/" + bundle;
                 String cmd =
@@ -770,9 +770,9 @@ public class MainActivity extends Activity {
                     out.postDelayed(() -> {
                         generateUpdateReport(out, report -> {
                             if (report.contains("RELEASE=" + ver) && report.contains("CURRENT=" + ver)) {
-                                Toast.makeText(this, "Latest release active: " + ver, Toast.LENGTH_LONG).show();
+                                Toast.makeText(this, "Rilis terbaru aktif: " + ver, Toast.LENGTH_LONG).show();
                             } else {
-                                Toast.makeText(this, "Release verification not matched yet. Tap REFRESH UPDATE RESULT.", Toast.LENGTH_LONG).show();
+                                Toast.makeText(this, "Verifikasi rilis belum cocok. Tekan SEGARKAN HASIL PEMBARUAN.", Toast.LENGTH_LONG).show();
                             }
                         });
                     }, 5000);
@@ -790,11 +790,11 @@ public class MainActivity extends Activity {
     private interface ReportCallback { void done(String report); }
 
     private void generateUpdateReport(TextView out, ReportCallback cb) {
-        out.setText("Collecting update result…");
+        out.setText("Mengumpulkan hasil pembaruan…");
         io.execute(() -> {
             StringBuilder report = new StringBuilder();
-            report.append("===== HERMES WORK UPDATE RESULT =====\n");
-            report.append("APP_VERSION=1.2.3\n");
+            report.append("===== HASIL PEMBARUAN DJAEGER WORK =====\n");
+            report.append("APP_VERSION=1.2.7\n");
             report.append("RUNTIME_URL=").append(runtimeUrl()).append("\n");
             report.append("GENERATED_AT=").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date())).append("\n\n");
 
@@ -861,7 +861,7 @@ public class MainActivity extends Activity {
                 report.append("\n[BRIDGE]\nERROR=").append(e.getMessage()).append("\n");
             }
 
-            report.append("\n===== END HERMES WORK UPDATE RESULT =====");
+            report.append("\n===== AKHIR HASIL PEMBARUAN DJAEGER WORK =====");
             String finalReport = report.toString();
             ui(() -> {
                 out.setText(finalReport);
@@ -938,7 +938,7 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 ui(() -> {
                     online.setText("● TERPUTUS"); online.setTextColor(BAD);
-                    cb.done(0, "ERROR: " + e.getMessage());
+                    cb.done(0, "GALAT: " + e.getMessage());
                 });
             }
         });
