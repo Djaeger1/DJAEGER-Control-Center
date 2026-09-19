@@ -1,0 +1,207 @@
+name: DJAEGER AI Autonomous Heal
+
+on:
+  push:
+    branches:
+      - main
+      - djaeger-ai-autoheal-shadow
+    paths:
+      - '.github/workflows/djaeger-ai-autonomous-heal.yml'
+      - '.github/scripts/djaeger-ai-autopatch.js'
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+
+concurrency:
+  group: djaeger-ai-autonomous-heal
+  cancel-in-progress: false
+
+env:
+  PROD_BRANCH: djaeger-ai-railway-v1
+  SHADOW_BRANCH: djaeger-ai-autoheal-shadow
+  PROD_URL: https://djaeger-ai-core-production-736f.up.railway.app
+
+jobs:
+  autonomous-heal:
+    name: Diagnose, patch, shadow, promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Resolve target branch
+        id: target
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "branch=${PROD_BRANCH}" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Production runtime probe
+        id: runtime
+        shell: bash
+        run: |
+          set +e
+          ready_code=$(curl -sS -o /tmp/djaeger-ready.json -w '%{http_code}' --retry 2 --retry-delay 1 --max-time 10 "${PROD_URL}/ready")
+          health_code=$(curl -sS -o /tmp/djaeger-health.json -w '%{http_code}' --retry 2 --retry-delay 1 --max-time 10 "${PROD_URL}/health")
+          set -e
+          if [ "$ready_code" = "200" ] && [ "$health_code" = "200" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "ready_code=$ready_code" >> "$GITHUB_OUTPUT"
+          echo "health_code=$health_code" >> "$GITHUB_OUTPUT"
+          echo "READY_HTTP=$ready_code HEALTH_HTTP=$health_code"
+
+      - name: Auto-diagnose source
+        id: diagnose
+        shell: bash
+        run: |
+          set +e
+          node .github/scripts/djaeger-ai-autopatch.js diagnose --write-result /tmp/djaeger-diagnosis.json
+          rc=$?
+          set -e
+          if [ "$rc" != "0" ] && [ "$rc" != "10" ] && [ "$rc" != "20" ]; then
+            cat /tmp/djaeger-diagnosis.json || true
+            exit "$rc"
+          fi
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" = "0" ]; then
+            echo "status=HEALTHY" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" = "10" ]; then
+            echo "status=PATCHABLE" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=UNPATCHABLE" >> "$GITHUB_OUTPUT"
+          fi
+          cat /tmp/djaeger-diagnosis.json
+
+      - name: Stop on unknown or unsafe regression
+        if: steps.diagnose.outputs.rc == '20'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="[AUTOHEAL] DJAEGER AI requires manual-safe diagnosis"
+          body=$(cat /tmp/djaeger-diagnosis.json)
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          {
+            echo "Autonomous repair stopped because no safe deterministic patch is registered."
+            echo
+            echo "Commit: $(git rev-parse --short HEAD)"
+            echo
+            echo "Diagnosis:"
+            cat /tmp/djaeger-diagnosis.json
+          } > /tmp/djaeger-autoheal-issue.txt
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file /tmp/djaeger-autoheal-issue.txt
+          else
+            gh issue create --title "$title" --body-file /tmp/djaeger-autoheal-issue.txt
+          fi
+          exit 1
+
+      - name: Stop on runtime-only failure
+        if: steps.runtime.outputs.ok == 'false' && steps.diagnose.outputs.rc == '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="[AUTOHEAL] DJAEGER AI runtime unhealthy with clean source"
+          body="Runtime probe failed while source regression tests are healthy. ready=${{ steps.runtime.outputs.ready_code }}, health=${{ steps.runtime.outputs.health_code }}, commit=$(git rev-parse HEAD). No speculative patch was applied."
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+          exit 1
+
+      - name: Apply safe auto-patch on shadow
+        id: patch
+        if: steps.diagnose.outputs.rc == '10'
+        shell: bash
+        run: |
+          git config user.name "DJAEGER Autoheal"
+          git config user.email "79890209+Djaeger1@users.noreply.github.com"
+          base=$(git rev-parse HEAD)
+          git checkout -B "${SHADOW_BRANCH}" "$base"
+
+          node .github/scripts/djaeger-ai-autopatch.js patch --write-result /tmp/djaeger-patch.json
+
+          cd railway-djaeger-ai-core
+          npm test
+          grep -q "const HARDWARE_AUTHORITY = 'NONE'" server.js
+          ! grep -Eqi 'hermes-work|railway-relay|HERMES-WORK-Relay' server.js
+          ! grep -Eq '/sys/|setprop|su -c|magisk|cpu[0-9]+/cpufreq' server.js
+          cd ..
+
+          git add railway-djaeger-ai-core .github/scripts/djaeger-ai-autopatch.js
+          if git diff --cached --quiet; then
+            echo "Patch engine reported PATCHABLE but produced no diff."
+            exit 1
+          fi
+
+          git commit -m "Autoheal: safe deterministic repair"
+          repair_sha=$(git rev-parse HEAD)
+          echo "repair_sha=$repair_sha" >> "$GITHUB_OUTPUT"
+          git push --force-with-lease origin "HEAD:${SHADOW_BRANCH}"
+
+      - name: Wait for independent shadow regression gate
+        if: steps.diagnose.outputs.rc == '10'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha="${{ steps.patch.outputs.repair_sha }}"
+          for i in $(seq 1 30); do
+            run=$(gh run list --workflow "DJAEGER AI Autoheal Gate" --branch "${SHADOW_BRANCH}" --commit "$sha" --json databaseId,status,conclusion --limit 1 --jq '.[0] // empty')
+            if [ -n "$run" ]; then
+              status=$(printf '%s' "$run" | jq -r '.status')
+              conclusion=$(printf '%s' "$run" | jq -r '.conclusion // ""')
+              echo "shadow gate status=$status conclusion=$conclusion"
+              if [ "$status" = "completed" ]; then
+                [ "$conclusion" = "success" ] && exit 0
+                exit 1
+              fi
+            fi
+            sleep 5
+          done
+          echo "Shadow regression gate did not complete successfully in time."
+          exit 1
+
+      - name: Promote tested shadow commit to production branch
+        if: steps.diagnose.outputs.rc == '10'
+        shell: bash
+        run: |
+          sha="${{ steps.patch.outputs.repair_sha }}"
+          git fetch origin "${PROD_BRANCH}"
+          base=$(git merge-base "$sha" "origin/${PROD_BRANCH}")
+          if [ "$base" != "$(git rev-parse "origin/${PROD_BRANCH}")" ]; then
+            echo "Production moved while autoheal was testing. Refusing unsafe promotion."
+            exit 1
+          fi
+          git push origin "$sha:${PROD_BRANCH}"
+          echo "PROMOTED_SHA=$sha"
+
+      - name: Healthy no-op
+        if: steps.diagnose.outputs.rc == '0' && steps.runtime.outputs.ok == 'true'
+        run: |
+          echo "DJAEGER AI is healthy. No patch or deployment change required."
