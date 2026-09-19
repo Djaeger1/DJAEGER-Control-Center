@@ -1,1 +1,1 @@
-{"version":"v1.1.1-tlsfix","description":"HERMES WORK dashboard runtime with Android CA trust fix for HTTPS updater and research","restart":false}
+{"version":"v1.2.0-bridge","description":"HERMES WORK automatic outbound data bridge; sanitized read-only telemetry; no Workers AI calls and zero Neurons for bridge traffic","restart":false}
