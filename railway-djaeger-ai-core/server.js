@@ -126,6 +126,7 @@ function normalizeTelemetry(x) {
   out.p95_ms = normalizeNumber('p95_ms', x.p95_ms, 0, 60000);
   out.p99_ms = normalizeNumber('p99_ms', x.p99_ms, 0, 60000);
   out.control_loop_age_s = normalizeNumber('control_loop_age_s', x.control_loop_age_s, 0, 86400);
+  out.agent_execution_age_s = normalizeNumber('agent_execution_age_s', x.agent_execution_age_s, 0, 86400);
 
   return out;
 }
@@ -139,7 +140,7 @@ function sanitizeTelemetry(x) {
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
     'hermes_cloud_state','hermes_cloud_http','gemini_status',
-    'control_loop_age_s','agent_execution_status','source'
+    'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s','source'
   ];
   const out = {};
   for (const k of allowed) {
@@ -177,6 +178,9 @@ function safeTelemetrySummary(t) {
     gemini_status: t.gemini_status || null,
     control_loop_age_s: t.control_loop_age_s ?? null,
     agent_execution_status: t.agent_execution_status || null,
+    agent_execution_source: t.agent_execution_source || null,
+    agent_execution_age_s: t.agent_execution_age_s ?? null,
+    agent_execution_status_trust: t.agent_execution_source ? 'SCOPED' : 'LEGACY_UNSCOPED',
     source: t.source || null,
     server_received_at: t.server_received_at
   };
@@ -188,11 +192,27 @@ function detectTelemetryAnomalies(t) {
   if (t.neurons_limit !== undefined && t.neurons_limit !== null &&
       t.neurons_used !== undefined && t.neurons_used !== null &&
       t.neurons_limit > 0 && t.neurons_used === 0) {
-    anomalies.push({
-      code: 'NEURONS_ZERO_WITH_LIMIT',
-      severity: 'WARN',
-      detail: 'neurons_used is zero while neurons_limit is available'
-    });
+    const providerBlocked = String(t.provider_quota_state || '').toUpperCase() === 'EXHAUSTED';
+    const cloudReady = ['READY','ONLINE'].includes(String(t.hermes_cloud_state || '').toUpperCase());
+    if (providerBlocked) {
+      anomalies.push({
+        code: 'NEURONS_ZERO_PROVIDER_BLOCKED',
+        severity: 'INFO',
+        detail: 'no successful remote Cloud usage recorded while provider quota is exhausted'
+      });
+    } else if (cloudReady) {
+      anomalies.push({
+        code: 'NEURONS_ZERO_WITH_READY_CLOUD',
+        severity: 'WARN',
+        detail: 'Cloud is ready but device-side remote usage estimate remains zero'
+      });
+    } else {
+      anomalies.push({
+        code: 'NEURONS_ZERO_NO_REMOTE_SUCCESS',
+        severity: 'INFO',
+        detail: 'no successful remote Cloud usage has been recorded for the current accounting day'
+      });
+    }
   }
 
   if (t.control_loop_age_s !== undefined && t.control_loop_age_s !== null &&
