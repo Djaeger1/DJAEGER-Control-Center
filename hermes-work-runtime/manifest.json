@@ -1,1 +1,1 @@
-{"version":"v1.9.0-production","description":"HERMES WORK Production Pack V1: creates downloadable ZIP packages with final script, narration, captions, visual prompts and metadata for production on another device; zero HERMES Neurons","restart":false}
+{"version":"v1.9.1-updaterfix","description":"HERMES WORK updater reliability fix: handoff no longer kills the updater that owns the update, supervisor tick self-heals a missing updater, production pack retained","restart":false}
