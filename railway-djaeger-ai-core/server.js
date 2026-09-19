@@ -67,7 +67,7 @@ function sanitizeTelemetry(x) {
     'workload_class','subject_package','profile','user_mode','window_mode',
     'skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c',
     'fps','jank_pct','p95_ms','p99_ms',
-    'neurons_used','neurons_limit','neuron_tier',
+    'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
     'hermes_cloud_state','hermes_cloud_http','gemini_status',
     'control_loop_age_s','agent_execution_status','source'
   ];
@@ -112,6 +112,8 @@ const server = http.createServer(async (req, res) => {
         profile: t.profile || 'UNKNOWN',
         neurons_used: t.neurons_used ?? null,
         neurons_limit: t.neurons_limit ?? null,
+        provider_quota_state: t.provider_quota_state || 'UNKNOWN',
+        provider_quota_reason: t.provider_quota_reason || 'NONE',
         hermes_cloud_state: t.hermes_cloud_state || 'UNKNOWN'
       });
       return json(res, 200, { ok: true, trace_id: tr.trace_id, received_at: t.server_received_at });
