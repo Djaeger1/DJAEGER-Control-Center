@@ -141,6 +141,8 @@ function normalizeTelemetry(x) {
   out.gemini_http_at = normalizeNumber('gemini_http_at', x.gemini_http_at, 0, 4102444800);
   out.predictive_policy_age_s = normalizeNumber('predictive_policy_age_s', x.predictive_policy_age_s, 0, 86400);
   out.root_policy_age_s = normalizeNumber('root_policy_age_s', x.root_policy_age_s, 0, 86400);
+  out.policy_until = normalizeNumber('policy_until', x.policy_until, 0, 4102444800);
+  out.policy_remaining_s = normalizeNumber('policy_remaining_s', x.policy_remaining_s, -86400, 86400);
 
   return out;
 }
@@ -153,7 +155,7 @@ function sanitizeTelemetry(x) {
     'skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c',
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
-    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model','current_brain','brain_mode','final_source','cloud_in_control','cloud_plan_state','cloud_control_provider','cloud_plan_provider','reasoning_status','reasoning_event_reason','reasoning_proposal_action','reasoning_proposal_profile','reasoning_confidence','predictive_policy_present','predictive_policy_age_s','root_policy_present','root_policy_age_s',
+    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model','current_brain','brain_mode','final_source','cloud_in_control','cloud_plan_state','cloud_plan_reason','cloud_control_provider','cloud_plan_provider','policy_session_id','policy_game','policy_user_mode','policy_window_mode','policy_window_epoch','policy_until','policy_remaining_s','live_session_id','live_game','live_user_mode','live_window_mode','live_window_epoch','reasoning_status','reasoning_event_reason','reasoning_proposal_action','reasoning_proposal_profile','reasoning_confidence','predictive_policy_present','predictive_policy_age_s','root_policy_present','root_policy_age_s',
     'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s',
     'remote_repair_state','remote_repair_seq','remote_repair_release','remote_repair_detail','source'
   ];
@@ -208,8 +210,21 @@ function safeTelemetrySummary(t) {
     final_source: t.final_source || null,
     cloud_in_control: t.cloud_in_control || null,
     cloud_plan_state: t.cloud_plan_state || null,
+    cloud_plan_reason: t.cloud_plan_reason || null,
     cloud_control_provider: t.cloud_control_provider || null,
     cloud_plan_provider: t.cloud_plan_provider || null,
+    policy_session_id: t.policy_session_id || null,
+    policy_game: t.policy_game || null,
+    policy_user_mode: t.policy_user_mode || null,
+    policy_window_mode: t.policy_window_mode || null,
+    policy_window_epoch: t.policy_window_epoch || null,
+    policy_until: t.policy_until ?? null,
+    policy_remaining_s: t.policy_remaining_s ?? null,
+    live_session_id: t.live_session_id || null,
+    live_game: t.live_game || null,
+    live_user_mode: t.live_user_mode || null,
+    live_window_mode: t.live_window_mode || null,
+    live_window_epoch: t.live_window_epoch || null,
     reasoning_status: t.reasoning_status || null,
     reasoning_event_reason: t.reasoning_event_reason || null,
     reasoning_proposal_action: t.reasoning_proposal_action || null,
