@@ -9,6 +9,7 @@ import android.content.Context;
 import android.widget.Toast;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -17,6 +18,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -37,16 +39,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private static final int BG = Color.rgb(9, 13, 18);
-    private static final int PANEL = Color.rgb(18, 24, 32);
-    private static final int PANEL2 = Color.rgb(13, 19, 26);
-    private static final int LINE = Color.rgb(42, 53, 67);
-    private static final int TEXT = Color.rgb(236, 242, 248);
-    private static final int MUTED = Color.rgb(145, 158, 173);
-    private static final int OK = Color.rgb(79, 209, 123);
+    private static final int BG = Color.rgb(2, 8, 18);
+    private static final int PANEL = Color.rgb(7, 20, 34);
+    private static final int PANEL2 = Color.rgb(8, 24, 39);
+    private static final int LINE = Color.rgb(22, 55, 87);
+    private static final int TEXT = Color.rgb(245, 247, 251);
+    private static final int MUTED = Color.rgb(148, 162, 183);
+    private static final int OK = Color.rgb(57, 231, 122);
     private static final int WARN = Color.rgb(229, 181, 77);
-    private static final int BAD = Color.rgb(255, 107, 107);
-    private static final int ACCENT = Color.rgb(77, 145, 255);
+    private static final int BAD = Color.rgb(255, 105, 117);
+    private static final int ACCENT = Color.rgb(63, 145, 255);
 
     private static final String DEFAULT_RUNTIME = "http://192.168.42.129:8766";
     private static final String DEFAULT_BOOTSTRAP = "http://192.168.42.129:8765";
@@ -65,6 +67,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         buildShell();
         showPage(0);
@@ -78,20 +82,43 @@ public class MainActivity extends Activity {
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(dp(16), dp(12), dp(12), dp(10));
-        top.setBackgroundColor(PANEL);
+        top.setPadding(dp(12), dp(9), dp(12), dp(9));
+        top.setBackground(gradientBg(Color.rgb(5, 18, 32), Color.rgb(3, 12, 23), 0));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.djaeger_logo);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(54), dp(54));
+        logoLp.setMargins(0, 0, dp(10), 0);
+        top.addView(logo, logoLp);
 
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
-        TextView brand = text("HERMES WORK", 18, TEXT, true);
-        pageTitle = text("WORK", 12, MUTED, true);
+        TextView brand = text("DJAEGER WORK", 20, TEXT, true);
+        TextView tagline = text("WORK · RESEARCH · GROW", 8, MUTED, true);
+        tagline.setLetterSpacing(0.16f);
+        pageTitle = text("WORK", 9, ACCENT, true);
+        pageTitle.setPadding(0, dp(3), 0, 0);
         titles.addView(brand);
+        titles.addView(tagline);
         titles.addView(pageTitle);
         top.addView(titles, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        online = text("● CHECKING", 12, MUTED, true);
-        online.setPadding(dp(8), dp(4), dp(8), dp(4));
-        top.addView(online);
+        TextView refresh = text("↻", 22, TEXT, false);
+        refresh.setGravity(Gravity.CENTER);
+        refresh.setClickable(true);
+        refresh.setFocusable(true);
+        refresh.setBackground(solidBg(Color.rgb(10, 27, 47), Color.rgb(26, 64, 105), dp(10)));
+        refresh.setOnClickListener(v -> showPage(currentPage));
+        LinearLayout.LayoutParams refreshLp = new LinearLayout.LayoutParams(dp(38), dp(38));
+        refreshLp.setMargins(dp(4), 0, dp(8), 0);
+        top.addView(refresh, refreshLp);
+
+        online = text("● CHECKING", 11, MUTED, true);
+        online.setGravity(Gravity.CENTER);
+        online.setPadding(dp(10), 0, dp(10), 0);
+        online.setBackground(solidBg(Color.rgb(25, 28, 34), Color.rgb(48, 58, 72), dp(20)));
+        top.addView(online, new LinearLayout.LayoutParams(-2, dp(38)));
         root.addView(top);
 
         content = new FrameLayout(this);
@@ -100,10 +127,11 @@ public class MainActivity extends Activity {
         HorizontalScrollView navScroll = new HorizontalScrollView(this);
         navScroll.setHorizontalScrollBarEnabled(false);
         navScroll.setFillViewport(true);
-        navScroll.setBackgroundColor(PANEL);
+        navScroll.setBackgroundColor(Color.rgb(5, 17, 29));
         navBar = new LinearLayout(this);
         navBar.setOrientation(LinearLayout.HORIZONTAL);
-        navBar.setPadding(dp(4), dp(5), dp(4), dp(7));
+        navBar.setGravity(Gravity.CENTER);
+        navBar.setPadding(dp(3), dp(5), dp(3), dp(6));
         navScroll.addView(navBar, new HorizontalScrollView.LayoutParams(-1, -2));
 
         String[] labels = {"WORK", "RESEARCH", "PLANNER", "INSIGHTS", "SYSTEM", "UPDATE"};
@@ -111,7 +139,7 @@ public class MainActivity extends Activity {
             final int p = i;
             Button b = navButton(labels[i]);
             b.setOnClickListener(v -> showPage(p));
-            navBar.addView(b, new LinearLayout.LayoutParams(dp(76), dp(50)));
+            navBar.addView(b, new LinearLayout.LayoutParams(0, dp(50), 1f));
         }
         root.addView(navScroll);
         setContentView(root);
@@ -148,7 +176,9 @@ public class MainActivity extends Activity {
             Button b = (Button) navBar.getChildAt(i);
             boolean active = i == currentPage;
             b.setTextColor(active ? Color.WHITE : MUTED);
-            b.setBackgroundColor(active ? Color.rgb(33, 75, 134) : PANEL);
+            b.setBackground(active
+                    ? gradientBg(Color.rgb(35, 89, 166), Color.rgb(25, 67, 128), dp(10))
+                    : solidBg(Color.TRANSPARENT, Color.TRANSPARENT, dp(10)));
         }
     }
 
@@ -368,7 +398,7 @@ public class MainActivity extends Activity {
     }
 
     private void buildInsights(LinearLayout body) {
-        body.addView(sectionTitle("Insights & Memory", "Performa channel dan pengetahuan yang sudah dikumpulkan HERMES WORK."));
+        body.addView(sectionTitle("Insights & Memory", "Performa channel dan pengetahuan yang sudah dikumpulkan DJAEGER WORK."));
 
         LinearLayout channel = card();
         channel.addView(text("MY CHANNEL", 11, MUTED, true));
@@ -765,9 +795,13 @@ public class MainActivity extends Activity {
     private void refreshOnlineOnly() {
         apiAsync("GET", "/api/work/status", null, false, (code, s) -> {
             if (code >= 200 && code < 300) {
-                online.setText("● ONLINE"); online.setTextColor(OK);
+                online.setText("● ONLINE");
+                online.setTextColor(OK);
+                online.setBackground(solidBg(Color.rgb(5, 34, 23), Color.rgb(19, 81, 49), dp(20)));
             } else {
-                online.setText("● OFFLINE"); online.setTextColor(BAD);
+                online.setText("● OFFLINE");
+                online.setTextColor(BAD);
+                online.setBackground(solidBg(Color.rgb(42, 17, 25), Color.rgb(83, 40, 50), dp(20)));
             }
         });
     }
@@ -837,7 +871,7 @@ public class MainActivity extends Activity {
         LinearLayout x = new LinearLayout(this);
         x.setOrientation(LinearLayout.VERTICAL);
         x.setPadding(dp(14), dp(14), dp(14), dp(14));
-        x.setBackgroundColor(PANEL);
+        x.setBackground(gradientBg(Color.rgb(10, 29, 49), Color.rgb(6, 19, 32), dp(18)));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
         p.setMargins(0, 0, 0, dp(12));
         x.setLayoutParams(p);
@@ -855,11 +889,12 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(11), dp(10), dp(11), dp(10));
-        box.setBackgroundColor(PANEL2);
+        box.setBackground(gradientBg(Color.rgb(7, 21, 35), Color.rgb(5, 17, 29), dp(11)));
         TextView k = text(label, 10, MUTED, true);
-        TextView v = text(initial, 16, TEXT, true);
+        TextView v = text(initial, 17, TEXT, true);
         v.setPadding(0, dp(4), 0, 0);
-        box.addView(k); box.addView(v);
+        box.addView(k);
+        box.addView(v);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -2, 1f);
         p.setMargins(0, 0, dp(6), dp(6));
         row.addView(box, p);
@@ -869,10 +904,10 @@ public class MainActivity extends Activity {
     private View sectionTitle(String title, String sub) {
         LinearLayout x = new LinearLayout(this);
         x.setOrientation(LinearLayout.VERTICAL);
-        x.setPadding(dp(2), dp(4), dp(2), dp(12));
-        x.addView(text(title, 22, TEXT, true));
+        x.setPadding(dp(2), dp(5), dp(2), dp(13));
+        x.addView(text(title, 23, TEXT, true));
         TextView s = text(sub, 13, MUTED, false);
-        s.setPadding(0, dp(3), 0, 0);
+        s.setPadding(0, dp(4), 0, 0);
         x.addView(s);
         return x;
     }
@@ -891,7 +926,7 @@ public class MainActivity extends Activity {
         v.setTypeface(Typeface.MONOSPACE);
         v.setTextIsSelectable(true);
         v.setPadding(dp(10), dp(10), dp(10), dp(10));
-        v.setBackgroundColor(Color.rgb(5, 9, 13));
+        v.setBackground(solidBg(Color.rgb(3, 9, 15), Color.rgb(18, 45, 70), dp(10)));
         return v;
     }
 
@@ -899,9 +934,14 @@ public class MainActivity extends Activity {
         Button b = new Button(this);
         b.setText(label);
         b.setTextSize(12);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         b.setTextColor(Color.WHITE);
-        b.setBackgroundColor(primary ? Color.rgb(35, 105, 216) : Color.rgb(31, 41, 54));
         b.setAllCaps(false);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setBackground(primary
+                ? gradientBg(Color.rgb(37, 111, 222), Color.rgb(49, 137, 255), dp(11))
+                : gradientBg(Color.rgb(22, 37, 56), Color.rgb(15, 28, 44), dp(11)));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(48));
         p.setMargins(0, dp(8), 0, 0);
         b.setLayoutParams(p);
@@ -911,10 +951,15 @@ public class MainActivity extends Activity {
     private Button navButton(String label) {
         Button b = new Button(this);
         b.setText(label);
-        b.setTextSize(10);
+        b.setTextSize(8);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
-        b.setPadding(dp(3), 0, dp(3), 0);
+        b.setPadding(dp(1), 0, dp(1), 0);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
         return b;
     }
 
@@ -925,13 +970,28 @@ public class MainActivity extends Activity {
         e.setTextColor(TEXT);
         e.setHintTextColor(MUTED);
         e.setSingleLine(true);
-        e.setBackgroundColor(PANEL2);
+        e.setBackground(solidBg(Color.rgb(6, 19, 32), Color.rgb(31, 70, 107), dp(10)));
         e.setPadding(dp(12), dp(10), dp(12), dp(10));
         if (secret) e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(50));
         p.setMargins(0, dp(8), 0, 0);
         e.setLayoutParams(p);
         return e;
+    }
+
+    private GradientDrawable gradientBg(int start, int end, float radius) {
+        GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{start, end});
+        g.setCornerRadius(radius);
+        if (radius > 0) g.setStroke(dp(1), LINE);
+        return g;
+    }
+
+    private GradientDrawable solidBg(int fill, int stroke, float radius) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(fill);
+        g.setCornerRadius(radius);
+        if (stroke != Color.TRANSPARENT) g.setStroke(dp(1), stroke);
+        return g;
     }
 
     private void setMetric(TextView v, String s, int color) {
@@ -947,7 +1007,7 @@ public class MainActivity extends Activity {
     private String val(JSONObject j, String k) { return value(j, k); }
 
     private void confirm(String msg, Runnable yes) {
-        new AlertDialog.Builder(this).setTitle("HERMES WORK").setMessage(msg)
+        new AlertDialog.Builder(this).setTitle("DJAEGER WORK").setMessage(msg)
                 .setNegativeButton("CANCEL", null)
                 .setPositiveButton("CONTINUE", (d, w) -> yes.run()).show();
     }
