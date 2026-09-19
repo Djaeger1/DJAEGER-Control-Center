@@ -26,7 +26,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private static final String DEFAULT_URL = "http://192.168.42.129:8765";
+    private static final String DEFAULT_URL = "http://192.168.42.129:8766";
+    private static final String BOOTSTRAP_URL = "http://192.168.42.129:8765";
     private static final String CHANNEL_URL = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-Control-Center/hermes-work-release-channel/hermes-work-runtime/channel.json";
     private static final String PREFS = "hermes_work_installer";
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -56,7 +57,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("v1.0.0 · untuk bootstrap HERMES WORK yang sudah terpasang");
+        sub.setText("v1.1.0 · installer + updater dashboard HERMES WORK");
         sub.setTextColor(Color.LTGRAY);
         sub.setGravity(Gravity.CENTER);
         sub.setPadding(0, dp(4), 0, dp(16));
@@ -74,7 +75,7 @@ public class MainActivity extends Activity {
         root.addView(status);
 
         install = new Button(this);
-        install.setText("INSTALL / UPDATE HERMES WORK");
+        install.setText("INSTALL / UPDATE DASHBOARD HERMES WORK");
         install.setOnClickListener(v -> startInstall());
         root.addView(install);
 
@@ -102,59 +103,51 @@ public class MainActivity extends Activity {
     }
 
     private void startInstall() {
-        final String base = cleanBase(url.getText().toString());
+        final String runtime = cleanBase(url.getText().toString());
         final String tok = token.getText().toString().trim();
-        if (tok.isEmpty()) {
-            status("ADMIN TOKEN wajib diisi.", Color.YELLOW);
-            return;
-        }
-        getPreferences(MODE_PRIVATE).edit().putString("url", base).putString("token", tok).apply();
-        install.setEnabled(false);
-        log.setText("");
-        status("Memulai instalasi...", Color.YELLOW);
+        if (tok.isEmpty()) { status("ADMIN TOKEN wajib diisi.", Color.YELLOW); return; }
+        getPreferences(MODE_PRIVATE).edit().putString("url", runtime).putString("token", tok).apply();
+        install.setEnabled(false); log.setText(""); status("Memulai instalasi...", Color.YELLOW);
 
         io.execute(() -> {
             try {
-                append("1/6 Cek bootstrap...\n");
-                HttpResult h = request(base + "/health", "GET", null, null, 5000, 10000);
-                if (h.code != 200 && h.code != 503) throw new Exception("Bootstrap tidak merespons: HTTP " + h.code);
-                append("OK bootstrap online\n");
+                append("1/5 Cek HERMES WORK runtime...\n");
+                HttpResult st;
+                try { st = request(runtime + "/api/work/status", "GET", null, null, 4000, 8000); }
+                catch (Exception first) {
+                    append("Runtime belum aktif, mencoba bootstrap recovery...\n");
+                    JSONObject body = new JSONObject();
+                    body.put("command", "ROOT=/data/adb/hermes_work; VER=$(cat $ROOT/current_release 2>/dev/null); REL=$ROOT/releases/$VER; [ -x \"$REL/bin/workd\" ] || exit 7; nohup \"$REL/bin/workd\" --root \"$ROOT\" --release \"$REL\" >>\"$ROOT/logs/workd.log\" 2>&1 & echo $! > \"$ROOT/state/workd.pid\"; sleep 2");
+                    HttpResult ex = request(BOOTSTRAP_URL + "/api/exec", "POST", body.toString().getBytes(StandardCharsets.UTF_8), tok, 5000, 15000);
+                    if (ex.code < 200 || ex.code >= 300) throw new Exception("Bootstrap recovery HTTP " + ex.code + "\n" + ex.text());
+                    st = request(runtime + "/api/work/status", "GET", null, null, 5000, 10000);
+                }
+                if (st.code != 200) throw new Exception("Runtime HTTP " + st.code);
+                append("OK runtime online\n");
 
-                append("2/6 Ambil release channel...\n");
-                HttpResult ch = request(CHANNEL_URL, "GET", null, null, 8000, 15000);
-                if (ch.code != 200) throw new Exception("Channel HTTP " + ch.code);
-                JSONObject j = new JSONObject(ch.text());
-                String version = j.getString("version");
-                String bundle = j.getString("bundle");
-                String expected = j.getString("sha256").toLowerCase(Locale.US);
-                String baseRaw = CHANNEL_URL.substring(0, CHANNEL_URL.lastIndexOf('/') + 1);
-                append("Target: " + version + "\n");
+                append("2/5 Update ke release terbaru...\n");
+                HttpResult up = request(runtime + "/api/work/update", "POST", new byte[0], tok, 8000, 60000);
+                if (up.code < 200 || up.code >= 300) throw new Exception("Update HTTP " + up.code + "\n" + up.text());
+                append(up.text().trim() + "\n");
 
-                append("3/6 Download runtime...\n");
-                HttpResult br = request(baseRaw + bundle, "GET", null, null, 10000, 45000);
-                if (br.code != 200) throw new Exception("Bundle HTTP " + br.code);
-                byte[] zip = br.body;
-                append("Downloaded " + zip.length + " bytes\n");
-
-                append("4/6 Verifikasi SHA-256...\n");
-                String got = sha256(zip);
-                if (!got.equalsIgnoreCase(expected)) throw new Exception("SHA-256 tidak cocok\nExpected " + expected + "\nGot " + got);
-                append("SHA-256 PASS\n");
-
-                append("5/6 Kirim ke bootstrap...\n");
-                HttpResult up = multipartUpload(base + "/api/update", tok, zip, bundle);
-                if (up.code < 200 || up.code >= 300) throw new Exception("Update gagal HTTP " + up.code + "\n" + up.text());
-                append("Runtime terpasang: " + up.text().trim() + "\n");
-
-                append("6/6 Handoff + health check...\n");
-                String cmd = "ROOT=/data/adb/hermes_work; VER=$(cat $ROOT/current_release 2>/dev/null); PREV=$(cat $ROOT/previous_release 2>/dev/null); REL=$ROOT/releases/$VER; chmod 755 \"$REL/bin/workd\" \"$REL/worker/tick.sh\" \"$REL/worker/handoff.sh\" 2>/dev/null; sh \"$REL/worker/handoff.sh\" \"$ROOT\" \"$VER\" \"$PREV\"; sleep 1; /system/bin/wget -qO- http://127.0.0.1:8766/api/work/status";
+                append("3/5 Aktifkan release baru...\n");
+                Thread.sleep(1200);
                 JSONObject body = new JSONObject();
-                body.put("command", cmd);
-                HttpResult ex = request(base + "/api/exec", "POST", body.toString().getBytes(StandardCharsets.UTF_8), tok, 5000, 30000);
-                append(ex.text() + "\n");
-                if (ex.code < 200 || ex.code >= 300) throw new Exception("Handoff HTTP " + ex.code);
+                body.put("command", "ROOT=/data/adb/hermes_work; VER=$(cat $ROOT/current_release 2>/dev/null); PREV=$(cat $ROOT/previous_release 2>/dev/null); REL=$ROOT/releases/$VER; chmod 755 \"$REL/bin/workd\" \"$REL/worker/tick.sh\" \"$REL/worker/handoff.sh\" 2>/dev/null; if [ -x \"$REL/worker/handoff.sh\" ]; then sh \"$REL/worker/handoff.sh\" \"$ROOT\" \"$VER\" \"$PREV\"; fi");
+                HttpResult ex = request(BOOTSTRAP_URL + "/api/exec", "POST", body.toString().getBytes(StandardCharsets.UTF_8), tok, 5000, 30000);
+                if (ex.code < 200 || ex.code >= 300) throw new Exception("Handoff HTTP " + ex.code + "\n" + ex.text());
+                append("Handoff selesai\n");
 
-                status("SELESAI · HERMES WORK " + version + " aktif", Color.GREEN);
+                append("4/5 Health check dashboard...\n");
+                Thread.sleep(2500);
+                HttpResult fin = request(runtime + "/api/work/status", "GET", null, null, 5000, 12000);
+                if (fin.code != 200) throw new Exception("Health HTTP " + fin.code);
+                JSONObject sj = new JSONObject(fin.text());
+                String version = sj.optString("release", "UNKNOWN");
+                append("Active release: " + version + "\n");
+
+                append("5/5 Selesai. Dashboard: " + runtime + "/\n");
+                status("SELESAI · " + version + " aktif", Color.GREEN);
                 append("\nINSTALL SUCCESS\n");
             } catch (Exception e) {
                 status("GAGAL · " + e.getMessage(), Color.RED);
