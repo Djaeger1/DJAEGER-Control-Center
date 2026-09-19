@@ -42,10 +42,11 @@ fi
 
 VOICE=""
 if command -v edge-tts >/dev/null 2>&1; then
+  edge-tts --list-voices >/tmp/hermes-studio/voices.txt 2>/dev/null || true
   if [ "$LANG_CODE" = "id" ]; then
-    VOICE="$(edge-tts --list-voices 2>/dev/null | awk '$1 ~ /^id-ID-/ {print $1; exit}')"
+    VOICE="$(awk '$1 ~ /^id-ID-/ && !v {v=$1} END{print v}' /tmp/hermes-studio/voices.txt)"
   else
-    VOICE="$(edge-tts --list-voices 2>/dev/null | awk '$1 ~ /^en-US-/ {print $1; exit}')"
+    VOICE="$(awk '$1 ~ /^en-US-/ && !v {v=$1} END{print v}' /tmp/hermes-studio/voices.txt)"
   fi
 fi
 
