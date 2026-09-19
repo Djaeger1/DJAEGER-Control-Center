@@ -1,9 +1,12 @@
 import http from "node:http";
+import https from "node:https";
 
 const PORT = Number(process.env.PORT || 3000);
 const TOPIC = process.env.NTFY_TOPIC || "";
 const ACCESS_PATH = process.env.ACCESS_PATH || "";
 const NTFY = process.env.NTFY_BASE || "https://ntfy.sh";
+let directSnapshot = null;
+let directReceivedAt = 0;
 
 function send(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -51,13 +54,19 @@ function safeSnapshot(x={}) {
   };
 }
 
-async function latestSnapshot() {
-  if (!TOPIC) throw new Error("NTFY_TOPIC_NOT_CONFIGURED");
-  const url = `${NTFY}/${encodeURIComponent(TOPIC)}/json?poll=1&since=30m`;
-  const r = await fetch(url, {headers:{"user-agent":"HERMES-WORK-ChatGPT-Relay/1.0"}});
-  if (!r.ok) throw new Error(`NTFY_HTTP_${r.status}`);
-  const t = await r.text();
-  const lines = t.split(/\r?\n/).map(v=>v.trim()).filter(Boolean);
+function ntfyViaHttps(url) {
+  return new Promise((resolve,reject)=>{
+    const req=https.get(url,{family:4,headers:{"user-agent":"HERMES-WORK-ChatGPT-Relay/1.1"}},res=>{
+      let data="";res.setEncoding("utf8");
+      res.on("data",chunk=>{if(data.length<2_000_000)data+=chunk});
+      res.on("end",()=>res.statusCode>=200&&res.statusCode<300?resolve(data):reject(new Error("NTFY_HTTP_"+res.statusCode)));
+    });
+    req.setTimeout(15000,()=>req.destroy(new Error("NTFY_TIMEOUT")));
+    req.on("error",reject);
+  });
+}
+function parseNtfy(text) {
+  const lines = text.split(/\r?\n/).map(v=>v.trim()).filter(Boolean);
   let latest = null;
   for (const line of lines) {
     try {
@@ -67,21 +76,57 @@ async function latestSnapshot() {
       if (snap && typeof snap === "object") latest = snap;
     } catch {}
   }
-  if (!latest) throw new Error("NO_RECENT_SNAPSHOT");
   return latest;
+}
+async function latestSnapshot() {
+  if (directSnapshot && Date.now()-directReceivedAt < 20*60*1000) return directSnapshot;
+  if (!TOPIC) throw new Error("NTFY_TOPIC_NOT_CONFIGURED");
+  const url = `${NTFY}/${encodeURIComponent(TOPIC)}/json?poll=1&since=30m`;
+  let firstErr = null;
+  try {
+    const r = await fetch(url, {headers:{"user-agent":"HERMES-WORK-ChatGPT-Relay/1.1"},signal:AbortSignal.timeout(15000)});
+    if (!r.ok) throw new Error(`NTFY_HTTP_${r.status}`);
+    const latest=parseNtfy(await r.text());
+    if (latest) return latest;
+    firstErr=new Error("NO_RECENT_SNAPSHOT");
+  } catch(e) { firstErr=e; }
+  try {
+    const latest=parseNtfy(await ntfyViaHttps(url));
+    if (latest) return latest;
+    throw new Error("NO_RECENT_SNAPSHOT");
+  } catch(e) {
+    const a=String(firstErr?.cause?.code||firstErr?.code||firstErr?.message||firstErr||"unknown");
+    const b=String(e?.cause?.code||e?.code||e?.message||e||"unknown");
+    throw new Error("NTFY_UNAVAILABLE primary="+a+" fallback="+b);
+  }
 }
 
 const server = http.createServer(async (req,res)=>{
   const u = new URL(req.url, "http://localhost");
   if (u.pathname === "/health") {
-    return send(res,200,{ok:true,service:"HERMES_WORK_CHATGPT_RELAY"});
+    return send(res,200,{ok:true,service:"HERMES_WORK_CHATGPT_RELAY",direct_fresh:!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000)});
+  }
+  if (u.pathname === "/ingest" && req.method === "POST") {
+    if (!TOPIC || req.headers["x-hermes-topic"] !== TOPIC) return send(res,401,{ok:false,error:"unauthorized"});
+    let body="";let tooLarge=false;
+    req.setEncoding("utf8");
+    req.on("data",chunk=>{body+=chunk;if(body.length>262144){tooLarge=true;req.destroy()}});
+    req.on("end",()=>{
+      if(tooLarge)return send(res,413,{ok:false,error:"payload_too_large"});
+      try{
+        const raw=JSON.parse(body);
+        directSnapshot=safeSnapshot(raw);directReceivedAt=Date.now();
+        return send(res,200,{ok:true,source:"direct-data-only",received_at:new Date(directReceivedAt).toISOString()});
+      }catch(e){return send(res,400,{ok:false,error:"invalid_json"})}
+    });
+    return;
   }
   if (!ACCESS_PATH || u.pathname !== "/" + ACCESS_PATH) {
     return send(res,404,{error:"not_found"});
   }
   try {
     const snap = await latestSnapshot();
-    return send(res,200,{ok:true,source:"ntfy-data-only",snapshot:safeSnapshot(snap)});
+    return send(res,200,{ok:true,source:(directSnapshot&&Date.now()-directReceivedAt<20*60*1000)?"direct-data-only":"ntfy-data-only",snapshot:safeSnapshot(snap)});
   } catch (e) {
     return send(res,503,{ok:false,error:String(e?.message || e)});
   }
