@@ -9,7 +9,7 @@ func exists(p string)bool{_,e:=os.Stat(p);return e==nil}
 func temp()float64{b,e:=os.ReadFile("/sys/class/power_supply/battery/temp");if e!=nil{return -1};v,_:=strconv.ParseFloat(strings.TrimSpace(string(b)),64);if v>200{v/=10};return v}
 func mem()int64{b,_:=os.ReadFile("/proc/meminfo");for _,l:=range strings.Split(string(b),"\n"){if strings.HasPrefix(l,"MemAvailable:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);return n/1024}}};return -1}
 func iface(n string)(string,string){i,e:=net.InterfaceByName(n);if e!=nil{return"DOWN",""};a,_:=i.Addrs();ip:="";for _,x:=range a{if y,ok:=x.(*net.IPNet);ok&&y.IP.To4()!=nil{ip=y.IP.String()}};if ip==""{return"DOWN",""};return"UP",ip}
-func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="v0.2.0-control-center"};js(w,map[string]any{"service":"HERMES_WORK","control_center":"v1.0.0","release":cur,"temperature_c":temp(),"mem_available_mb":mem(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","components":map[string]string{"collector":"READY_V1","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_FOUNDATION"}})}
+func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="v0.2.0-control-center"};js(w,map[string]any{"service":"HERMES_WORK","control_center":"v1.1.0","release":cur,"temperature_c":temp(),"mem_available_mb":mem(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","components":map[string]string{"collector":"READY_V1","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_FOUNDATION"}})}
 func (s *S)action(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};var q struct{Action string `json:"action"`};json.NewDecoder(r.Body).Decode(&q);st:=filepath.Join(s.Root,"state");switch q.Action{case"pause":os.WriteFile(filepath.Join(st,"worker_paused"),[]byte(time.Now().Format(time.RFC3339)),0600);case"resume":os.Remove(filepath.Join(st,"worker_paused"));os.Remove(filepath.Join(st,"safe_mode"));case"safe_mode":os.WriteFile(filepath.Join(st,"safe_mode"),[]byte("safe_mode"),0600);os.WriteFile(filepath.Join(st,"worker_paused"),[]byte("safe_mode"),0600);case"backup":os.MkdirAll(filepath.Join(s.Root,"backups"),0700);os.WriteFile(filepath.Join(s.Root,"backups","state-"+time.Now().Format("20060102-150405")+".txt"),[]byte("release="+strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")))+"\n"),0600);case"rollback":p:=strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release")));if p==""{http.Error(w,"no previous release",409);return};os.WriteFile(filepath.Join(s.Root,"current_release"),[]byte(p+"\n"),0600);default:http.Error(w,"unknown action",400);return};js(w,map[string]any{"ok":true,"action":q.Action})}
 func tail(p string,n int)string{b,_:=os.ReadFile(p);a:=strings.Split(string(b),"\n");if len(a)>n{a=a[len(a)-n:]};return strings.Join(a,"\n")}
 func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
@@ -28,6 +28,129 @@ func (s *S)runResearch(w http.ResponseWriter,r *http.Request){if !s.auth(r){http
 func (s *S)schedulerLoop(){for{cfg:=readenv(filepath.Join(s.Rel,"config","work.env"),"RESEARCH_SCHEDULE");if cfg==""{cfg="08:00"};now:=time.Now();day:=now.Format("2006-01-02");last:=strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_auto_research_date")));if now.Format("15:04")==cfg&&last!=day{if ok,_:=guard(s);ok{if _,e:=s.autoResearch();e==nil{os.WriteFile(filepath.Join(s.Root,"state","last_auto_research_date"),[]byte(day),0600)}}};time.Sleep(30*time.Second)}}
 func (s *S)brief(w http.ResponseWriter,r *http.Request){b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));type item struct{Title,Category,URL string;Score float64};var a []item;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)!=nil{continue};it:=item{};it.Title,_=z["title"].(string);it.Category,_=z["category"].(string);it.URL,_=z["url"].(string);it.Score,_=z["score"].(float64);a=append(a,it)};for i:=0;i<len(a);i++{for j:=i+1;j<len(a);j++{if a[j].Score>a[i].Score{a[i],a[j]=a[j],a[i]}}};if len(a)>10{a=a[:10]};js(w,map[string]any{"generated_at":time.Now().Format(time.RFC3339),"target_age":"3-6","ideas":a})}
 func (s *S)schedule(w http.ResponseWriter,r *http.Request){ok,reason:=guard(s);next:=readenv(filepath.Join(s.Rel,"config","work.env"),"RESEARCH_SCHEDULE");js(w,map[string]any{"enabled":true,"schedule":next,"guard_ready":ok,"guard_reason":reason,"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research")))})}
+
+func (s *S)daily(w http.ResponseWriter,r *http.Request){var last any=map[string]any{"state":"NO_RESEARCH_YET"};if b,e:=os.ReadFile(filepath.Join(s.Root,"state","last_research_result.json"));e==nil{json.Unmarshal(b,&last)};b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));cats:=map[string]int{};total:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)==nil{total++;if x,ok:=z["category"].(string);ok{cats[x]++}}};js(w,map[string]any{"generated_at":time.Now().Format(time.RFC3339),"last_run":last,"total_research_items":total,"categories":cats,"brief_endpoint":"/api/work/brief"})}
+func (s *S)channel(w http.ResponseWriter,r *http.Request){p:=filepath.Join(s.Root,"data","channel","metrics.json");b,e:=os.ReadFile(p);if e!=nil{js(w,map[string]any{"state":"NOT_CONNECTED","views":"NOT_AVAILABLE","retention":"NOT_AVAILABLE","ctr":"NOT_AVAILABLE","watch_time":"NOT_AVAILABLE","best_topic":"NOT_AVAILABLE","weak_topic":"NOT_AVAILABLE"});return};var v any;if json.Unmarshal(b,&v)!=nil{js(w,map[string]any{"state":"INVALID_DATA"});return};js(w,map[string]any{"state":"CONNECTED","metrics":v})}
+func (s *S)knowledge(w http.ResponseWriter,r *http.Request){b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));seen:=map[string]bool{};cats:=map[string]int{};total:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)!=nil{continue};total++;if u,_:=z["url"].(string);u!=""{seen[u]=true};if x,_:=z["category"].(string);x!=""{cats[x]++}};js(w,map[string]any{"research_items":total,"unique_keys":len(seen),"categories":cats,"produced":"NOT_CONNECTED","successful":"NOT_CONNECTED","underperforming":"NOT_CONNECTED","ideas_not_produced":"NOT_CONNECTED"})}
+func (s *S)recovery(w http.ResponseWriter,r *http.Request){js(w,map[string]any{"current":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"previous":strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release"))),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"handoff_log":tail(filepath.Join(s.Root,"logs","handoff.log"),20)})}
 func (s *S)index(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");io.WriteString(w,page)}
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);go s.schedulerLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
-const page=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HERMES WORK</title><style>body{margin:0;background:#0d1117;color:#e6edf3;font:14px system-ui}main{max-width:1050px;margin:auto;padding:18px}.card{padding:16px;margin:12px 0;border:1px solid #30363d;background:#161b22;border-radius:14px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}.box{background:#0d1117;border:1px solid #30363d;border-radius:11px;padding:12px}.k{font-size:11px;color:#8b949e}.v{font-size:18px;font-weight:700}.ok{color:#3fb950}.warn{color:#d29922}button,input{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:9px;padding:10px;margin:4px}.primary{background:#238636}pre{white-space:pre-wrap;background:#010409;padding:12px;border-radius:10px}</style></head><body><main><h2>HERMES WORK <span id="online">CONNECTING</span></h2><p>Digital Work Control Center · Redmi 5A</p><div class="card"><div class="grid"><div class="box"><div class="k">MODEM</div><div id="tether" class="v">-</div></div><div class="box"><div class="k">TEMP</div><div id="temp" class="v">-</div></div><div class="box"><div class="k">FREE RAM</div><div id="ram" class="v">-</div></div><div class="box"><div class="k">WORKER</div><div id="worker" class="v">-</div></div><div class="box"><div class="k">RELEASE</div><div id="release" class="v">-</div></div></div></div><div class="card"><h3>Today&apos;s Work</h3><button class="primary" id="research">RUN RESEARCH NOW</button><pre id="researchout">Research ready.</pre></div><div class="card"><h3>Work Pipeline</h3><p>Research → Dedup → Categorize → Trend Score → Content Brief → Production → Feedback</p><div id="components" class="grid"></div></div><div class="card"><h3>Update & Recovery</h3><input id="token" type="password" placeholder="Admin token"><button class="primary" id="update">CHECK / UPDATE NOW</button><button id="backup">BACKUP</button><button id="safe">SAFE MODE</button><button id="resume">RESUME</button><button id="rollback">ROLLBACK</button><button id="diag">DIAGNOSTICS</button><pre id="out">Ready.</pre></div><div class="card"><h3>ChatGPT / HERMES Bridge</h3><p>Bridge foundation ready. Root terminal remains LAN-only.</p></div></main><script>const $=x=>document.getElementById(x);function h(){return {'X-Hermes-Token':$('token').value.trim(),'Content-Type':'application/json'}}async function st(){try{let j=await(await fetch('/api/work/status')).json();$('online').textContent='● ONLINE';$('tether').textContent=j.tether_state+' '+j.tether_ip;$('temp').textContent=j.temperature_c.toFixed(1)+' °C';$('ram').textContent=j.mem_available_mb+' MB';$('worker').textContent=j.safe_mode?'SAFE MODE':(j.worker_paused?'PAUSED':'READY');$('release').textContent=j.release;$('components').innerHTML=Object.entries(j.components).map(([k,v])=>'<div class="box"><div class="k">'+k.toUpperCase()+'</div><div class="v '+(v.includes('NOT')?'warn':'')+'">'+v+'</div></div>').join('')}catch(e){$('online').textContent='● OFFLINE'}}async function act(a){let r=await fetch('/api/work/action',{method:'POST',headers:h(),body:JSON.stringify({action:a})});$('out').textContent=await r.text();st()}$('backup').onclick=()=>act('backup');$('safe').onclick=()=>act('safe_mode');$('resume').onclick=()=>act('resume');$('rollback').onclick=()=>act('rollback');$('diag').onclick=async()=>{$('out').textContent=await(await fetch('/api/work/diagnostics',{headers:h()})).text()};$('research').onclick=async()=>{$('researchout').textContent='Running research...';$('researchout').textContent=await(await fetch('/api/work/run-research',{method:'POST',headers:h()})).text();st()};$('update').onclick=async()=>{$('out').textContent=await(await fetch('/api/work/update',{method:'POST',headers:h()})).text()};st();setInterval(st,5000)</script></body></html>`
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);go s.schedulerLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+const page=`<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HERMES WORK</title>
+<style>
+:root{--bg:#0b0f14;--panel:#141a22;--panel2:#0f151c;--line:#283140;--text:#edf2f7;--muted:#8d99a8;--ok:#4fd17b;--warn:#e4b54d;--bad:#ff6b6b;--accent:#5ea1ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,-apple-system,sans-serif}main{max-width:1180px;margin:auto;padding:18px}h1{font-size:24px;margin:4px 0}.sub{color:var(--muted);margin-bottom:18px}.nav{display:flex;gap:8px;overflow:auto;padding-bottom:8px;position:sticky;top:0;background:rgba(11,15,20,.94);backdrop-filter:blur(8px);z-index:3}.nav a{color:var(--text);text-decoration:none;background:#171e27;border:1px solid var(--line);padding:8px 11px;border-radius:999px;white-space:nowrap}.card{padding:16px;margin:12px 0;border:1px solid var(--line);background:var(--panel);border-radius:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}.box{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px}.k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.v{font-size:18px;font-weight:750;margin-top:4px}.small{font-size:12px;color:var(--muted)}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.accent{color:var(--accent)}button,input{background:#1b2430;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:4px}button{cursor:pointer}.primary{background:#2468d8;border-color:#347ce8}.danger{background:#5a2528}pre{white-space:pre-wrap;background:#080c11;padding:12px;border-radius:10px;max-height:260px;overflow:auto}.pipeline{display:flex;flex-wrap:wrap;gap:7px}.step{padding:7px 9px;border-radius:9px;background:#0d131a;border:1px solid var(--line)}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--line)}@media(max-width:600px){main{padding:12px}.v{font-size:16px}}
+</style></head>
+<body><main>
+<h1>HERMES WORK <span id="online" class="warn">CONNECTING</span></h1>
+<div class="sub">Digital Work Control Center · Redmi 5A · modem-first worker</div>
+<div class="nav">
+<a href="#system">System</a><a href="#today">Today's Work</a><a href="#trends">Search & Trends</a><a href="#planner">Content Planner</a><a href="#channel">My Channel</a><a href="#knowledge">Knowledge</a><a href="#automation">Automation</a><a href="#recovery">Recovery</a>
+</div>
+
+<section id="system" class="card"><h3>System / Overview</h3><div class="grid">
+<div class="box"><div class="k">Modem / Tether</div><div id="tether" class="v">-</div></div>
+<div class="box"><div class="k">Temperature</div><div id="temp" class="v">-</div></div>
+<div class="box"><div class="k">Available RAM</div><div id="ram" class="v">-</div></div>
+<div class="box"><div class="k">Worker</div><div id="worker" class="v">-</div></div>
+<div class="box"><div class="k">Release</div><div id="release" class="v">-</div></div>
+<div class="box"><div class="k">ChatGPT / Bridge</div><div id="bridge" class="v">-</div></div>
+</div><p class="small">Modem priority lock: workload pauses when tether is down, temperature ≥44°C, RAM &lt;220 MB, Safe Mode, or worker pause.</p></section>
+
+<section id="today" class="card"><h3>Today's Work</h3><div class="grid">
+<div class="box"><div class="k">Sources checked</div><div id="sources" class="v">-</div></div>
+<div class="box"><div class="k">Found</div><div id="found" class="v">-</div></div>
+<div class="box"><div class="k">New</div><div id="newitems" class="v">-</div></div>
+<div class="box"><div class="k">Duplicates</div><div id="dups" class="v">-</div></div>
+<div class="box"><div class="k">Last research</div><div id="lastresearch" class="v small">-</div></div>
+</div><button class="primary" id="research">RUN RESEARCH NOW</button><pre id="researchout">Ready.</pre></section>
+
+<section id="trends" class="card"><h3>What People Need / Search</h3><div id="catgrid" class="grid"></div><p class="small">Data is based on collected research. No fake trend counts are displayed.</p></section>
+
+<section class="card"><h3>Work Pipeline</h3><div class="pipeline">
+<span class="step">Research</span><span class="step">Dedup</span><span class="step">Categorize</span><span class="step">Score</span><span class="step">Content Brief</span><span class="step">Production</span><span class="step">Published</span><span class="step">Performance</span>
+</div><div id="components" class="grid" style="margin-top:12px"></div></section>
+
+<section id="planner" class="card"><h3>Content Opportunities / Planner</h3><div class="grid">
+<div class="box"><div class="k">Ideas Ready</div><div id="ideas" class="v">-</div></div>
+<div class="box"><div class="k">Scripts Ready</div><div class="v warn">NOT_CONNECTED</div></div>
+<div class="box"><div class="k">Produced</div><div class="v warn">NOT_CONNECTED</div></div>
+<div class="box"><div class="k">Uploaded</div><div class="v warn">NOT_CONNECTED</div></div>
+</div><div id="brief"></div></section>
+
+<section id="channel" class="card"><h3>My Channel</h3><div class="grid">
+<div class="box"><div class="k">Connection</div><div id="channelstate" class="v">-</div></div>
+<div class="box"><div class="k">Views</div><div id="views" class="v">-</div></div>
+<div class="box"><div class="k">Retention</div><div id="retention" class="v">-</div></div>
+<div class="box"><div class="k">CTR / Engagement</div><div id="ctr" class="v">-</div></div>
+<div class="box"><div class="k">Watch Time</div><div id="watchtime" class="v">-</div></div>
+<div class="box"><div class="k">Best Topic</div><div id="besttopic" class="v">-</div></div>
+</div><p class="small">Channel statistics remain NOT_CONNECTED until real channel performance data is supplied.</p></section>
+
+<section id="knowledge" class="card"><h3>Memory / Knowledge</h3><div class="grid">
+<div class="box"><div class="k">Research Items</div><div id="knowledgeitems" class="v">-</div></div>
+<div class="box"><div class="k">Unique Keys</div><div id="uniques" class="v">-</div></div>
+<div class="box"><div class="k">Successful</div><div id="successful" class="v">-</div></div>
+<div class="box"><div class="k">Underperforming</div><div id="underperf" class="v">-</div></div>
+<div class="box"><div class="k">Ideas Not Produced</div><div id="notproduced" class="v">-</div></div>
+</div></section>
+
+<section id="automation" class="card"><h3>Automation</h3><div class="grid">
+<div class="box"><div class="k">Morning Research</div><div id="sched" class="v">-</div></div>
+<div class="box"><div class="k">Guard</div><div id="guard" class="v">-</div></div>
+<div class="box"><div class="k">Dedup</div><div class="v ok">READY</div></div>
+<div class="box"><div class="k">Categorization</div><div class="v ok">READY</div></div>
+<div class="box"><div class="k">Trend Scoring</div><div class="v ok">READY_V1</div></div>
+<div class="box"><div class="k">Local Reasoning</div><div class="v warn">DEFERRED</div></div>
+</div></section>
+
+<section id="recovery" class="card"><h3>System & Recovery</h3><input id="token" type="password" placeholder="Admin token">
+<button class="primary" id="update">UPDATE NOW</button><button id="backup">BACKUP</button><button class="danger" id="safe">SAFE MODE</button><button id="resume">RESUME</button><button id="rollback">ROLLBACK</button><button id="diag">DIAGNOSTICS</button>
+<div class="grid" style="margin-top:10px"><div class="box"><div class="k">Current</div><div id="currel" class="v">-</div></div><div class="box"><div class="k">Last Good</div><div id="prevrel" class="v">-</div></div></div>
+<pre id="out">Ready.</pre></section>
+
+</main><script>
+const $=x=>document.getElementById(x);
+function h(){return {'X-Hermes-Token':$('token').value.trim(),'Content-Type':'application/json'}}
+function txt(x){return (x===null||x===undefined||x==='')?'-':String(x)}
+async function getj(p,o){let r=await fetch(p,o);if(!r.ok)throw new Error(await r.text());return await r.json()}
+async function status(){
+ try{
+  let j=await getj('/api/work/status');
+  $('online').textContent='● ONLINE';$('online').className='ok';
+  $('tether').textContent=j.tether_state+' '+j.tether_ip;$('tether').className='v '+(j.tether_state==='UP'?'ok':'bad');
+  $('temp').textContent=Number(j.temperature_c).toFixed(1)+' °C';$('ram').textContent=j.mem_available_mb+' MB';
+  $('worker').textContent=j.safe_mode?'SAFE MODE':(j.worker_paused?'PAUSED':'READY');$('release').textContent=j.release;$('bridge').textContent=j.bridge_enabled?'CONNECTED':'OFF';
+  $('components').innerHTML=Object.entries(j.components).map(([k,v])=>'<div class="box"><div class="k">'+k.replaceAll('_',' ')+'</div><div class="v '+(String(v).includes('NOT')||String(v).includes('DEFER')?'warn':'ok')+'">'+v+'</div></div>').join('');
+ }catch(e){$('online').textContent='● OFFLINE';$('online').className='bad'}
+}
+async function researchData(){
+ try{
+  let d=await getj('/api/work/daily');let lr=d.last_run||{};
+  $('sources').textContent=txt(lr.sources_checked);$('found').textContent=txt(lr.found);$('newitems').textContent=txt(lr.added);$('dups').textContent=txt(lr.duplicates);
+  let r=await getj('/api/work/research');$('lastresearch').textContent=txt(r.last_research);
+  let cats=d.categories||{};$('catgrid').innerHTML=Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v])=>'<div class="box"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>').join('')||'<div class="box"><div class="v warn">NO DATA YET</div></div>';
+  let b=await getj('/api/work/brief');let ideas=b.ideas||[];$('ideas').textContent=ideas.length;$('brief').innerHTML=ideas.length?'<table><tr><th>Score</th><th>Category</th><th>Idea</th></tr>'+ideas.map(x=>'<tr><td>'+Math.round(x.Score||x.score||0)+'</td><td>'+txt(x.Category||x.category)+'</td><td>'+txt(x.Title||x.title)+'</td></tr>').join('')+'</table>':'<p class="warn">No ideas yet. Run research.</p>';
+ }catch(e){$('researchout').textContent='Research data error: '+e}
+}
+async function channel(){
+ try{let j=await getj('/api/work/channel');$('channelstate').textContent=j.state;$('views').textContent=txt(j.views||j.metrics?.views);$('retention').textContent=txt(j.retention||j.metrics?.retention);$('ctr').textContent=txt(j.ctr||j.metrics?.ctr);$('watchtime').textContent=txt(j.watch_time||j.metrics?.watch_time);$('besttopic').textContent=txt(j.best_topic||j.metrics?.best_topic)}catch(e){}
+}
+async function knowledge(){
+ try{let j=await getj('/api/work/knowledge');$('knowledgeitems').textContent=j.research_items;$('uniques').textContent=j.unique_keys;$('successful').textContent=txt(j.successful);$('underperf').textContent=txt(j.underperforming);$('notproduced').textContent=txt(j.ideas_not_produced)}catch(e){}
+}
+async function automation(){
+ try{let j=await getj('/api/work/schedule');$('sched').textContent=j.enabled?j.schedule:'OFF';$('guard').textContent=j.guard_ready?'READY':j.guard_reason;$('guard').className='v '+(j.guard_ready?'ok':'warn')}catch(e){}
+}
+async function recovery(){
+ try{let j=await getj('/api/work/recovery');$('currel').textContent=txt(j.current);$('prevrel').textContent=txt(j.previous)}catch(e){}
+}
+async function refresh(){await status();await Promise.all([researchData(),channel(),knowledge(),automation(),recovery()])}
+async function act(a){let r=await fetch('/api/work/action',{method:'POST',headers:h(),body:JSON.stringify({action:a})});$('out').textContent=await r.text();refresh()}
+$('backup').onclick=()=>act('backup');$('safe').onclick=()=>act('safe_mode');$('resume').onclick=()=>act('resume');$('rollback').onclick=()=>act('rollback');
+$('diag').onclick=async()=>{$('out').textContent=await(await fetch('/api/work/diagnostics',{headers:h()})).text()};
+$('research').onclick=async()=>{$('researchout').textContent='Running research...';let r=await fetch('/api/work/run-research',{method:'POST',headers:h()});$('researchout').textContent=await r.text();researchData()};
+$('update').onclick=async()=>{$('out').textContent='Updating...';let r=await fetch('/api/work/update',{method:'POST',headers:h()});$('out').textContent=await r.text()};
+refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),automation(),recovery()]),30000);
+</script></body></html>`
