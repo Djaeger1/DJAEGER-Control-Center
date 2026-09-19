@@ -131,6 +131,12 @@ function normalizeTelemetry(x) {
   out.p99_ms = normalizeNumber('p99_ms', x.p99_ms, 0, 60000);
   out.control_loop_age_s = normalizeNumber('control_loop_age_s', x.control_loop_age_s, 0, 86400);
   out.agent_execution_age_s = normalizeNumber('agent_execution_age_s', x.agent_execution_age_s, 0, 86400);
+  out.gemini_status_age_s = normalizeNumber('gemini_status_age_s', x.gemini_status_age_s, 0, 604800);
+  out.gemini_cooldown_until = normalizeNumber('gemini_cooldown_until', x.gemini_cooldown_until, 0, 4102444800);
+  out.gemini_cooldown_remaining_s = normalizeNumber('gemini_cooldown_remaining_s', x.gemini_cooldown_remaining_s, 0, 86400);
+  out.gemini_vault_count = normalizeNumber('gemini_vault_count', x.gemini_vault_count, 0, 32);
+  out.gemini_ready_slots = normalizeNumber('gemini_ready_slots', x.gemini_ready_slots, 0, 32);
+  out.gemini_cooling_slots = normalizeNumber('gemini_cooling_slots', x.gemini_cooling_slots, 0, 32);
 
   return out;
 }
@@ -143,7 +149,7 @@ function sanitizeTelemetry(x) {
     'skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c',
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
-    'hermes_cloud_state','hermes_cloud_http','gemini_status',
+    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots',
     'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s',
     'remote_repair_state','remote_repair_seq','remote_repair_release','remote_repair_detail','source'
   ];
@@ -181,6 +187,15 @@ function safeTelemetrySummary(t) {
     hermes_cloud_state: t.hermes_cloud_state || null,
     hermes_cloud_http: t.hermes_cloud_http ?? null,
     gemini_status: t.gemini_status || null,
+    gemini_last_event_status: t.gemini_last_event_status || null,
+    gemini_status_age_s: t.gemini_status_age_s ?? null,
+    gemini_status_fresh: t.gemini_status_fresh || null,
+    gemini_http_code: t.gemini_http_code || null,
+    gemini_cooldown_until: t.gemini_cooldown_until ?? null,
+    gemini_cooldown_remaining_s: t.gemini_cooldown_remaining_s ?? null,
+    gemini_vault_count: t.gemini_vault_count ?? null,
+    gemini_ready_slots: t.gemini_ready_slots ?? null,
+    gemini_cooling_slots: t.gemini_cooling_slots ?? null,
     control_loop_age_s: t.control_loop_age_s ?? null,
     agent_execution_status: t.agent_execution_status || null,
     agent_execution_source: t.agent_execution_source || null,
