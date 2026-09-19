@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           SRC=hermes-work-terminal/app/src/main/java/com/hermes/workdashboard/MainActivity.java
-          grep -Fq 'String\[\] labels = {"WORK", "RESEARCH", "PLANNER", "INSIGHTS", "SYSTEM", "UPDATE"};' "$SRC"
+          grep -Fq 'String[] labels = {"WORK", "RESEARCH", "PLANNER", "INSIGHTS", "SYSTEM", "UPDATE"};' "$SRC"
           grep -Fq 'case 0: buildWork(body);' "$SRC"
           grep -Fq 'case 1: buildResearch(body);' "$SRC"
           grep -Fq 'case 2: buildPlanner(body);' "$SRC"
