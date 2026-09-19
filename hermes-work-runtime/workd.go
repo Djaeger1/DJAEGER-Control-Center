@@ -475,47 +475,12 @@ func productionTexts(sp ScriptPackage)(string,string,string,string){
  var narration,visuals strings.Builder
  elapsed:=0;var srt strings.Builder
  for i,sc:=range sp.Scenes{
-  narration.WriteString(fmt.Sprintf("SCENE %d | %ds | %s
-%s
-
-",sc.Number,sc.DurationSec,sc.Purpose,sc.VoiceOver))
-  visuals.WriteString(fmt.Sprintf("SCENE %d | %s
-%s
-ON-SCREEN TEXT: %s
-EDIT: %s
-
-",sc.Number,sc.Purpose,sc.VisualPrompt,sc.OnScreenText,sc.EditNote))
+  narration.WriteString(fmt.Sprintf("SCENE %d | %ds | %s\n%s\n\n",sc.Number,sc.DurationSec,sc.Purpose,sc.VoiceOver))
+  visuals.WriteString(fmt.Sprintf("SCENE %d | %s\n%s\nON-SCREEN TEXT: %s\nEDIT: %s\n\n",sc.Number,sc.Purpose,sc.VisualPrompt,sc.OnScreenText,sc.EditNote))
   start:=elapsed;elapsed+=sc.DurationSec
-  srt.WriteString(fmt.Sprintf("%d
-%s --> %s
-%s
-
-",i+1,srtTime(start),srtTime(elapsed),sc.VoiceOver))
+  srt.WriteString(fmt.Sprintf("%d\n%s --> %s\n%s\n\n",i+1,srtTime(start),srtTime(elapsed),sc.VoiceOver))
  }
- metadata:=fmt.Sprintf("TITLE
-%s
-
-DESCRIPTION
-%s
-
-LANGUAGE
-%s
-
-TARGET AGE
-%s
-
-DURATION
-%d seconds
-
-KEYWORDS
-%s
-
-HASHTAGS
-%s
-
-CHARACTER CONSISTENCY
-%s
-",sp.VideoTitle,sp.Description,sp.Language,sp.TargetAge,sp.DurationSec,strings.Join(sp.Keywords,", "),strings.Join(sp.Hashtags," "),sp.CharacterRule)
+ metadata:=fmt.Sprintf("TITLE\n%s\n\nDESCRIPTION\n%s\n\nLANGUAGE\n%s\n\nTARGET AGE\n%s\n\nDURATION\n%d seconds\n\nKEYWORDS\n%s\n\nHASHTAGS\n%s\n\nCHARACTER CONSISTENCY\n%s\n",sp.VideoTitle,sp.Description,sp.Language,sp.TargetAge,sp.DurationSec,strings.Join(sp.Keywords,", "),strings.Join(sp.Hashtags," "),sp.CharacterRule)
  return narration.String(),visuals.String(),srt.String(),metadata
 }
 func writeSimple(path,body string)error{if e:=os.MkdirAll(filepath.Dir(path),0700);e!=nil{return e};tmp:=path+".tmp";if e:=os.WriteFile(tmp,[]byte(body),0600);e!=nil{return e};return os.Rename(tmp,path)}
