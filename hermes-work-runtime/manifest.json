@@ -1,1 +1,1 @@
-{"version":"v1.1.0-dashboard","description":"HERMES WORK complete dashboard with real system overview, research, trends, planner, channel status, knowledge, automation, recovery, modem guard and native update","restart":false}
+{"version":"v1.1.1-tlsfix","description":"HERMES WORK dashboard runtime with Android CA trust fix for HTTPS updater and research","restart":false}
