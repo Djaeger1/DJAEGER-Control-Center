@@ -1,1 +1,1 @@
-{"version":"v2.2.2-updaterfix","description":"HERMES WORK definitive updater reconciliation: verified handoff owns promotion, removes legacy duplicate updater daemons, starts exactly one updater from the active release, and writes healthy updater state atomically","restart":false}
+{"version":"v2.3.0-productiondesk","description":"HERMES WORK Production Desk V1: mobile-friendly LAN production queue, production pack download, handoff controls, publication recording, real performance entry and zero HERMES Neurons","restart":false}
