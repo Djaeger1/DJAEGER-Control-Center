@@ -26,23 +26,21 @@ EOF
 }
 echo "===== HERMES WORK BRIDGE $(stamp) ====="
 
+TOKEN_FILE="$STATE/bridge_key"
 TOKEN=""
-for F in   /data/adb/djaeger_ai/hermes_cloud.conf   /data/adb/djaeger_ai/HERMES_CLOUD_CREDENTIALS.txt   /data/user/0/com.termoneplus/app_HOME/hermes-cloud-deploy/hermes-cloud-djaeger/HERMES_CLOUD_CREDENTIALS.txt   /data/media/0/Download/HERMES_CLOUD_CREDENTIALS.txt   /sdcard/Download/HERMES_CLOUD_CREDENTIALS.txt
-do
-  [ -r "$F" ] || continue
-  unset HERMES_SHARED_TOKEN HERMES_ACCESS_KEY ACCESS_KEY
-  . "$F" 2>/dev/null || true
-  for V in "${HERMES_SHARED_TOKEN:-}" "${HERMES_ACCESS_KEY:-}" "${ACCESS_KEY:-}"; do
-    [ -n "$V" ] || continue
-    TOKEN="$(printf '%s' "$V" | tr -d '\r\n ')"
-    [ -n "$TOKEN" ] && break 2
-  done
-done
-if [ -z "$TOKEN" ]; then
-  echo "NO_EXISTING_HERMES_CREDENTIAL"
-  publish "WAITING_CREDENTIAL" "EXISTING_HERMES_CREDENTIAL_NOT_FOUND"
-  exit 2
+if [ -s "$TOKEN_FILE" ]; then
+  TOKEN="$(tr -d '\r\n ' < "$TOKEN_FILE" 2>/dev/null)"
 fi
+if ! printf '%s' "$TOKEN" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
+  TOKEN="$(dd if=/dev/urandom bs=32 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+  printf '%s\n' "$TOKEN" > "$TOKEN_FILE" || exit 2
+  chmod 600 "$TOKEN_FILE" 2>/dev/null || true
+fi
+printf '%s' "$TOKEN" | grep -Eq '^[0-9A-Fa-f]{64}$' || {
+  publish "BRIDGE_KEY_FAILED" "LOCAL_BRIDGE_KEY_GENERATION_FAILED"
+  exit 2
+}
+echo "LOCAL_BRIDGE_KEY=READY (hidden)"
 
 cat >"$SRC" <<'__HERMES_WORK_BRIDGE_JS__'
 const VERSION = "1.0.0";
@@ -162,7 +160,13 @@ __HERMES_WORK_BRIDGE_JS__
 DEPLOYED=0
 USED_ACCOUNT=""
 USED_CF_TOKEN=""
-for F in /data/adb/djaeger_ai/cloudflare.conf /data/adb/djaeger_ai/cloudflare_2.conf /data/adb/djaeger_ai/cloudflare_3.conf; do
+CF_LIST="$TMP/cloudflare_files"
+{
+  printf '%s\n' /data/adb/djaeger_ai/cloudflare.conf /data/adb/djaeger_ai/cloudflare_2.conf /data/adb/djaeger_ai/cloudflare_3.conf
+  find /data/adb/djaeger_ai /data/user/0/com.termoneplus/app_HOME /data/media/0/Download /sdcard/Download \
+    -maxdepth 7 -type f \( -name 'cloudflare.conf' -o -name 'cloudflare_2.conf' -o -name 'cloudflare_3.conf' \) 2>/dev/null || true
+} | awk '!seen[$0]++' > "$CF_LIST"
+while IFS= read -r F; do
   [ -r "$F" ] || continue
   unset CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN
   . "$F" 2>/dev/null || continue
@@ -177,11 +181,11 @@ for F in /data/adb/djaeger_ai/cloudflare.conf /data/adb/djaeger_ai/cloudflare_2.
     USED_CF_TOKEN="$CLOUDFLARE_API_TOKEN"
     break
   fi
-done
+done < "$CF_LIST"
 
 if [ "$DEPLOYED" != 1 ]; then
   echo "WORKER_DEPLOY_FAILED"
-  publish "DEPLOY_FAILED" "CLOUDFLARE_SCRIPT_DEPLOY_FAILED"
+  publish "WAITING_DEPLOY_CREDENTIAL" "NO_USABLE_CLOUDFLARE_DEPLOY_CREDENTIAL_FOUND"
   exit 3
 fi
 
