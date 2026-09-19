@@ -33,6 +33,12 @@ jobs:
           cat > channel.json <<EOF
           {"channel":"stable","version":"v0.6.0-workflow-core","bundle":"HERMES_WORK_RUNTIME_v0.6.0_WORKFLOW_CORE.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v0.6.0_WORKFLOW_CORE.zip.sha256)"}
           EOF
+      - name: Upload installable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HERMES_WORK_INSTALLER_v0.6.0
+          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v0.6.0_WORKFLOW_CORE.zip
+          retention-days: 30
       - name: Publish channel files
         run: |
           git config user.name "github-actions[bot]"
