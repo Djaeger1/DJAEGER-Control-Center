@@ -8,7 +8,7 @@ func (s *S)bridgeCred()(string,string){ep:=readenv(filepath.Join(s.Rel,"config",
 func (s *S)researchTotal()int{b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));n:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if strings.TrimSpace(l)!=""{n++}};return n}
 func (s *S)bridgeInfo()map[string]any{v:=map[string]any{"state":"STARTING","mode":"DATA_ONLY","ai_used":false,"neurons_used":0};b,e:=os.ReadFile(filepath.Join(s.Root,"state","bridge.json"));if e==nil{_ = json.Unmarshal(b,&v)};return v}
 func (s *S)writeBridge(st,reason string,httpCode int){ep,_:=s.bridgeCred();v:=map[string]any{"state":st,"reason":reason,"endpoint":ep,"mode":"DATA_ONLY","ai_used":false,"neurons_used":0,"http_code":httpCode,"updated_at":time.Now().Format(time.RFC3339)};if st=="CONNECTED"{v["last_sync"]=time.Now().Format(time.RFC3339)};b,_:=json.Marshal(v);os.MkdirAll(filepath.Join(s.Root,"state"),0700);tmp:=filepath.Join(s.Root,"state","bridge.json.tmp");_ = os.WriteFile(tmp,b,0600);_ = os.Rename(tmp,filepath.Join(s.Root,"state","bridge.json"))}
-func (s *S)bridgeSnapshot()map[string]any{ts,_:=iface("rndis0");worker:="READY";if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"};au:=s.autoUpdateInfo();db:=s.dailyBriefInfo();sp:=s.scriptPrepInfo();pl:=s.plannerInfo();return map[string]any{"sent_at":time.Now().Format(time.RFC3339),"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","daily_brief_state":db["state"],"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1","planner_state":pl["state"],"planner_queue":pl["queue_total"],"next_for_script":pl["next_for_script"],"planner_engine":"PLANNER_V1","script_prep_state":sp["state"],"script_prep_ready":sp["ready"],"script_topic":sp["current_topic"],"script_prep_engine":"SCRIPT_PREP_V1","auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v2","ai_used":false,"neurons_used":0}}
+func (s *S)bridgeSnapshot()map[string]any{ts,_:=iface("rndis0");worker:="READY";if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"};au:=s.autoUpdateInfo();db:=s.dailyBriefInfo();sp:=s.scriptPrepInfo();fs:=s.scriptInfo();pl:=s.plannerInfo();return map[string]any{"sent_at":time.Now().Format(time.RFC3339),"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","daily_brief_state":db["state"],"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1","planner_state":pl["state"],"planner_queue":pl["queue_total"],"next_for_script":pl["next_for_script"],"planner_engine":"PLANNER_V1","script_prep_state":sp["state"],"script_prep_ready":sp["ready"],"script_topic":sp["current_topic"],"script_prep_engine":"SCRIPT_PREP_V1","script_state":fs["state"],"scripts_ready":fs["ready"],"final_script_topic":fs["current_topic"],"script_engine":"SCRIPT_ENGINE_V1","auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v2","ai_used":false,"neurons_used":0}}
 func (s *S)ntfyTopic(key string)string{h:=sha256.Sum256([]byte("HERMES_WORK_NTFY:"+key));return "hermes-work-"+hex.EncodeToString(h[:24])}
 func (s *S)pushNtfy(key string)(int,string,error){topic:=s.ntfyTopic(key);snap,_:=json.Marshal(s.bridgeSnapshot());u:="https://ntfy.sh/"+topic;req,e:=http.NewRequest("POST",u,strings.NewReader(string(snap)));if e!=nil{return 0,"",e};req.Header.Set("Content-Type","text/plain; charset=utf-8");req.Header.Set("Title","HERMES WORK status");req.Header.Set("Tags","computer");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,"",e};io.Copy(io.Discard,io.LimitReader(resp.Body,4096));resp.Body.Close();readURL:="https://ntfy.sh/"+topic+"/json?poll=1&since=10m";if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,readURL,nil};return resp.StatusCode,readURL,fmt.Errorf("ntfy http %d",resp.StatusCode)}
 func (s *S)pushCloud(ep,key string)(int,error){b,_:=json.Marshal(s.bridgeSnapshot());req,e:=http.NewRequest("POST",ep+"/v1/bridge/push",strings.NewReader(string(b)));if e!=nil{return 0,e};req.Header.Set("Authorization","Bearer "+key);req.Header.Set("Content-Type","application/json");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,e};body,_:=io.ReadAll(io.LimitReader(resp.Body,4096));resp.Body.Close();if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,nil};return resp.StatusCode,fmt.Errorf("cloud http %d %s",resp.StatusCode,strings.TrimSpace(string(body)))}
@@ -23,7 +23,7 @@ func exists(p string)bool{_,e:=os.Stat(p);return e==nil}
 func temp()float64{b,e:=os.ReadFile("/sys/class/power_supply/battery/temp");if e!=nil{return -1};v,_:=strconv.ParseFloat(strings.TrimSpace(string(b)),64);if v>200{v/=10};return v}
 func mem()int64{b,_:=os.ReadFile("/proc/meminfo");for _,l:=range strings.Split(string(b),"\n"){if strings.HasPrefix(l,"MemAvailable:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);return n/1024}}};return -1}
 func iface(n string)(string,string){i,e:=net.InterfaceByName(n);if e!=nil{return"DOWN",""};a,_:=i.Addrs();ip:="";for _,x:=range a{if y,ok:=x.(*net.IPNet);ok&&y.IP.To4()!=nil{ip=y.IP.String()}};if ip==""{return"DOWN",""};return"UP",ip}
-func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="v0.2.0-control-center"};bi:=s.bridgeInfo();bst,_:=bi["state"].(string);if bst==""{bst="STARTING"};au:=s.autoUpdateInfo();aus,_:=au["state"].(string);if aus==""{aus="STARTING"};js(w,map[string]any{"service":"HERMES_WORK","control_center":"v1.7.0","release":cur,"auto_update_state":aus,"auto_update":au,"temperature_c":temp(),"mem_available_mb":mem(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","bridge_state":bst,"bridge_last_sync":bi["last_sync"],"bridge_mode":"DATA_ONLY","bridge_ai_used":false,"bridge_neurons_used":0,"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","components":map[string]string{"collector":"READY_V2","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V2","opportunity_engine":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V3","script_prep":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_V2","bridge":bst,"auto_updater":aus}})}
+func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="v0.2.0-control-center"};bi:=s.bridgeInfo();bst,_:=bi["state"].(string);if bst==""{bst="STARTING"};au:=s.autoUpdateInfo();aus,_:=au["state"].(string);if aus==""{aus="STARTING"};js(w,map[string]any{"service":"HERMES_WORK","control_center":"v1.8.0","release":cur,"auto_update_state":aus,"auto_update":au,"temperature_c":temp(),"mem_available_mb":mem(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","bridge_state":bst,"bridge_last_sync":bi["last_sync"],"bridge_mode":"DATA_ONLY","bridge_ai_used":false,"bridge_neurons_used":0,"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","components":map[string]string{"collector":"READY_V2","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V2","opportunity_engine":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V3","script_prep":"READY_V1","script_engine":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_V2","bridge":bst,"auto_updater":aus}})}
 func (s *S)action(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};var q struct{Action string `json:"action"`};json.NewDecoder(r.Body).Decode(&q);st:=filepath.Join(s.Root,"state");switch q.Action{case"pause":os.WriteFile(filepath.Join(st,"worker_paused"),[]byte(time.Now().Format(time.RFC3339)),0600);case"resume":os.Remove(filepath.Join(st,"worker_paused"));os.Remove(filepath.Join(st,"safe_mode"));case"safe_mode":os.WriteFile(filepath.Join(st,"safe_mode"),[]byte("safe_mode"),0600);os.WriteFile(filepath.Join(st,"worker_paused"),[]byte("safe_mode"),0600);case"backup":os.MkdirAll(filepath.Join(s.Root,"backups"),0700);os.WriteFile(filepath.Join(s.Root,"backups","state-"+time.Now().Format("20060102-150405")+".txt"),[]byte("release="+strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")))+"\n"),0600);case"rollback":p:=strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release")));if p==""{http.Error(w,"no previous release",409);return};os.WriteFile(filepath.Join(s.Root,"current_release"),[]byte(p+"\n"),0600);default:http.Error(w,"unknown action",400);return};js(w,map[string]any{"ok":true,"action":q.Action})}
 func tail(p string,n int)string{b,_:=os.ReadFile(p);a:=strings.Split(string(b),"\n");if len(a)>n{a=a[len(a)-n:]};return strings.Join(a,"\n")}
 func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
@@ -165,7 +165,7 @@ func (s *S)writeDailyBrief()map[string]any{
  top:="";if len(ideas)>0{top=ideas[0].Title}
  v:=map[string]any{"state":"READY","engine":"OPPORTUNITY_V1","generated_at":time.Now().Format(time.RFC3339),"target_age":"3-6","research_total":s.researchTotal(),"ideas_ready":len(ideas),"high_demand":high,"categories":cats,"top_opportunity":top,"ideas":ideas,"ai_used":false,"neurons_used":0}
  b,_:=json.MarshalIndent(v,"","  ");os.MkdirAll(filepath.Join(s.Root,"data","planner"),0700);_ = os.WriteFile(filepath.Join(s.Root,"data","planner","daily_brief.json"),b,0600);_ = os.WriteFile(filepath.Join(s.Root,"state","last_daily_brief"),[]byte(time.Now().Format(time.RFC3339)),0600)
- go func(){s.syncPlanner();s.ensureScriptPreps()}()
+ go func(){s.syncPlanner();s.ensureScriptPreps();s.ensureScripts()}()
  return v
 }
 func (s *S)dailyBriefInfo()map[string]any{
@@ -314,6 +314,136 @@ func (s *S)scriptPrepInfo()map[string]any{
 }
 func (s *S)scriptPrep(w http.ResponseWriter,r *http.Request){js(w,s.scriptPrepInfo())}
 
+
+type FinalScene struct{
+ Number int `json:"number"`
+ DurationSec int `json:"duration_sec"`
+ Purpose string `json:"purpose"`
+ VoiceOver string `json:"voice_over"`
+ VisualPrompt string `json:"visual_prompt"`
+ OnScreenText string `json:"on_screen_text"`
+ EditNote string `json:"edit_note"`
+}
+type ScriptPackage struct{
+ State string `json:"state"`
+ Engine string `json:"engine"`
+ PlannerID string `json:"planner_id"`
+ Topic string `json:"topic"`
+ Category string `json:"category"`
+ Language string `json:"language"`
+ TargetAge string `json:"target_age"`
+ DurationSec int `json:"duration_sec"`
+ VideoTitle string `json:"video_title"`
+ Description string `json:"description"`
+ Hook string `json:"hook"`
+ LearningObjective string `json:"learning_objective"`
+ SceneCount int `json:"scene_count"`
+ Scenes []FinalScene `json:"scenes"`
+ ClosingLine string `json:"closing_line"`
+ Keywords []string `json:"keywords"`
+ Hashtags []string `json:"hashtags"`
+ CharacterRule string `json:"character_rule"`
+ GeneratedAt string `json:"generated_at"`
+ AIUsed bool `json:"ai_used"`
+ NeuronsUsed int `json:"neurons_used"`
+}
+func scriptLang(topic string)string{
+ x:=strings.ToLower(topic)
+ id:=[]string{"belajar","anak","angka","warna","hewan","bentuk","kebiasaan","bahasa","cerita","alfabet","fonik","nama "}
+ for _,w:=range id{if strings.Contains(x,w){return"id"}}
+ return"en"
+}
+func cleanTopic(t string)string{
+ t=strings.TrimSpace(t);if t==""{return"topik belajar"}
+ return t
+}
+func voLines(lang,cat,topic string)[]string{
+ topic=cleanTopic(topic)
+ if lang=="id"{
+  switch cat{
+  case"numbers":return []string{"Ayo, kita hitung bersama!","Hari ini kita belajar angka dengan cara yang mudah.","Lihat benda-benda ini. Kita hitung pelan-pelan bersama.","Sekarang coba sekali lagi. Perhatikan jumlah bendanya.","Giliran kamu! Hitung dulu... sudah? Hebat!","Bagus sekali! Kita sudah belajar angka bersama."}
+  case"colors":return []string{"Wah, warna apa ini?","Hari ini kita belajar mengenal warna.","Lihat benda ini. Sebutkan warnanya bersama-sama.","Sekarang lihat contoh berikutnya. Warnanya sama atau berbeda?","Giliran kamu! Pilih warna yang benar... bagus!","Hebat! Sekarang kita sudah mengenal warna lebih baik."}
+  case"alphabet":return []string{"Huruf apa ini? Ayo tebak!","Hari ini kita belajar huruf dan bunyinya.","Lihat huruf ini. Ucapkan perlahan bersama-sama.","Sekarang kita lihat contoh kata yang memakai huruf ini.","Giliran kamu! Sebutkan hurufnya... bagus sekali!","Hebat! Kita sudah belajar huruf hari ini."}
+  case"animals":return []string{"Suara hewan apa itu?","Hari ini kita belajar mengenal hewan.","Lihat hewan ini. Ini namanya apa? Ayo ucapkan bersama.","Sekarang lihat hewan berikutnya dan perhatikan bentuknya.","Giliran kamu! Hewan mana yang benar?","Hebat! Kita sudah mengenal beberapa hewan."}
+  case"shapes":return []string{"Bentuk apa yang kamu lihat?","Hari ini kita belajar mengenal bentuk.","Lihat bentuk ini. Perhatikan sisi dan tampilannya.","Sekarang kita cari bentuk yang sama pada benda lain.","Giliran kamu! Pilih bentuk yang cocok.","Bagus sekali! Kita sudah belajar bentuk bersama."}
+  case"habits":return []string{"Apa yang sebaiknya kita lakukan?","Hari ini kita belajar satu kebiasaan baik.","Lihat contoh pertama. Kita lakukan dengan pelan dan benar.","Sekarang lihat apa yang terjadi setelah kebiasaan baik dilakukan.","Giliran kamu! Mana pilihan yang baik?","Hebat! Yuk, kita ingat kebiasaan baik ini setiap hari."}
+  case"english":return []string{"Tahukah kamu nama benda ini dalam bahasa Inggris?","Hari ini kita belajar kata bahasa Inggris yang mudah.","Dengarkan katanya, lalu ucapkan bersama-sama.","Sekarang kita ulangi dengan contoh lain.","Giliran kamu! Coba ucapkan katanya.","Great job! Hebat, kita sudah belajar kata baru."}
+  case"stories":return []string{"Ada cerita kecil untuk kamu hari ini.","Yuk, kita ikuti cerita singkat ini bersama.","Tokoh kita menemukan sebuah masalah kecil.","Ia mencoba cara yang baik untuk menyelesaikannya.","Menurut kamu, apa yang sebaiknya dilakukan?","Bagus sekali! Kita belajar satu hal baik dari cerita ini."}
+  default:return []string{"Ayo belajar bersama!","Hari ini kita belajar tentang "+topic+".","Lihat contoh pertama dan perhatikan baik-baik.","Sekarang kita coba contoh berikutnya bersama.","Giliran kamu! Coba jawab dulu... bagus!","Hebat! Kita sudah belajar tentang "+topic+"."}
+  }
+ }
+ switch cat{
+ case"numbers":return []string{"Can you count with me?","Today we are learning numbers in a simple way.","Look at these objects. Let's count them slowly together.","Now let's try one more example. Watch the number of objects.","Your turn! Count first... ready? Great job!","Wonderful! We practiced numbers together."}
+ case"colors":return []string{"What color is this?","Today we are learning colors.","Look at this object and say the color with me.","Now look at the next example. Is the color the same or different?","Your turn! Choose the correct color... great!","Wonderful! We learned more about colors today."}
+ case"alphabet":return []string{"What letter is this?","Today we are learning a letter and its sound.","Look at the letter and say it slowly with me.","Now let's see a simple word that uses this letter.","Your turn! Say the letter... great job!","Wonderful! We practiced a letter today."}
+ case"animals":return []string{"What animal makes that sound?","Today we are learning animal names.","Look at this animal. Say its name with me.","Now look at the next animal and notice what it looks like.","Your turn! Which animal is correct?","Wonderful! We learned some animal names."}
+ case"shapes":return []string{"What shape can you see?","Today we are learning shapes.","Look closely at this shape.","Now let's find the same shape in another object.","Your turn! Pick the matching shape.","Great job! We practiced shapes together."}
+ case"habits":return []string{"What is the good choice here?","Today we are learning one good habit.","Watch the first example and see the good choice.","Now notice what happens after the good habit is used.","Your turn! Which choice is better?","Great job! Let's remember this good habit."}
+ case"english":return []string{"Do you know this word?","Today we are learning an easy English word.","Listen to the word, then say it with me.","Now let's repeat it with another example.","Your turn! Say the word out loud.","Great job! You learned a new word."}
+ case"stories":return []string{"I have a tiny story for you.","Let's follow this short story together.","Our character finds a small problem.","They try a kind and simple way to solve it.","What do you think they should do?","Great job! We learned something helpful from the story."}
+ default:return []string{"Let's learn together!","Today we are learning about "+topic+".","Look at the first example and watch carefully.","Now let's try another example together.","Your turn! Think first... great job!","Wonderful! We learned about "+topic+"."}
+ }
+}
+func videoTitleFor(lang,topic string)string{
+ t:=cleanTopic(topic)
+ if lang=="id"{return strings.Title(t)+" | Belajar Seru untuk Anak"}
+ return strings.Title(t)+" | Fun Learning for Kids"
+}
+func descriptionFor(lang,topic string)string{
+ if lang=="id"{return"Video belajar singkat untuk anak usia 3–6 tahun tentang "+cleanTopic(topic)+". Materi dibuat sederhana, visual, dan mudah diikuti."}
+ return"A short learning video for ages 3–6 about "+cleanTopic(topic)+". Simple language, clear visuals, and easy repetition."
+}
+func hashtagsFor(cat string)[]string{
+ base:=[]string{"#KidsLearning","#Preschool","#EarlyLearning"}
+ switch cat{
+ case"numbers":return append(base,"#NumbersForKids")
+ case"colors":return append(base,"#ColorsForKids")
+ case"alphabet":return append(base,"#AlphabetForKids")
+ case"animals":return append(base,"#AnimalsForKids")
+ case"shapes":return append(base,"#ShapesForKids")
+ case"habits":return append(base,"#GoodHabits")
+ case"english":return append(base,"#EnglishForKids")
+ case"stories":return append(base,"#KidsStories")
+ }
+ return base
+}
+func (s *S)scriptDir()string{return filepath.Join(s.Root,"data","scripts","final")}
+func (s *S)writeFinalScript(p ScriptPrep)(ScriptPackage,error){
+ lang:=scriptLang(p.Topic);lines:=voLines(lang,p.Category,p.Topic);sc:=[]FinalScene{}
+ for i,g:=range p.Scenes{
+  vo:="";if i<len(lines){vo=lines[i]}else{vo=g.NarrationGuide}
+  visual:="Create a clean 2D preschool cartoon scene, bright but soft colors, large simple shapes, minimal background clutter. "+g.VisualGuide+" Keep the same recurring character design, clothes, proportions, and facial style across all scenes. No logos, no text except requested on-screen text."
+  edit:="Use gentle cuts, readable pacing, no flashing, and leave a short response pause when the scene asks a question."
+  sc=append(sc,FinalScene{Number:g.Number,DurationSec:g.DurationSec,Purpose:g.Purpose,VoiceOver:vo,VisualPrompt:visual,OnScreenText:g.OnScreenText,EditNote:edit})
+ }
+ close:="Great job! See you in the next lesson!";if lang=="id"{close="Hebat! Sampai jumpa di pelajaran berikutnya!"}
+ out:=ScriptPackage{State:"SCRIPT_READY",Engine:"SCRIPT_ENGINE_V1",PlannerID:p.PlannerID,Topic:p.Topic,Category:p.Category,Language:lang,TargetAge:p.TargetAge,DurationSec:p.DurationSec,VideoTitle:videoTitleFor(lang,p.Topic),Description:descriptionFor(lang,p.Topic),Hook:lines[0],LearningObjective:p.LearningObjective,SceneCount:len(sc),Scenes:sc,ClosingLine:close,Keywords:p.Keywords,Hashtags:hashtagsFor(p.Category),CharacterRule:"Use one original recurring preschool-friendly character identity consistently across every scene; no imitation of copyrighted characters.",GeneratedAt:time.Now().Format(time.RFC3339),AIUsed:false,NeuronsUsed:0}
+ os.MkdirAll(s.scriptDir(),0700);b,_:=json.MarshalIndent(out,"","  ");path:=filepath.Join(s.scriptDir(),p.PlannerID+".json");tmp:=path+".tmp"
+ if e:=os.WriteFile(tmp,b,0600);e!=nil{return out,e};if e:=os.Rename(tmp,path);e!=nil{return out,e}
+ return out,nil
+}
+func (s *S)ensureScripts()[]ScriptPackage{
+ preps:=s.ensureScriptPreps();plans:=s.syncPlanner();idx:=map[string]int{};for i:=range plans{idx[plans[i].ID]=i}
+ out:=[]ScriptPackage{};changed:=false
+ for _,p:=range preps{
+  i,ok:=idx[p.PlannerID];if !ok{continue};if plans[i].Stage!="SCRIPT_PREP_READY"&&plans[i].Stage!="SCRIPT_READY"{continue}
+  path:=filepath.Join(s.scriptDir(),p.PlannerID+".json");var sp ScriptPackage
+  if b,e:=os.ReadFile(path);e==nil&&json.Unmarshal(b,&sp)==nil&&sp.PlannerID==p.PlannerID{
+   out=append(out,sp);if plans[i].Stage=="SCRIPT_PREP_READY"{plans[i].Stage="SCRIPT_READY";plans[i].UpdatedAt=time.Now().Format(time.RFC3339);changed=true};continue
+  }
+  if plans[i].Stage=="SCRIPT_PREP_READY"{
+   if ns,e:=s.writeFinalScript(p);e==nil{out=append(out,ns);plans[i].Stage="SCRIPT_READY";plans[i].UpdatedAt=time.Now().Format(time.RFC3339);changed=true}
+  }
+ }
+ if changed{_ = s.savePlan(plans)}
+ return out
+}
+func (s *S)scriptInfo()map[string]any{
+ a:=s.ensureScripts();topic:="";pid:="";if len(a)>0{topic=a[0].Topic;pid=a[0].PlannerID}
+ return map[string]any{"state":"READY","engine":"SCRIPT_ENGINE_V1","ready":len(a),"current_topic":topic,"current_planner_id":pid,"packages":a,"ai_used":false,"neurons_used":0}
+}
+func (s *S)scripts(w http.ResponseWriter,r *http.Request){js(w,s.scriptInfo())}
+
 func (s *S)planner(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.plannerInfo());return}
  if !s.auth(r){http.Error(w,"unauthorized",401);return}
@@ -341,7 +471,7 @@ func (s *S)channel(w http.ResponseWriter,r *http.Request){p:=filepath.Join(s.Roo
 func (s *S)knowledge(w http.ResponseWriter,r *http.Request){b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));seen:=map[string]bool{};cats:=map[string]int{};total:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)!=nil{continue};total++;if u,_:=z["url"].(string);u!=""{seen[u]=true};if x,_:=z["category"].(string);x!=""{cats[x]++}};js(w,map[string]any{"research_items":total,"unique_keys":len(seen),"categories":cats,"produced":"NOT_CONNECTED","successful":"NOT_CONNECTED","underperforming":"NOT_CONNECTED","ideas_not_produced":"NOT_CONNECTED"})}
 func (s *S)recovery(w http.ResponseWriter,r *http.Request){js(w,map[string]any{"current":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"previous":strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release"))),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"handoff_log":tail(filepath.Join(s.Root,"logs","handoff.log"),20)})}
 func (s *S)index(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");io.WriteString(w,page)}
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);go s.schedulerLoop();go s.bridgeLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);go s.schedulerLoop();go s.bridgeLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
@@ -384,7 +514,7 @@ const page=`<!doctype html>
 <div class="box"><div class="k">Script Prep Ready</div><div id="scriptprepready" class="v">-</div></div><div class="box"><div class="k">Scripts Ready</div><div id="scriptsready" class="v">-</div></div>
 <div class="box"><div class="k">Production</div><div id="production" class="v">-</div></div>
 <div class="box"><div class="k">Published</div><div id="published" class="v">-</div></div>
-<div class="box"><div class="k">Next For Script</div><div id="nextscript" class="v small">-</div></div>
+<div class="box"><div class="k">Next For Script</div><div id="nextscript" class="v small">-</div></div><div class="box"><div class="k">Final Script Topic</div><div id="finalscripttopic" class="v small">-</div></div>
 </div><div id="brief"></div><div id="plannerqueue"></div></section>
 
 <section id="channel" class="card"><h3>My Channel</h3><div class="grid">
@@ -449,6 +579,9 @@ async function plannerData(){
   let a=p.items||[];$('plannerqueue').innerHTML=a.length?'<table><tr><th>#</th><th>Stage</th><th>Demand</th><th>Topic</th></tr>'+a.slice(0,10).map(x=>'<tr><td>'+txt(x.priority)+'</td><td>'+txt(x.stage)+'</td><td>'+txt(x.demand)+'</td><td>'+txt(x.title)+'</td></tr>').join('')+'</table>':'<p class="warn">Planner queue empty.</p>';
  }catch(e){$('plannerqueue').innerHTML='<p class="warn">Planner error: '+e+'</p>'}
 }
+async function scriptData(){
+ try{let s=await getj('/api/work/scripts');$('finalscripttopic').textContent=txt(s.current_topic)}catch(e){}
+}
 async function channel(){
  try{let j=await getj('/api/work/channel');$('channelstate').textContent=j.state;$('views').textContent=txt(j.views||j.metrics?.views);$('retention').textContent=txt(j.retention||j.metrics?.retention);$('ctr').textContent=txt(j.ctr||j.metrics?.ctr);$('watchtime').textContent=txt(j.watch_time||j.metrics?.watch_time);$('besttopic').textContent=txt(j.best_topic||j.metrics?.best_topic)}catch(e){}
 }
@@ -461,11 +594,11 @@ async function automation(){
 async function recovery(){
  try{let j=await getj('/api/work/recovery');$('currel').textContent=txt(j.current);$('prevrel').textContent=txt(j.previous)}catch(e){}
 }
-async function refresh(){await status();await Promise.all([researchData(),plannerData(),channel(),knowledge(),automation(),recovery()])}
+async function refresh(){await status();await Promise.all([researchData(),plannerData(),scriptData(),channel(),knowledge(),automation(),recovery()])}
 async function act(a){let r=await fetch('/api/work/action',{method:'POST',headers:h(),body:JSON.stringify({action:a})});$('out').textContent=await r.text();refresh()}
 $('backup').onclick=()=>act('backup');$('safe').onclick=()=>act('safe_mode');$('resume').onclick=()=>act('resume');$('rollback').onclick=()=>act('rollback');
 $('diag').onclick=async()=>{$('out').textContent=await(await fetch('/api/work/diagnostics',{headers:h()})).text()};
 $('research').onclick=async()=>{$('researchout').textContent='Running research...';let r=await fetch('/api/work/run-research',{method:'POST',headers:h()});$('researchout').textContent=await r.text();researchData()};
 $('update').onclick=async()=>{$('out').textContent='Updating...';let r=await fetch('/api/work/update',{method:'POST',headers:h()});$('out').textContent=await r.text()};
-refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),plannerData(),automation(),recovery()]),30000);
+refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),plannerData(),scriptData(),automation(),recovery()]),30000);
 </script></body></html>`
