@@ -1,1 +1,1 @@
-{"version":"v1.5.0-opportunity","description":"HERMES WORK Opportunity + Daily Brief Engine: balanced top opportunities, demand bands, deterministic scoring, production format guidance, zero HERMES Neurons","restart":false}
+{"version":"v1.6.0-planner","description":"HERMES WORK persistent content planner: automatic queue from top opportunities, production stages, dashboard counters and next-for-script telemetry, zero HERMES Neurons","restart":false}
