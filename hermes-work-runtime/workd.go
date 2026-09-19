@@ -727,8 +727,7 @@ func (s *S)pollStudioResult(){
  if video==""{return}
  done:=gh.PublishedAt;if done==""{done=time.Now().Format(time.RFC3339)}
  r:=StudioResult{State:"RENDERED",PlannerID:j.PlannerID,RenderTag:j.RenderTag,VideoURL:video,ThumbnailURL:thumb,MetadataURL:meta,CompletedAt:done,Engine:"AUTO_STUDIO_V1",AIUsed:false,NeuronsUsed:0}
- b,_:=json.MarshalIndent(r,"","  ");os.MkdirAll(filepath.Dir(s.studioResultPath(j.PlannerID)),0700);if writeSimple(s.studioResultPath(j.PlannerID),string(b)+"
-")!=nil{return}
+ b,_:=json.MarshalIndent(r,"","  ");os.MkdirAll(filepath.Dir(s.studioResultPath(j.PlannerID)),0700);if writeSimple(s.studioResultPath(j.PlannerID),string(b)+"\n")!=nil{return}
  plans:=s.syncPlanner();changed:=false;now:=time.Now().Format(time.RFC3339)
  for i:=range plans{if plans[i].ID==j.PlannerID{plans[i].Stage="UPLOAD_READY";plans[i].UpdatedAt=now;changed=true;break}}
  if changed{_ = s.savePlan(plans)}
