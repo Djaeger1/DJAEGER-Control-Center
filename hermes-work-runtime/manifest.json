@@ -1,1 +1,1 @@
-{"version":"v2.2.1-handofffix","description":"HERMES WORK atomic handoff repair: actual serving release identity, single-listener cleanup, duplicate-updater guard, atomic promotion after health verification, verified rollback only, false-quarantine prevention","restart":false}
+{"version":"v2.2.2-updaterfix","description":"HERMES WORK definitive updater reconciliation: verified handoff owns promotion, removes legacy duplicate updater daemons, starts exactly one updater from the active release, and writes healthy updater state atomically","restart":false}
