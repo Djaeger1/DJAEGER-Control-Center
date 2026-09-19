@@ -8,7 +8,7 @@ func (s *S)bridgeCred()(string,string){ep:=readenv(filepath.Join(s.Rel,"config",
 func (s *S)researchTotal()int{b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));n:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if strings.TrimSpace(l)!=""{n++}};return n}
 func (s *S)bridgeInfo()map[string]any{v:=map[string]any{"state":"STARTING","mode":"DATA_ONLY","ai_used":false,"neurons_used":0};b,e:=os.ReadFile(filepath.Join(s.Root,"state","bridge.json"));if e==nil{_ = json.Unmarshal(b,&v)};return v}
 func (s *S)writeBridge(st,reason string,httpCode int){ep,_:=s.bridgeCred();v:=map[string]any{"state":st,"reason":reason,"endpoint":ep,"mode":"DATA_ONLY","ai_used":false,"neurons_used":0,"http_code":httpCode,"updated_at":time.Now().Format(time.RFC3339)};if st=="CONNECTED"{v["last_sync"]=time.Now().Format(time.RFC3339)};b,_:=json.Marshal(v);os.MkdirAll(filepath.Join(s.Root,"state"),0700);tmp:=filepath.Join(s.Root,"state","bridge.json.tmp");_ = os.WriteFile(tmp,b,0600);_ = os.Rename(tmp,filepath.Join(s.Root,"state","bridge.json"))}
-func (s *S)bridgeSnapshot()map[string]any{ts,_:=iface("rndis0");worker:="READY";if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"};au:=s.autoUpdateInfo();db:=s.dailyBriefInfo();sp:=s.scriptPrepInfo();fs:=s.scriptInfo();pl:=s.plannerInfo();return map[string]any{"sent_at":time.Now().Format(time.RFC3339),"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","daily_brief_state":db["state"],"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1","planner_state":pl["state"],"planner_queue":pl["queue_total"],"next_for_script":pl["next_for_script"],"planner_engine":"PLANNER_V1","script_prep_state":sp["state"],"script_prep_ready":sp["ready"],"script_topic":sp["current_topic"],"script_prep_engine":"SCRIPT_PREP_V1","script_state":fs["state"],"scripts_ready":fs["ready"],"final_script_topic":fs["current_topic"],"script_engine":"SCRIPT_ENGINE_V1","auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v3","ai_used":false,"neurons_used":0}}
+func (s *S)bridgeSnapshot()map[string]any{ts,_:=iface("rndis0");worker:="READY";if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"};au:=s.autoUpdateInfo();db:=s.dailyBriefInfo();sp:=s.scriptPrepInfo();fs:=s.scriptInfo();pp:=s.productionInfo();pl:=s.plannerInfo();return map[string]any{"sent_at":time.Now().Format(time.RFC3339),"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","daily_brief_state":db["state"],"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1","planner_state":pl["state"],"planner_queue":pl["queue_total"],"next_for_script":pl["next_for_script"],"planner_engine":"PLANNER_V1","script_prep_state":sp["state"],"script_prep_ready":sp["ready"],"script_topic":sp["current_topic"],"script_prep_engine":"SCRIPT_PREP_V1","script_state":fs["state"],"scripts_ready":fs["ready"],"final_script_topic":fs["current_topic"],"script_engine":"SCRIPT_ENGINE_V1","production_pack_state":pp["state"],"production_ready":pp["ready"],"production_topic":pp["current_topic"],"production_engine":"PRODUCTION_PACK_V1","auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v3","ai_used":false,"neurons_used":0}}
 func (s *S)ntfyTopic(key string)string{h:=sha256.Sum256([]byte("HERMES_WORK_NTFY:"+key));return "hermes-work-"+hex.EncodeToString(h[:24])}
 func (s *S)pushNtfy(key string)(int,string,error){topic:=s.ntfyTopic(key);snap,_:=json.Marshal(s.bridgeSnapshot());u:="https://ntfy.sh/"+topic;req,e:=http.NewRequest("POST",u,strings.NewReader(string(snap)));if e!=nil{return 0,"",e};req.Header.Set("Content-Type","text/plain; charset=utf-8");req.Header.Set("Title","HERMES WORK status");req.Header.Set("Tags","computer");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,"",e};io.Copy(io.Discard,io.LimitReader(resp.Body,4096));resp.Body.Close();readURL:="https://ntfy.sh/"+topic+"/json?poll=1&since=10m";if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,readURL,nil};return resp.StatusCode,readURL,fmt.Errorf("ntfy http %d",resp.StatusCode)}
 func (s *S)pushCloud(ep,key string)(int,error){b,_:=json.Marshal(s.bridgeSnapshot());req,e:=http.NewRequest("POST",ep+"/v1/bridge/push",strings.NewReader(string(b)));if e!=nil{return 0,e};req.Header.Set("Authorization","Bearer "+key);req.Header.Set("Content-Type","application/json");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,e};body,_:=io.ReadAll(io.LimitReader(resp.Body,4096));resp.Body.Close();if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,nil};return resp.StatusCode,fmt.Errorf("cloud http %d %s",resp.StatusCode,strings.TrimSpace(string(body)))}
@@ -25,7 +25,7 @@ func exists(p string)bool{_,e:=os.Stat(p);return e==nil}
 func temp()float64{b,e:=os.ReadFile("/sys/class/power_supply/battery/temp");if e!=nil{return -1};v,_:=strconv.ParseFloat(strings.TrimSpace(string(b)),64);if v>200{v/=10};return v}
 func mem()int64{b,_:=os.ReadFile("/proc/meminfo");for _,l:=range strings.Split(string(b),"\n"){if strings.HasPrefix(l,"MemAvailable:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);return n/1024}}};return -1}
 func iface(n string)(string,string){i,e:=net.InterfaceByName(n);if e!=nil{return"DOWN",""};a,_:=i.Addrs();ip:="";for _,x:=range a{if y,ok:=x.(*net.IPNet);ok&&y.IP.To4()!=nil{ip=y.IP.String()}};if ip==""{return"DOWN",""};return"UP",ip}
-func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="v0.2.0-control-center"};bi:=s.bridgeInfo();bst,_:=bi["state"].(string);if bst==""{bst="STARTING"};au:=s.autoUpdateInfo();aus,_:=au["state"].(string);if aus==""{aus="STARTING"};js(w,map[string]any{"service":"HERMES_WORK","control_center":"v1.8.3","release":cur,"auto_update_state":aus,"auto_update":au,"temperature_c":temp(),"mem_available_mb":mem(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","bridge_state":bst,"bridge_last_sync":bi["last_sync"],"bridge_mode":"DATA_ONLY","bridge_ai_used":false,"bridge_neurons_used":0,"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","components":map[string]string{"collector":"READY_V2","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V2","opportunity_engine":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V3","script_prep":"READY_V1","script_engine":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_V2","bridge":bst,"auto_updater":aus}})}
+func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="v0.2.0-control-center"};bi:=s.bridgeInfo();bst,_:=bi["state"].(string);if bst==""{bst="STARTING"};au:=s.autoUpdateInfo();aus,_:=au["state"].(string);if aus==""{aus="STARTING"};js(w,map[string]any{"service":"HERMES_WORK","control_center":"v1.9.0","release":cur,"auto_update_state":aus,"auto_update":au,"temperature_c":temp(),"mem_available_mb":mem(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","bridge_state":bst,"bridge_last_sync":bi["last_sync"],"bridge_mode":"DATA_ONLY","bridge_ai_used":false,"bridge_neurons_used":0,"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","components":map[string]string{"collector":"READY_V2","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V2","opportunity_engine":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V3","script_prep":"READY_V1","script_engine":"READY_V1","production_pack":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_V2","bridge":bst,"auto_updater":aus}})}
 func (s *S)action(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};var q struct{Action string `json:"action"`};json.NewDecoder(r.Body).Decode(&q);st:=filepath.Join(s.Root,"state");switch q.Action{case"pause":os.WriteFile(filepath.Join(st,"worker_paused"),[]byte(time.Now().Format(time.RFC3339)),0600);case"resume":os.Remove(filepath.Join(st,"worker_paused"));os.Remove(filepath.Join(st,"safe_mode"));case"safe_mode":os.WriteFile(filepath.Join(st,"safe_mode"),[]byte("safe_mode"),0600);os.WriteFile(filepath.Join(st,"worker_paused"),[]byte("safe_mode"),0600);case"backup":os.MkdirAll(filepath.Join(s.Root,"backups"),0700);os.WriteFile(filepath.Join(s.Root,"backups","state-"+time.Now().Format("20060102-150405")+".txt"),[]byte("release="+strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")))+"\n"),0600);case"rollback":p:=strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release")));if p==""{http.Error(w,"no previous release",409);return};os.WriteFile(filepath.Join(s.Root,"current_release"),[]byte(p+"\n"),0600);default:http.Error(w,"unknown action",400);return};js(w,map[string]any{"ok":true,"action":q.Action})}
 func tail(p string,n int)string{b,_:=os.ReadFile(p);a:=strings.Split(string(b),"\n");if len(a)>n{a=a[len(a)-n:]};return strings.Join(a,"\n")}
 func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
@@ -167,7 +167,7 @@ func (s *S)writeDailyBrief()map[string]any{
  top:="";if len(ideas)>0{top=ideas[0].Title}
  v:=map[string]any{"state":"READY","engine":"OPPORTUNITY_V1","generated_at":time.Now().Format(time.RFC3339),"target_age":"3-6","research_total":s.researchTotal(),"ideas_ready":len(ideas),"high_demand":high,"categories":cats,"top_opportunity":top,"ideas":ideas,"ai_used":false,"neurons_used":0}
  b,_:=json.MarshalIndent(v,"","  ");os.MkdirAll(filepath.Join(s.Root,"data","planner"),0700);_ = os.WriteFile(filepath.Join(s.Root,"data","planner","daily_brief.json"),b,0600);_ = os.WriteFile(filepath.Join(s.Root,"state","last_daily_brief"),[]byte(time.Now().Format(time.RFC3339)),0600)
- go func(){s.syncPlanner();s.ensureScriptPreps();s.ensureScripts()}()
+ go func(){s.syncPlanner();s.ensureScriptPreps();s.ensureScripts();s.ensureProductionPacks()}()
  return v
 }
 func (s *S)dailyBriefInfo()map[string]any{
@@ -212,14 +212,14 @@ func (s *S)syncPlanner()[]PlanItem{
  if len(a)>100{a=a[:100]}
  _=s.savePlan(a);return a
 }
-func planCounts(a []PlanItem)map[string]int{m:=map[string]int{"IDEA_READY":0,"SCRIPT_PREP_READY":0,"SCRIPT_READY":0,"PRODUCTION":0,"PUBLISHED":0,"HOLD":0};for _,x:=range a{m[x.Stage]++};return m}
+func planCounts(a []PlanItem)map[string]int{m:=map[string]int{"IDEA_READY":0,"SCRIPT_PREP_READY":0,"SCRIPT_READY":0,"PRODUCTION_READY":0,"PRODUCTION":0,"PUBLISHED":0,"HOLD":0};for _,x:=range a{m[x.Stage]++};return m}
 func (s *S)plannerInfo()map[string]any{
  a:=s.syncPlanner();counts:=planCounts(a);active:=[]PlanItem{}
  for _,x:=range a{if x.Stage!="PUBLISHED"{active=append(active,x)};if len(active)>=20{break}}
  next:="";nextID:="";for _,x:=range a{if x.Stage=="SCRIPT_PREP_READY"{next=x.Title;nextID=x.ID;break}};if next==""{for _,x:=range a{if x.Stage=="IDEA_READY"{next=x.Title;nextID=x.ID;break}}}
- return map[string]any{"state":"READY","engine":"PLANNER_V1","updated_at":time.Now().Format(time.RFC3339),"queue_total":len(a),"active":len(active),"counts":counts,"next_for_script":next,"next_for_script_id":nextID,"items":active,"ai_used":false,"neurons_used":0}
+ prod:="";prodID:="";for _,x:=range a{if x.Stage=="PRODUCTION_READY"{prod=x.Title;prodID=x.ID;break}};return map[string]any{"state":"READY","engine":"PLANNER_V1","updated_at":time.Now().Format(time.RFC3339),"queue_total":len(a),"active":len(active),"counts":counts,"next_for_script":next,"next_for_script_id":nextID,"next_for_production":prod,"next_for_production_id":prodID,"items":active,"ai_used":false,"neurons_used":0}
 }
-func validStage(x string)bool{switch x{case"IDEA_READY","SCRIPT_PREP_READY","SCRIPT_READY","PRODUCTION","PUBLISHED","HOLD":return true};return false}
+func validStage(x string)bool{switch x{case"IDEA_READY","SCRIPT_PREP_READY","SCRIPT_READY","PRODUCTION_READY","PRODUCTION","PUBLISHED","HOLD":return true};return false}
 
 type ScriptPrepScene struct{
  Number int `json:"number"`
@@ -450,6 +450,128 @@ func (s *S)scriptInfo()map[string]any{
 }
 func (s *S)scripts(w http.ResponseWriter,r *http.Request){js(w,s.scriptInfo())}
 
+type ProductionPack struct{
+ State string `json:"state"`
+ Engine string `json:"engine"`
+ PlannerID string `json:"planner_id"`
+ Topic string `json:"topic"`
+ Language string `json:"language"`
+ TargetAge string `json:"target_age"`
+ DurationSec int `json:"duration_sec"`
+ VideoTitle string `json:"video_title"`
+ SceneCount int `json:"scene_count"`
+ Files []string `json:"files"`
+ DownloadEndpoint string `json:"download_endpoint"`
+ GeneratedAt string `json:"generated_at"`
+ AIUsed bool `json:"ai_used"`
+ NeuronsUsed int `json:"neurons_used"`
+}
+func srtTime(sec int)string{h:=sec/3600;m:=(sec%3600)/60;s:=sec%60;return fmt.Sprintf("%02d:%02d:%02d,000",h,m,s)}
+func (s *S)productionRoot()string{return filepath.Join(s.Root,"data","production")}
+func (s *S)productionDir(id string)string{return filepath.Join(s.productionRoot(),"packs",id)}
+func (s *S)productionZip(id string)string{return filepath.Join(s.productionRoot(),"exports",id+".zip")}
+func safePlanID(id string)bool{if len(id)<6||len(id)>64{return false};for _,r:=range id{if !(r>='0'&&r<='9'||r>='a'&&r<='f'||r>='A'&&r<='F'||r=='-'||r=='_'){return false}};return true}
+func productionTexts(sp ScriptPackage)(string,string,string,string){
+ var narration,visuals strings.Builder
+ elapsed:=0;var srt strings.Builder
+ for i,sc:=range sp.Scenes{
+  narration.WriteString(fmt.Sprintf("SCENE %d | %ds | %s
+%s
+
+",sc.Number,sc.DurationSec,sc.Purpose,sc.VoiceOver))
+  visuals.WriteString(fmt.Sprintf("SCENE %d | %s
+%s
+ON-SCREEN TEXT: %s
+EDIT: %s
+
+",sc.Number,sc.Purpose,sc.VisualPrompt,sc.OnScreenText,sc.EditNote))
+  start:=elapsed;elapsed+=sc.DurationSec
+  srt.WriteString(fmt.Sprintf("%d
+%s --> %s
+%s
+
+",i+1,srtTime(start),srtTime(elapsed),sc.VoiceOver))
+ }
+ metadata:=fmt.Sprintf("TITLE
+%s
+
+DESCRIPTION
+%s
+
+LANGUAGE
+%s
+
+TARGET AGE
+%s
+
+DURATION
+%d seconds
+
+KEYWORDS
+%s
+
+HASHTAGS
+%s
+
+CHARACTER CONSISTENCY
+%s
+",sp.VideoTitle,sp.Description,sp.Language,sp.TargetAge,sp.DurationSec,strings.Join(sp.Keywords,", "),strings.Join(sp.Hashtags," "),sp.CharacterRule)
+ return narration.String(),visuals.String(),srt.String(),metadata
+}
+func writeSimple(path,body string)error{if e:=os.MkdirAll(filepath.Dir(path),0700);e!=nil{return e};tmp:=path+".tmp";if e:=os.WriteFile(tmp,[]byte(body),0600);e!=nil{return e};return os.Rename(tmp,path)}
+func zipFiles(dst,base string,names []string)error{
+ if e:=os.MkdirAll(filepath.Dir(dst),0700);e!=nil{return e}
+ tmp:=dst+".tmp";o,e:=os.Create(tmp);if e!=nil{return e};zw:=zip.NewWriter(o)
+ for _,name:=range names{
+  b,e:=os.ReadFile(filepath.Join(base,name));if e!=nil{zw.Close();o.Close();os.Remove(tmp);return e}
+  w,e:=zw.Create(name);if e!=nil{zw.Close();o.Close();os.Remove(tmp);return e}
+  if _,e=w.Write(b);e!=nil{zw.Close();o.Close();os.Remove(tmp);return e}
+ }
+ if e=zw.Close();e!=nil{o.Close();os.Remove(tmp);return e};if e=o.Close();e!=nil{os.Remove(tmp);return e}
+ return os.Rename(tmp,dst)
+}
+func (s *S)writeProductionPack(sp ScriptPackage)(ProductionPack,error){
+ dir:=s.productionDir(sp.PlannerID);os.MkdirAll(dir,0700)
+ narration,visuals,captions,metadata:=productionTexts(sp)
+ files:=[]string{"script.json","narration.txt","visual_prompts.txt","captions.srt","metadata.txt","manifest.json"}
+ sb,_:=json.MarshalIndent(sp,"","  ");if e:=os.WriteFile(filepath.Join(dir,"script.json"),sb,0600);e!=nil{return ProductionPack{},e}
+ if e:=writeSimple(filepath.Join(dir,"narration.txt"),narration);e!=nil{return ProductionPack{},e}
+ if e:=writeSimple(filepath.Join(dir,"visual_prompts.txt"),visuals);e!=nil{return ProductionPack{},e}
+ if e:=writeSimple(filepath.Join(dir,"captions.srt"),captions);e!=nil{return ProductionPack{},e}
+ if e:=writeSimple(filepath.Join(dir,"metadata.txt"),metadata);e!=nil{return ProductionPack{},e}
+ p:=ProductionPack{State:"READY_FOR_PRODUCTION",Engine:"PRODUCTION_PACK_V1",PlannerID:sp.PlannerID,Topic:sp.Topic,Language:sp.Language,TargetAge:sp.TargetAge,DurationSec:sp.DurationSec,VideoTitle:sp.VideoTitle,SceneCount:sp.SceneCount,Files:files,DownloadEndpoint:"/api/work/production/download?id="+sp.PlannerID,GeneratedAt:time.Now().Format(time.RFC3339),AIUsed:false,NeuronsUsed:0}
+ pb,_:=json.MarshalIndent(p,"","  ");if e:=os.WriteFile(filepath.Join(dir,"manifest.json"),pb,0600);e!=nil{return p,e}
+ if e:=zipFiles(s.productionZip(sp.PlannerID),dir,files);e!=nil{return p,e}
+ return p,nil
+}
+func (s *S)ensureProductionPacks()[]ProductionPack{
+ scripts:=s.ensureScripts();plans:=s.syncPlanner();idx:=map[string]int{};for i:=range plans{idx[plans[i].ID]=i}
+ out:=[]ProductionPack{};changed:=false
+ for _,sp:=range scripts{
+  i,ok:=idx[sp.PlannerID];if !ok{continue};stage:=plans[i].Stage;if stage=="HOLD"{continue}
+  mp:=filepath.Join(s.productionDir(sp.PlannerID),"manifest.json");zp:=s.productionZip(sp.PlannerID);var pp ProductionPack
+  if b,e:=os.ReadFile(mp);e==nil&&json.Unmarshal(b,&pp)==nil&&pp.PlannerID==sp.PlannerID&&exists(zp){
+   out=append(out,pp);if stage=="SCRIPT_READY"{plans[i].Stage="PRODUCTION_READY";plans[i].UpdatedAt=time.Now().Format(time.RFC3339);changed=true};continue
+  }
+  if stage=="SCRIPT_READY"||stage=="PRODUCTION_READY"||stage=="PRODUCTION"||stage=="PUBLISHED"{
+   if np,e:=s.writeProductionPack(sp);e==nil{out=append(out,np);if stage=="SCRIPT_READY"{plans[i].Stage="PRODUCTION_READY";plans[i].UpdatedAt=time.Now().Format(time.RFC3339);changed=true}}
+  }
+ }
+ if changed{_ = s.savePlan(plans)}
+ return out
+}
+func (s *S)productionInfo()map[string]any{
+ a:=s.ensureProductionPacks();topic:="";pid:="";download:="";if len(a)>0{topic=a[0].Topic;pid=a[0].PlannerID;download=a[0].DownloadEndpoint}
+ return map[string]any{"state":"READY","engine":"PRODUCTION_PACK_V1","ready":len(a),"current_topic":topic,"current_planner_id":pid,"download_endpoint":download,"packs":a,"ai_used":false,"neurons_used":0}
+}
+func (s *S)production(w http.ResponseWriter,r *http.Request){js(w,s.productionInfo())}
+func (s *S)productionDownload(w http.ResponseWriter,r *http.Request){
+ id:=strings.TrimSpace(r.URL.Query().Get("id"));if !safePlanID(id){http.Error(w,"invalid id",400);return}
+ p:=s.productionZip(id);if !exists(p){s.ensureProductionPacks()};if !exists(p){http.Error(w,"production pack not found",404);return}
+ w.Header().Set("Content-Type","application/zip");w.Header().Set("Content-Disposition","attachment; filename="HERMES_WORK_"+id+"_production.zip"");http.ServeFile(w,r,p)
+}
+
+
 func (s *S)planner(w http.ResponseWriter,r *http.Request){
  if r.Method=="GET"{js(w,s.plannerInfo());return}
  if !s.auth(r){http.Error(w,"unauthorized",401);return}
@@ -477,7 +599,7 @@ func (s *S)channel(w http.ResponseWriter,r *http.Request){p:=filepath.Join(s.Roo
 func (s *S)knowledge(w http.ResponseWriter,r *http.Request){b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));seen:=map[string]bool{};cats:=map[string]int{};total:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)!=nil{continue};total++;if u,_:=z["url"].(string);u!=""{seen[u]=true};if x,_:=z["category"].(string);x!=""{cats[x]++}};js(w,map[string]any{"research_items":total,"unique_keys":len(seen),"categories":cats,"produced":"NOT_CONNECTED","successful":"NOT_CONNECTED","underperforming":"NOT_CONNECTED","ideas_not_produced":"NOT_CONNECTED"})}
 func (s *S)recovery(w http.ResponseWriter,r *http.Request){js(w,map[string]any{"current":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"previous":strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release"))),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"handoff_log":tail(filepath.Join(s.Root,"logs","handoff.log"),20)})}
 func (s *S)index(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");io.WriteString(w,page)}
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);go s.schedulerLoop();go s.bridgeLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);go s.schedulerLoop();go s.bridgeLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
@@ -518,9 +640,9 @@ const page=`<!doctype html>
 <section id="planner" class="card"><h3>Content Opportunities / Planner</h3><div class="grid">
 <div class="box"><div class="k">Ideas Ready</div><div id="ideas" class="v">-</div></div>
 <div class="box"><div class="k">Script Prep Ready</div><div id="scriptprepready" class="v">-</div></div><div class="box"><div class="k">Scripts Ready</div><div id="scriptsready" class="v">-</div></div>
-<div class="box"><div class="k">Production</div><div id="production" class="v">-</div></div>
+<div class="box"><div class="k">Production Pack Ready</div><div id="productionready" class="v">-</div></div><div class="box"><div class="k">Production</div><div id="production" class="v">-</div></div>
 <div class="box"><div class="k">Published</div><div id="published" class="v">-</div></div>
-<div class="box"><div class="k">Next For Script</div><div id="nextscript" class="v small">-</div></div><div class="box"><div class="k">Final Script Topic</div><div id="finalscripttopic" class="v small">-</div></div>
+<div class="box"><div class="k">Next For Script</div><div id="nextscript" class="v small">-</div></div><div class="box"><div class="k">Final Script Topic</div><div id="finalscripttopic" class="v small">-</div></div><div class="box"><div class="k">Production Topic</div><div id="productiontopic" class="v small">-</div><a id="productiondownload" href="#" style="display:none;color:var(--accent)">DOWNLOAD PACK</a></div>
 </div><div id="brief"></div><div id="plannerqueue"></div></section>
 
 <section id="channel" class="card"><h3>My Channel</h3><div class="grid">
@@ -581,12 +703,18 @@ async function researchData(){
 async function plannerData(){
  try{
   let p=await getj('/api/work/planner');let cc=p.counts||{};
-  $('scriptprepready').textContent=txt(cc.SCRIPT_PREP_READY??0);$('scriptsready').textContent=txt(cc.SCRIPT_READY??0);$('production').textContent=txt(cc.PRODUCTION??0);$('published').textContent=txt(cc.PUBLISHED??0);$('nextscript').textContent=txt(p.next_for_script);
+  $('scriptprepready').textContent=txt(cc.SCRIPT_PREP_READY??0);$('scriptsready').textContent=txt(cc.SCRIPT_READY??0);$('productionready').textContent=txt(cc.PRODUCTION_READY??0);$('production').textContent=txt(cc.PRODUCTION??0);$('published').textContent=txt(cc.PUBLISHED??0);$('nextscript').textContent=txt(p.next_for_script);
   let a=p.items||[];$('plannerqueue').innerHTML=a.length?'<table><tr><th>#</th><th>Stage</th><th>Demand</th><th>Topic</th></tr>'+a.slice(0,10).map(x=>'<tr><td>'+txt(x.priority)+'</td><td>'+txt(x.stage)+'</td><td>'+txt(x.demand)+'</td><td>'+txt(x.title)+'</td></tr>').join('')+'</table>':'<p class="warn">Planner queue empty.</p>';
  }catch(e){$('plannerqueue').innerHTML='<p class="warn">Planner error: '+e+'</p>'}
 }
 async function scriptData(){
  try{let s=await getj('/api/work/scripts');$('finalscripttopic').textContent=txt(s.current_topic)}catch(e){}
+}
+async function productionData(){
+ try{
+  let p=await getj('/api/work/production');$('productiontopic').textContent=txt(p.current_topic);
+  let a=$('productiondownload');if(p.download_endpoint){a.href=p.download_endpoint;a.style.display='inline'}else{a.style.display='none'}
+ }catch(e){}
 }
 async function channel(){
  try{let j=await getj('/api/work/channel');$('channelstate').textContent=j.state;$('views').textContent=txt(j.views||j.metrics?.views);$('retention').textContent=txt(j.retention||j.metrics?.retention);$('ctr').textContent=txt(j.ctr||j.metrics?.ctr);$('watchtime').textContent=txt(j.watch_time||j.metrics?.watch_time);$('besttopic').textContent=txt(j.best_topic||j.metrics?.best_topic)}catch(e){}
@@ -600,11 +728,11 @@ async function automation(){
 async function recovery(){
  try{let j=await getj('/api/work/recovery');$('currel').textContent=txt(j.current);$('prevrel').textContent=txt(j.previous)}catch(e){}
 }
-async function refresh(){await status();await Promise.all([researchData(),plannerData(),scriptData(),channel(),knowledge(),automation(),recovery()])}
+async function refresh(){await status();await Promise.all([researchData(),plannerData(),scriptData(),productionData(),channel(),knowledge(),automation(),recovery()])}
 async function act(a){let r=await fetch('/api/work/action',{method:'POST',headers:h(),body:JSON.stringify({action:a})});$('out').textContent=await r.text();refresh()}
 $('backup').onclick=()=>act('backup');$('safe').onclick=()=>act('safe_mode');$('resume').onclick=()=>act('resume');$('rollback').onclick=()=>act('rollback');
 $('diag').onclick=async()=>{$('out').textContent=await(await fetch('/api/work/diagnostics',{headers:h()})).text()};
 $('research').onclick=async()=>{$('researchout').textContent='Running research...';let r=await fetch('/api/work/run-research',{method:'POST',headers:h()});$('researchout').textContent=await r.text();researchData()};
 $('update').onclick=async()=>{$('out').textContent='Updating...';let r=await fetch('/api/work/update',{method:'POST',headers:h()});$('out').textContent=await r.text()};
-refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),plannerData(),scriptData(),automation(),recovery()]),30000);
+refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),plannerData(),scriptData(),productionData(),automation(),recovery()]),30000);
 </script></body></html>`
