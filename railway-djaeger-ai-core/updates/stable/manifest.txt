@@ -1,6 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='9'
-RELEASE='GEMINITRANSPORTFIX2_RESTART1'
+SEQ='10'
+RELEASE='GEMINIPOLICYDIAG1'
 TARGET_VC='129659'
 FILE_COUNT='1'
-FILE|djaeger-railway-updater-predrestart1|system/bin/djaeger-railway-updater|00a05a5c3a2062331e3948b260c0439ab25fb13e69031c0a119a43457834b41f|755
+FILE|djaeger-railway-bridge-geminidiag1|system/bin/djaeger-railway-bridge|d89501c9d803de7d42d69c51c022982e90dde120cb387391aab1feed85d4ac2e|755
