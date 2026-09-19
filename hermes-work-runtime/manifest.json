@@ -1,1 +1,1 @@
-{"version":"v0.4.0-ready","description":"HERMES WORK ready runtime with native HTTPS update, SHA-256 verification, automatic handoff, health check and rollback","restart":false}
+{"version":"v0.5.0-research-core","description":"HERMES WORK research core: guarded collector, persistent JSONL store, deduplication, categorization and research summary API","restart":false}
