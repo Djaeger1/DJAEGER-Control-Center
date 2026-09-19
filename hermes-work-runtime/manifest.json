@@ -1,1 +1,1 @@
-{"version":"v0.3.1-update-validation","description":"HERMES WORK native updater validation release with corrected Control Center version reporting","restart":false}
+{"version":"v0.4.0-ready","description":"HERMES WORK ready runtime with native HTTPS update, SHA-256 verification, automatic handoff, health check and rollback","restart":false}
