@@ -1,1 +1,1 @@
-{"version":"v1.2.2-relay","description":"HERMES WORK automatic zero-neuron telemetry relay fallback using private high-entropy ntfy topic; no Cloudflare deploy credential required","restart":false}
+{"version":"v1.3.0-autoupdate","description":"HERMES WORK guarded automatic runtime updater with SHA-256 verification, health self-test, automatic rollback and bad-release quarantine","restart":false}
