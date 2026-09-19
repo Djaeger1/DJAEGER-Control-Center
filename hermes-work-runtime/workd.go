@@ -686,8 +686,7 @@ func (s *S)loadStudioPending()(StudioJob,bool){
  var j StudioJob;b,e:=os.ReadFile(s.studioPendingPath());if e!=nil||json.Unmarshal(b,&j)!=nil||!safePlanID(j.PlannerID){return j,false};return j,true
 }
 func (s *S)saveStudioPending(j StudioJob)error{
- b,_:=json.MarshalIndent(j,"","  ");return writeSimple(s.studioPendingPath(),string(b)+"
-")
+ b,_:=json.MarshalIndent(j,"","  ");return writeSimple(s.studioPendingPath(),string(b)+"\n")
 }
 func (s *S)clearStudioPending(){os.Remove(s.studioPendingPath())}
 func (s *S)loadStudioResult(id string)(StudioResult,bool){
@@ -733,8 +732,7 @@ func (s *S)pollStudioResult(){
  plans:=s.syncPlanner();changed:=false;now:=time.Now().Format(time.RFC3339)
  for i:=range plans{if plans[i].ID==j.PlannerID{plans[i].Stage="UPLOAD_READY";plans[i].UpdatedAt=now;changed=true;break}}
  if changed{_ = s.savePlan(plans)}
- _ = os.WriteFile(filepath.Join(s.Root,"state","last_studio_render_date"),[]byte(time.Now().Format("2006-01-02")+"
-"),0600)
+ _ = os.WriteFile(filepath.Join(s.Root,"state","last_studio_render_date"),[]byte(time.Now().Format("2006-01-02")+"\n"),0600)
  s.clearStudioPending()
 }
 type PublicationRecord struct{
