@@ -92,16 +92,16 @@ func (s *S)schedulerLoop(){
 }
 
 type Opportunity struct{
- Rank int \`json:"rank"\`
- Title string \`json:"title"\`
- Category string \`json:"category"\`
- Score float64 \`json:"score"\`
- Demand string \`json:"demand"\`
- TargetAge string \`json:"target_age"\`
- Format string \`json:"format"\`
- Why string \`json:"why"\`
- Keywords []string \`json:"keywords"\`
- SourceURL string \`json:"source_url"\`
+ Rank int `json:"rank"`
+ Title string `json:"title"`
+ Category string `json:"category"`
+ Score float64 `json:"score"`
+ Demand string `json:"demand"`
+ TargetAge string `json:"target_age"`
+ Format string `json:"format"`
+ Why string `json:"why"`
+ Keywords []string `json:"keywords"`
+ SourceURL string `json:"source_url"`
 }
 func wordsFor(s string)[]string{
  stop:=map[string]bool{"for":true,"kids":true,"kid":true,"anak":true,"untuk":true,"the":true,"a":true,"an":true,"and":true,"with":true,"learn":true,"learning":true,"belajar":true,"video":true,"videos":true,"of":true,"to":true,"in":true}
