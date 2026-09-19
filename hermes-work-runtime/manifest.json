@@ -1,1 +1,1 @@
-{"version":"v2.1.0-handoff","description":"HERMES WORK production handoff queue: production jobs, READY_TO_PRODUCE/PRODUCING/READY_TO_UPLOAD/PUBLISHED states, production pack links, planner synchronization and zero HERMES Neurons","restart":false}
+{"version":"v2.2.0-publication","description":"HERMES WORK Publication + Channel Connector V1: publication records, platform metadata, channel analytics import, planner publish synchronization, feedback handoff and zero HERMES Neurons","restart":false}
