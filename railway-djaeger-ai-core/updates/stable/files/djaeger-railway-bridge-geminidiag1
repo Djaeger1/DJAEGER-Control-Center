@@ -29,6 +29,9 @@ diag_post(){
   _age="$(qget "$_g" GEMINI_STATUS_AGE_SEC)"; case "$_age" in ''|*[!0-9]*) _age=0;; esac
   _fresh="$(qget "$_g" GEMINI_STATUS_FRESH)"; [ -n "$_fresh" ] || _fresh=NO
   _code="$(qget "$_g" GEMINI_HTTP_CODE)"; [ -n "$_code" ] || _code=NA
+  _hrc="$(qget "$P/gemini_http_state" CURL_RC)"; case "$_hrc" in ''|*[!0-9]*) _hrc=0;; esac
+  _hat="$(qget "$P/gemini_http_state" AT)"; case "$_hat" in ''|*[!0-9]*) _hat=0;; esac
+  _hmodel="$(qget "$P/gemini_http_state" MODEL)"; [ -n "$_hmodel" ] || _hmodel=NA
   _cu="$(qget "$_g" GEMINI_COOLDOWN_UNTIL)"; case "$_cu" in ''|*[!0-9]*) _cu=0;; esac
   _rem=0; [ "$_cu" -gt "$_now" ] 2>/dev/null && _rem=$((_cu-_now))
   _vcnt=0; _ready=0; _cool=0; _i=0
@@ -46,7 +49,7 @@ diag_post(){
   _ver="$(sed -n 's/^version=//p' "$M/module.prop" 2>/dev/null | head -1)"
   _body="$RDIR/.gemdiag.$$"
   cat >"$_body" <<EOF
-{"schema":"DJAEGER_DEVICE_TELEMETRY_V1","module_version":"$(clean "$_ver")","gemini_status":"$(clean "$_st")","gemini_last_event_status":"$(clean "$_last")","gemini_status_age_s":$_age,"gemini_status_fresh":"$(clean "$_fresh")","gemini_http_code":"$(clean "$_code")","gemini_cooldown_until":$_cu,"gemini_cooldown_remaining_s":$_rem,"gemini_vault_count":$_vcnt,"gemini_ready_slots":$_ready,"gemini_cooling_slots":$_cool,"source":"DJAEGER_RAILWAY_GEMINI_DIAG1"}
+{"schema":"DJAEGER_DEVICE_TELEMETRY_V1","module_version":"$(clean "$_ver")","gemini_status":"$(clean "$_st")","gemini_last_event_status":"$(clean "$_last")","gemini_status_age_s":$_age,"gemini_status_fresh":"$(clean "$_fresh")","gemini_http_code":"$(clean "$_code")","gemini_cooldown_until":$_cu,"gemini_cooldown_remaining_s":$_rem,"gemini_vault_count":$_vcnt,"gemini_ready_slots":$_ready,"gemini_cooling_slots":$_cool,"gemini_curl_rc":$_hrc,"gemini_http_at":$_hat,"gemini_model":"$(clean "$_hmodel")","source":"DJAEGER_RAILWAY_GEMINI_DIAG1"}
 EOF
   curl -4 --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null     -H 'Content-Type: application/json' -H "Authorization: Bearer $_tok"     --data-binary @"$_body" "${_ep%/}/v1/device/telemetry" 2>/dev/null || true
   rm -f "$_body" 2>/dev/null
