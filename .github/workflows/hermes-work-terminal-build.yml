@@ -3,7 +3,7 @@ name: DJAEGER WORK Native Dashboard APK
 on:
   push:
     branches:
-      - djaeger-work-native-v1.2.5
+      - djaeger-work-native-v1.2.6
     paths:
       - 'hermes-work-terminal/**'
       - '.github/workflows/hermes-work-terminal-build.yml'
@@ -75,7 +75,7 @@ jobs:
           print('Six menus and original page builders preserved.')
           PY
           grep -Fq 'applicationId "com.hermes.workdashboard"' hermes-work-terminal/app/build.gradle
-          grep -Fq 'versionName "1.2.5"' hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionName "1.2.6"' hermes-work-terminal/app/build.gradle
 
       - name: Build signed release APK
         working-directory: hermes-work-terminal
@@ -92,16 +92,16 @@ jobs:
           "$BT/apksigner" verify --verbose --print-certs "$APK"
           "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
           grep -Fq "package: name='com.hermes.workdashboard'" /tmp/badging.txt
-          grep -Fq "versionName='1.2.5'" /tmp/badging.txt
+          grep -Fq "versionName='1.2.6'" /tmp/badging.txt
           grep -Fq "application-label:'DJAEGER WORK'" /tmp/badging.txt
-          cp "$APK" DJAEGER_WORK_Dashboard_v1.2.5.apk
-          sha256sum DJAEGER_WORK_Dashboard_v1.2.5.apk | tee SHA256.txt
+          cp "$APK" DJAEGER_WORK_Dashboard_v1.2.6.apk
+          sha256sum DJAEGER_WORK_Dashboard_v1.2.6.apk | tee SHA256.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-WORK-Native-v1.2.5-APK
+          name: DJAEGER-WORK-Native-v1.2.6-APK
           path: |
-            DJAEGER_WORK_Dashboard_v1.2.5.apk
+            DJAEGER_WORK_Dashboard_v1.2.6.apk
             SHA256.txt
           retention-days: 30
