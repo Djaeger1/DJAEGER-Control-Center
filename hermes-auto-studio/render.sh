@@ -68,7 +68,7 @@ PY
   img="studio/scenes/scene_$(printf '%02d' "$n").jpg"
   img_url="https://image.pollinations.ai/prompt/$enc?width=1280&height=720&nologo=true&seed=$((1000+n))"
 
-  if ! curl -fL --retry 2 --retry-delay 2 --max-time 90 "$img_url" -o "$img"; then
+  if ! curl -fL --max-time 25 "$img_url" -o "$img"; then
     echo "AI image unavailable for scene $n; using deterministic fallback."
     convert -size 1280x720 "gradient:#23395d-#101820"       -gravity center -fill white -font DejaVu-Sans-Bold -pointsize 58       -annotate +0-40 "HERMES WORK"       -pointsize 34 -annotate +0+55 "$onscreen" "$img"
   fi
