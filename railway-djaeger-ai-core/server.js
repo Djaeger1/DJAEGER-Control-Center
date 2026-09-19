@@ -139,6 +139,8 @@ function normalizeTelemetry(x) {
   out.gemini_cooling_slots = normalizeNumber('gemini_cooling_slots', x.gemini_cooling_slots, 0, 32);
   out.gemini_curl_rc = normalizeNumber('gemini_curl_rc', x.gemini_curl_rc, 0, 255);
   out.gemini_http_at = normalizeNumber('gemini_http_at', x.gemini_http_at, 0, 4102444800);
+  out.predictive_policy_age_s = normalizeNumber('predictive_policy_age_s', x.predictive_policy_age_s, 0, 86400);
+  out.root_policy_age_s = normalizeNumber('root_policy_age_s', x.root_policy_age_s, 0, 86400);
 
   return out;
 }
@@ -151,7 +153,7 @@ function sanitizeTelemetry(x) {
     'skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c',
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
-    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model',
+    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model','current_brain','brain_mode','final_source','cloud_in_control','cloud_plan_state','cloud_control_provider','cloud_plan_provider','reasoning_status','reasoning_event_reason','reasoning_proposal_action','reasoning_proposal_profile','reasoning_confidence','predictive_policy_present','predictive_policy_age_s','root_policy_present','root_policy_age_s',
     'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s',
     'remote_repair_state','remote_repair_seq','remote_repair_release','remote_repair_detail','source'
   ];
@@ -201,6 +203,22 @@ function safeTelemetrySummary(t) {
     gemini_curl_rc: t.gemini_curl_rc ?? null,
     gemini_http_at: t.gemini_http_at ?? null,
     gemini_model: t.gemini_model || null,
+    current_brain: t.current_brain || null,
+    brain_mode: t.brain_mode || null,
+    final_source: t.final_source || null,
+    cloud_in_control: t.cloud_in_control || null,
+    cloud_plan_state: t.cloud_plan_state || null,
+    cloud_control_provider: t.cloud_control_provider || null,
+    cloud_plan_provider: t.cloud_plan_provider || null,
+    reasoning_status: t.reasoning_status || null,
+    reasoning_event_reason: t.reasoning_event_reason || null,
+    reasoning_proposal_action: t.reasoning_proposal_action || null,
+    reasoning_proposal_profile: t.reasoning_proposal_profile || null,
+    reasoning_confidence: t.reasoning_confidence || null,
+    predictive_policy_present: t.predictive_policy_present || null,
+    predictive_policy_age_s: t.predictive_policy_age_s ?? null,
+    root_policy_present: t.root_policy_present || null,
+    root_policy_age_s: t.root_policy_age_s ?? null,
     control_loop_age_s: t.control_loop_age_s ?? null,
     agent_execution_status: t.agent_execution_status || null,
     agent_execution_source: t.agent_execution_source || null,
