@@ -1,1 +1,1 @@
-{"version":"v1.2.0-bridge","description":"HERMES WORK automatic outbound data bridge; sanitized read-only telemetry; no Workers AI calls and zero Neurons for bridge traffic","restart":false}
+{"version":"v1.2.1-bridgefix","description":"HERMES WORK bridge credential fix: generates its own local bridge key automatically; no Hermes AI token and zero Neurons for bridge telemetry","restart":false}
