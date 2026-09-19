@@ -1,0 +1,115 @@
+name: DJAEGER WORK Legacy Signing Bridge
+
+on:
+  push:
+    branches:
+      - djaeger-work-native-v1.2.7-id
+    paths:
+      - '.github/workflows/djaeger-work-signing-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-work-legacy-signing-bridge
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout legacy signer only
+        uses: actions/checkout@v4
+        with:
+          ref: djaeger-work-native-v1.2.7-id
+          path: legacy-signing
+
+      - name: Checkout isolated DJAEGER WORK source
+        uses: actions/checkout@v4
+        with:
+          repository: Djaeger1/DJAEGER-WORK
+          ref: main
+          path: work
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Restore approved logo and legacy signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/hermes-work-terminal/app/src/main/res/drawable
+          cat work/hermes-work-terminal/logo-b64/logo.*.b64 | base64 -d > work/hermes-work-terminal/app/src/main/res/drawable/djaeger_logo.png
+          echo "db60ad3b00744246520b53a40d3e28c229496591cd41d3feb5c8ae1ab474e6b7  work/hermes-work-terminal/app/src/main/res/drawable/djaeger_logo.png" | sha256sum -c -
+
+          base64 -d legacy-signing/hermes-work-terminal/signing/hermes_work_terminal.jks.b64 > "$RUNNER_TEMP/hermes_work_terminal.jks"
+          chmod 600 "$RUNNER_TEMP/hermes_work_terminal.jks"
+
+          LEGACY_GRADLE=legacy-signing/hermes-work-terminal/app/build.gradle
+          STORE_PASSWORD="$(sed -n "s/.*storePassword '\([^']*\)'.*/\1/p" "$LEGACY_GRADLE" | head -1)"
+          KEY_ALIAS="$(sed -n "s/.*keyAlias '\([^']*\)'.*/\1/p" "$LEGACY_GRADLE" | head -1)"
+          KEY_PASSWORD="$(sed -n "s/.*keyPassword '\([^']*\)'.*/\1/p" "$LEGACY_GRADLE" | head -1)"
+          test -n "$STORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+
+          {
+            echo "HERMES_WORK_KEYSTORE_PATH=$RUNNER_TEMP/hermes_work_terminal.jks"
+            echo "HERMES_WORK_STORE_PASSWORD=$STORE_PASSWORD"
+            echo "HERMES_WORK_KEY_ALIAS=$KEY_ALIAS"
+            echo "HERMES_WORK_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify isolated APK source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e work/hermes-work-terminal/signing/hermes_work_terminal.jks.b64
+          grep -Fq 'applicationId "com.hermes.workdashboard"' work/hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionCode 128' work/hermes-work-terminal/app/build.gradle
+          grep -Fq 'versionName "1.2.8"' work/hermes-work-terminal/app/build.gradle
+
+      - name: Build signed APK from isolated source
+        working-directory: work/hermes-work-terminal
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease --stacktrace
+
+      - name: Verify signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=work/hermes-work-terminal/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee SIGNATURE.txt
+          "$BT/aapt" dump badging "$APK" | tee BADGING.txt
+          grep -Fq "package: name='com.hermes.workdashboard'" BADGING.txt
+          grep -Fq "versionCode='128'" BADGING.txt
+          grep -Fq "versionName='1.2.8'" BADGING.txt
+          grep -Fq "application-label:'DJAEGER WORK'" BADGING.txt
+          cp "$APK" DJAEGER_WORK_Dashboard_v1.2.8_SIGNED.apk
+          sha256sum DJAEGER_WORK_Dashboard_v1.2.8_SIGNED.apk | tee SHA256.txt
+
+      - name: Upload signed migration APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-WORK-v1.2.8-SIGNED-MIGRATION
+          path: |
+            DJAEGER_WORK_Dashboard_v1.2.8_SIGNED.apk
+            SHA256.txt
+            SIGNATURE.txt
+            BADGING.txt
+          retention-days: 30
