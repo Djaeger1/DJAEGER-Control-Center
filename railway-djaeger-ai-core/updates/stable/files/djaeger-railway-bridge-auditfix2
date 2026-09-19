@@ -1,0 +1,288 @@
+#!/system/bin/sh
+# DJAEGER RAILWAY2 AUDITBRIDGE1 — self-contained outbound observability/debug bridge.
+# Contract: read DJAEGER-owned state, publish a bounded telemetry snapshot, never write hardware/sysfs.
+M="${DJAEGER_MODDIR:-/data/adb/modules/djaeger_game_stabilizer}"
+P="${DJAEGER_STATE_DIR:-/data/adb/djaeger_ai}"
+DEF="$M/system/etc/djaeger/railway/railway.conf"
+CFG="$P/railway.conf"
+RDIR="$P/railway"
+STATE="$RDIR/state.env"
+PIDFILE="$RDIR/daemon.pid"
+SCREEN="$M/system/bin/djaeger-screen-state"
+LIVE_AUDIT="$M/system/bin/djaeger-live-audit"
+AUDIT_STATE="$RDIR/live_audit.env"
+
+qget(){
+  [ -r "$1" ] || return 0
+  awk -F= -v k="$2" '$1==k{v=substr($0,index($0,"=")+1);gsub(/^[[:space:]\047\042]+|[[:space:]\047\042]+$/,"",v);print v;exit}' "$1" 2>/dev/null
+}
+conf(){
+  _v="$(qget "$CFG" "$1")"; [ -n "$_v" ] || _v="$(qget "$DEF" "$1")"
+  [ -n "$_v" ] && printf '%s' "$_v" || printf '%s' "$2"
+}
+clean(){ printf '%s' "${1:-}" | tr '\r\n\t' '   ' | tr "'" ' ' | cut -c1-240; }
+jesc(){ clean "$1" | sed 's/\\/\\\\/g;s/"/\\"/g'; }
+isnum(){ case "${1:-}" in ''|*[!0-9.-]*) return 1;; *) return 0;; esac; }
+write_state(){
+  mkdir -p "$RDIR" 2>/dev/null || return 1
+  chmod 700 "$RDIR" 2>/dev/null || true
+  _tmp="$STATE.tmp.$$"
+  {
+    printf "SCHEMA='DJAEGER_RAILWAY_STATE_V1'\n"
+    printf "AT='%s'\n" "${1:-$(date +%s)}"
+    printf "STATE='%s'\n" "${2:-UNKNOWN}"
+    printf "HTTP_CODE='%s'\n" "${3:-NA}"
+    printf "CURL_RC='%s'\n" "${4:-NA}"
+    printf "TRACE_ID='%s'\n" "$(clean "${5:-NA}")"
+    printf "REASON='%s'\n" "$(clean "${6:-NA}")"
+    printf "ENDPOINT='%s'\n" "$(clean "${7:-$(conf ENDPOINT NA)}")"
+    printf "HARDWARE_AUTHORITY='NONE'\n"
+    printf "REMOTE_HARDWARE_COMMANDS='DISABLED'\n"
+  } >"$_tmp" 2>/dev/null && { chmod 600 "$_tmp" 2>/dev/null; mv -f "$_tmp" "$STATE"; }
+}
+ensure_runtime_config(){
+  mkdir -p "$P" "$RDIR" 2>/dev/null || return 1
+  chmod 700 "$P" "$RDIR" 2>/dev/null || true
+  if [ ! -s "$CFG" ] && [ -r "$DEF" ]; then
+    cp -f "$DEF" "$CFG.tmp.$$" 2>/dev/null && chmod 600 "$CFG.tmp.$$" 2>/dev/null && mv -f "$CFG.tmp.$$" "$CFG"
+  fi
+}
+device_id(){
+  _f="$RDIR/device_id"
+  if [ ! -s "$_f" ]; then
+    _id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null | tr -d '\r\n')"
+    [ -n "$_id" ] || _id="djg-$(date +%s)-$$"
+    umask 077; printf '%s\n' "$_id" >"$_f.tmp.$$" 2>/dev/null && mv -f "$_f.tmp.$$" "$_f"
+  fi
+  cat "$_f" 2>/dev/null | head -1 | tr -d '\r\n'
+}
+first(){ _v="$(qget "$1" "$2")"; [ -n "$_v" ] && printf '%s' "$_v" || printf '%s' "$3"; }
+json_field(){ printf '"%s":"%s"' "$1" "$(jesc "$2")"; }
+
+build_payload(){
+  _now="$(date +%s)"
+  _mp="$M/module.prop"; _ctx="$P/workload_context.env"; _rt="$P/runtime_status"; _truth="$P/agent_hardware_truth.env"
+  _nb="$P/hermes/neuron_budget.env"; _hc="$P/hermes/cloud_state.env"; _gem="$P/app_control/ui_gemini_status.env"
+  _fb="$P/resource_execution_feedback"
+  _rup="$P/railway/update_state.env"
+  _lb="$P/local_brain_state"; _pp="$P/predictive_policy"; _rp="$P/root_authority_policy"; _hs="$P/gemini_http_state"
+  _hssnap="$RDIR/.gemini_http_snapshot.$$"; [ -r "$_hs" ] && cp -f "$_hs" "$_hssnap" 2>/dev/null || : >"$_hssnap"
+  _did="$(device_id)"
+  _ver="$(sed -n 's/^version=//p' "$_mp" 2>/dev/null | head -1)"; _vc="$(sed -n 's/^versionCode=//p' "$_mp" 2>/dev/null | head -1)"
+  _class="$(first "$_ctx" WORKLOAD_CLASS "$(first "$_rt" workload_class UNKNOWN)")"
+  _pkg="$(first "$_ctx" PACKAGE "$(first "$_rt" subject_package NA)")"
+  _profile="$(first "$_ctx" WORKLOAD_PROFILE "$(first "$_rt" profile NA)")"
+  _um="$(first "$_ctx" USER_MODE "$(cat "$P/user_mode" 2>/dev/null | head -1 | tr -d '\r\n')")"; [ -n "$_um" ] || _um=NA
+  _win="$(first "$_ctx" WINDOW_MODE NA)"
+  _skin="$(first "$_truth" SKIN_TEMP_C NA)"; _bat="$(first "$_truth" BAT_TEMP_C NA)"; _cpu="$(first "$_truth" CPU_TEMP_C NA)"; _gpu="$(first "$_truth" GPU_TEMP_C NA)"
+  _fps="$(first "$_truth" FPS NA)"; _jank="$(first "$_truth" JANK_PCT NA)"; _p95="$(first "$_truth" P95_MS NA)"; _p99="$(first "$_truth" P99_MS NA)"
+  _used="$(first "$_nb" USED_EST 0)"; _lim="$(first "$_nb" LIMIT 10000)"
+  _tier=NORMAL; isnum "$_used" || _used=0; isnum "$_lim" || _lim=10000
+  awk -v u="$_used" 'BEGIN{exit !(u>=9000)}' 2>/dev/null && _tier=RESERVE || { awk -v u="$_used" 'BEGIN{exit !(u>=8000)}' 2>/dev/null && _tier=SANGAT_HEMAT || { awk -v u="$_used" 'BEGIN{exit !(u>=6000)}' 2>/dev/null && _tier=HEMAT || true; }; }
+  _hstate="$(first "$_hc" HERMES_CLOUD_STATE NOT_YET_CHECKED)"; _hhttp="$(first "$_hc" HERMES_CLOUD_HTTP_CODE NA)"
+  _pqstate="$(first "$_hc" HERMES_NEURON_PROVIDER_QUOTA_STATE UNKNOWN)"; _pqreason="$(first "$_hc" HERMES_NEURON_PROVIDER_QUOTA_REASON NONE)"
+  _gstat="$(first "$_gem" GEMINI_STATUS NOT_YET_CHECKED)"
+  _ghttp="$(first "$_hssnap" HTTP_CODE NA)"; _gcurl="$(first "$_hssnap" CURL_RC 0)"; _gat="$(first "$_hssnap" AT 0)"; _gmodel="$(first "$_hssnap" MODEL NA)"
+  case "$_gcurl" in ''|*[!0-9]*) _gcurl=0;; esac; case "$_gat" in ''|*[!0-9]*) _gat=0;; esac
+  _cb="$(first "$_lb" CURRENT_BRAIN NONE)"; _bm="$(first "$_lb" BRAIN_MODE UNKNOWN)"; _fs="$(first "$_lb" FINAL_SOURCE UNKNOWN)"
+  _cic="$(first "$_lb" CLOUD_IN_CONTROL NO)"; _cps="$(first "$_lb" CLOUD_PLAN_STATE NOT_USED)"; _cpr="$(first "$_lb" CLOUD_PLAN_REASON UNPUBLISHED)"
+  _ccp="$(first "$_lb" CLOUD_CONTROL_PROVIDER NONE)"; _cpp="$(first "$_lb" CLOUD_PLAN_PROVIDER NONE)"
+  _psid="$(first "$_pp" POLICY_SESSION_ID NA)"; _pgame="$(first "$_pp" POLICY_GAME NA)"; _pum="$(first "$_pp" POLICY_USER_MODE NA)"; _pwm="$(first "$_pp" POLICY_WINDOW_MODE NA)"; _pwe="$(first "$_pp" POLICY_WINDOW_EPOCH NA)"
+  _puntil="$(first "$_pp" POLICY_UNTIL 0)"; case "$_puntil" in ''|*[!0-9]*) _puntil=0;; esac; _prem=0; [ "$_puntil" -gt 0 ] 2>/dev/null && _prem=$((_puntil-_now))
+  _ppp=NO; _ppa=0; if [ -r "$_pp" ]; then _ppp=YES; _pat="$(first "$_pp" POLICY_AT 0)"; case "$_pat" in ''|*[!0-9]*) _pat=0;; esac; [ "$_pat" -gt 0 ] 2>/dev/null && _ppa=$((_now-_pat)); [ "$_ppa" -lt 0 ] 2>/dev/null && _ppa=0; fi
+  _rpp=NO; _rpa=0; if [ -r "$_rp" ]; then _rpp=YES; _rat="$(first "$_rp" POLICY_AT 0)"; case "$_rat" in ''|*[!0-9]*) _rat=0;; esac; [ "$_rat" -gt 0 ] 2>/dev/null && _rpa=$((_now-_rat)); [ "$_rpa" -lt 0 ] 2>/dev/null && _rpa=0; fi
+  _lsid="$(cat "$P/session_id" 2>/dev/null | tr -d '\r\n')"; [ -n "$_lsid" ] || _lsid=NA
+  _lgame="$(cat "$P/session_game" 2>/dev/null | tr -d '\r\n')"; [ -n "$_lgame" ] || _lgame=NA
+  _lwm="$(first "$P/window_context" WINDOW_MODE INACTIVE)"; _lwe="$(cat "$P/window_context_epoch" 2>/dev/null | tr -cd '0-9')"; [ -n "$_lwe" ] || _lwe=0
+  _ast="$(first "$AUDIT_STATE" STATUS NOT_YET_RUN)"; _apass="$(first "$AUDIT_STATE" PASS_COUNT 0)"; _awarn="$(first "$AUDIT_STATE" WARN_COUNT 0)"; _afail="$(first "$AUDIT_STATE" FAIL_COUNT 0)"; _aat="$(first "$AUDIT_STATE" AT 0)"
+  _actrl="$(first "$AUDIT_STATE" CONTROLLER_LIVE UNKNOWN)"; _apred="$(first "$AUDIT_STATE" PREDICTOR_LIVE UNKNOWN)"; _asup="$(first "$AUDIT_STATE" SUPERVISOR_LIVE UNKNOWN)"; _awork="$(first "$AUDIT_STATE" WORKLOAD_LIVE UNKNOWN)"; _aapp="$(first "$AUDIT_STATE" APP_CONTROL_LIVE UNKNOWN)"; _abridge="$(first "$AUDIT_STATE" BRIDGE_LIVE UNKNOWN)"; _aupd="$(first "$AUDIT_STATE" UPDATER_LIVE UNKNOWN)"; _aks="$(first "$AUDIT_STATE" KNOWLEDGE_SYNC_LIVE UNKNOWN)"
+  _ahttps="$(first "$AUDIT_STATE" ENDPOINT_HTTPS UNKNOWN)"; _aperm="$(first "$AUDIT_STATE" SECRET_PERMISSIONS UNKNOWN)"; _atests="$(first "$AUDIT_STATE" SELFTEST_SUMMARY NA)"
+  _ahpred="$(first "$AUDIT_STATE" HASH_PREDICTOR NA)"; _ahupd="$(first "$AUDIT_STATE" HASH_RAILWAY_UPDATER NA)"; _ahbridge="$(first "$AUDIT_STATE" HASH_RAILWAY_BRIDGE NA)"
+  _loop="$(first "$_rt" control_loop_age_s NA)"
+  # RAILWAY2 EXECATTR1: publish workload-scoped Agent truth, not stale APP state.
+  # agent_hardware_truth.env is authored by djaeger-agent-core and already applies
+  # GAME/APP/SYSTEM rebinding + APP freshness rules before publication.
+  _exec="$(first "$_truth" EXECUTION_STATUS UNAVAILABLE)"
+  _exec_src=AGENT_HARDWARE_TRUTH
+  _exec_at="$(first "$_truth" AT NA)"; _exec_age=NA
+  _repair_state="$(first "$_rup" STATE NOT_YET_CHECKED)"
+  _repair_seq="$(first "$_rup" SEQ 0)"
+  _repair_release="$(first "$_rup" RELEASE NONE)"
+  _repair_detail="$(first "$_rup" DETAIL NA)"
+  if isnum "$_exec_at" && [ "$_exec_at" -ge 0 ] 2>/dev/null; then
+    _exec_age=$((_now-_exec_at)); [ "$_exec_age" -ge 0 ] 2>/dev/null || _exec_age=NA
+  fi
+  printf '{'
+  json_field schema DJAEGER_DEVICE_TELEMETRY_V1; printf ','
+  json_field device_id "$_did"; printf ','
+  printf '"at":%s,' "$_now"
+  json_field module_version "$_ver"; printf ','
+  json_field module_version_code "$_vc"; printf ','
+  json_field workload_class "$_class"; printf ','
+  json_field subject_package "$_pkg"; printf ','
+  json_field profile "$_profile"; printf ','
+  json_field user_mode "$_um"; printf ','
+  json_field window_mode "$_win"; printf ','
+  json_field skin_temp_c "$_skin"; printf ','
+  json_field battery_temp_c "$_bat"; printf ','
+  json_field cpu_temp_c "$_cpu"; printf ','
+  json_field gpu_temp_c "$_gpu"; printf ','
+  json_field fps "$_fps"; printf ','
+  json_field jank_pct "$_jank"; printf ','
+  json_field p95_ms "$_p95"; printf ','
+  json_field p99_ms "$_p99"; printf ','
+  json_field neurons_used "$_used"; printf ','
+  json_field neurons_limit "$_lim"; printf ','
+  json_field neuron_tier "$_tier"; printf ','
+  json_field provider_quota_state "$_pqstate"; printf ','
+  json_field provider_quota_reason "$_pqreason"; printf ','
+  json_field hermes_cloud_state "$_hstate"; printf ','
+  json_field hermes_cloud_http "$_hhttp"; printf ','
+  json_field gemini_status "$_gstat"; printf ','
+  json_field gemini_http_code "$_ghttp"; printf ','
+  json_field gemini_curl_rc "$_gcurl"; printf ','
+  json_field gemini_http_at "$_gat"; printf ','
+  json_field gemini_model "$_gmodel"; printf ','
+  json_field current_brain "$_cb"; printf ','
+  json_field brain_mode "$_bm"; printf ','
+  json_field final_source "$_fs"; printf ','
+  json_field cloud_in_control "$_cic"; printf ','
+  json_field cloud_plan_state "$_cps"; printf ','
+  json_field cloud_plan_reason "$_cpr"; printf ','
+  json_field cloud_control_provider "$_ccp"; printf ','
+  json_field cloud_plan_provider "$_cpp"; printf ','
+  json_field policy_session_id "$_psid"; printf ','
+  json_field policy_game "$_pgame"; printf ','
+  json_field policy_user_mode "$_pum"; printf ','
+  json_field policy_window_mode "$_pwm"; printf ','
+  json_field policy_window_epoch "$_pwe"; printf ','
+  json_field policy_until "$_puntil"; printf ','
+  json_field policy_remaining_s "$_prem"; printf ','
+  json_field predictive_policy_present "$_ppp"; printf ','
+  json_field predictive_policy_age_s "$_ppa"; printf ','
+  json_field root_policy_present "$_rpp"; printf ','
+  json_field root_policy_age_s "$_rpa"; printf ','
+  json_field live_session_id "$_lsid"; printf ','
+  json_field live_game "$_lgame"; printf ','
+  json_field live_window_mode "$_lwm"; printf ','
+  json_field live_window_epoch "$_lwe"; printf ','
+  json_field audit_status "$_ast"; printf ','
+  json_field audit_pass_count "$_apass"; printf ','
+  json_field audit_warn_count "$_awarn"; printf ','
+  json_field audit_fail_count "$_afail"; printf ','
+  json_field audit_at "$_aat"; printf ','
+  json_field audit_controller_live "$_actrl"; printf ','
+  json_field audit_predictor_live "$_apred"; printf ','
+  json_field audit_supervisor_live "$_asup"; printf ','
+  json_field audit_workload_live "$_awork"; printf ','
+  json_field audit_app_control_live "$_aapp"; printf ','
+  json_field audit_bridge_live "$_abridge"; printf ','
+  json_field audit_updater_live "$_aupd"; printf ','
+  json_field audit_knowledge_sync_live "$_aks"; printf ','
+  json_field audit_endpoint_https "$_ahttps"; printf ','
+  json_field audit_secret_permissions "$_aperm"; printf ','
+  json_field audit_selftest_summary "$_atests"; printf ','
+  json_field audit_hash_predictor "$_ahpred"; printf ','
+  json_field audit_hash_updater "$_ahupd"; printf ','
+  json_field audit_hash_bridge "$_ahbridge"; printf ','
+  json_field control_loop_age_s "$_loop"; printf ','
+  json_field agent_execution_status "$_exec"; printf ','
+  json_field agent_execution_source "$_exec_src"; printf ','
+  json_field agent_execution_age_s "$_exec_age"; printf ','
+  json_field remote_repair_state "$_repair_state"; printf ','
+  json_field remote_repair_seq "$_repair_seq"; printf ','
+  json_field remote_repair_release "$_repair_release"; printf ','
+  json_field remote_repair_detail "$_repair_detail"; printf ','
+  json_field source DJAEGER_RAILWAY_AUDITBRIDGE1
+  printf '}\n'
+  rm -f "$_hssnap" 2>/dev/null
+}
+
+send_once(){
+  ensure_runtime_config || { write_state "$(date +%s)" ERROR NA NA NA CONFIG_INIT_FAILED; return 2; }
+  _enabled="$(conf ENABLED 0)"; [ "$_enabled" = 1 ] || { write_state "$(date +%s)" DISABLED NA 0 NA OWNER_DISABLED; return 0; }
+  _ep="$(conf ENDPOINT '')"; _tok="$(conf ACCESS_TOKEN '')"
+  case "$_ep" in https://*) :;; *) write_state "$(date +%s)" UNCONFIGURED NA 0 NA ENDPOINT_INVALID "$_ep"; return 3;; esac
+  [ -n "$_tok" ] || { write_state "$(date +%s)" UNCONFIGURED NA 0 NA TOKEN_MISSING "$_ep"; return 4; }
+  command -v curl >/dev/null 2>&1 || { write_state "$(date +%s)" UNAVAILABLE NA 127 NA CURL_MISSING "$_ep"; return 5; }
+  _ct="$(conf CONNECT_TIMEOUT_SEC 4)"; _tt="$(conf TOTAL_TIMEOUT_SEC 8)"
+  _req="$RDIR/.telemetry.$$"; _resp="$RDIR/.resp.$$"; _err="$RDIR/.err.$$"
+  build_payload >"$_req" || { rm -f "$_req"; write_state "$(date +%s)" ERROR NA 1 NA PAYLOAD_BUILD_FAILED "$_ep"; return 6; }
+  _http="$(curl -4 --http1.1 --connect-timeout "$_ct" -m "$_tt" -sS -o "$_resp" -w '%{http_code}' -H 'Content-Type: application/json' -H "Authorization: Bearer $_tok" --data-binary @"$_req" "${_ep%/}/v1/device/telemetry" 2>"$_err")"; _rc=$?
+  if [ "$_rc" -ne 0 ]; then
+    _http="$(curl --http1.1 --connect-timeout "$_ct" -m "$_tt" -sS -o "$_resp" -w '%{http_code}' -H 'Content-Type: application/json' -H "Authorization: Bearer $_tok" --data-binary @"$_req" "${_ep%/}/v1/device/telemetry" 2>"$_err")"; _rc=$?
+  fi
+  _trace="$(sed -n 's/.*"trace_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_resp" 2>/dev/null | head -1)"
+  if [ "$_rc" -eq 0 ] && [ "$_http" = 200 ]; then
+    write_state "$(date +%s)" ONLINE "$_http" "$_rc" "${_trace:-NA}" OK "$_ep"; _ret=0
+  else
+    _reason="$(cat "$_err" 2>/dev/null | tr '\r\n\t' '   ' | cut -c1-180)"; [ -n "$_reason" ] || _reason="HTTP_${_http:-000}"
+    write_state "$(date +%s)" OFFLINE "${_http:-000}" "$_rc" "${_trace:-NA}" "$_reason" "$_ep"; _ret=1
+  fi
+  rm -f "$_req" "$_resp" "$_err" 2>/dev/null; unset _tok
+  return "$_ret"
+}
+
+interval_now(){
+  _screen_off=0
+  if [ -x "$SCREEN" ]; then sh "$SCREEN" on >/dev/null 2>&1 || _screen_off=1; fi
+  if [ "$_screen_off" -eq 1 ]; then conf SCREEN_OFF_INTERVAL_SEC 300; return; fi
+  _class="$(qget "$P/workload_context.env" WORKLOAD_CLASS)"
+  case "$_class" in GAME) conf GAME_INTERVAL_SEC 15;; APP) conf APP_INTERVAL_SEC 30;; *) conf IDLE_INTERVAL_SEC 120;; esac
+}
+daemon(){
+  ensure_runtime_config || exit 2
+  _old="$(cat "$PIDFILE" 2>/dev/null)"; case "$_old" in ''|*[!0-9]*) :;; *) kill -0 "$_old" 2>/dev/null && exit 0;; esac
+  printf '%s\n' "$$" >"$PIDFILE" 2>/dev/null; chmod 600 "$PIDFILE" 2>/dev/null || true
+  _fails=0
+  while :; do
+    send_once && _fails=0 || _fails=$((_fails+1))
+    _wait="$(interval_now)"; case "$_wait" in ''|*[!0-9]*) _wait=120;; esac
+    if [ "$_fails" -gt 0 ]; then
+      _bo=$((_wait * (_fails+1))); _max="$(conf MAX_BACKOFF_SEC 600)"; case "$_max" in ''|*[!0-9]*) _max=600;; esac
+      [ "$_bo" -gt "$_max" ] 2>/dev/null && _bo="$_max"; _wait="$_bo"
+    fi
+    sleep "$_wait"
+  done
+}
+status(){
+  ensure_runtime_config >/dev/null 2>&1 || true
+  [ -r "$STATE" ] || write_state "$(date +%s)" NOT_YET_SENT NA 0 NA NO_TELEMETRY_YET
+  [ -r "$STATE" ] && cat "$STATE"
+}
+selftest(){
+  _p=0; _f=0
+  ok(){ echo "PASS|$1"; _p=$((_p+1)); }; bad(){ echo "FAIL|$1"; _f=$((_f+1)); }
+  grep -Fq "HARDWARE_AUTHORITY='NONE'" "$0" && ok no_hardware_authority || bad no_hardware_authority
+  grep -Fq 'REMOTE_HARDWARE_COMMANDS' "$0" && ok remote_hw_disabled_contract || bad remote_hw_disabled_contract
+  _code="$RDIR/.selftest_code.$$"; mkdir -p "$RDIR" 2>/dev/null || true; sed '/^selftest(){/,$d' "$0" >"$_code" 2>/dev/null
+  if grep -Eq 'djaeger-root-authority|apply-policy|>[[:space:]]*/(sys|proc/sys)/|tee[[:space:]]+/(sys|proc/sys)/|write[^[:space:]]*[[:space:]].*/(sys|proc/sys)/' "$_code" 2>/dev/null; then bad no_hardware_write_path; else ok no_hardware_write_path; fi
+  rm -f "$_code" 2>/dev/null
+  grep -Fq '/v1/device/telemetry' "$0" && ok telemetry_endpoint || bad telemetry_endpoint
+  grep -Fq 'Authorization: Bearer' "$0" && ok bearer_auth || bad bearer_auth
+  grep -Fq 'neuron_budget.env' "$0" && ok neuron_observability || bad neuron_observability
+  grep -Fq 'agent_hardware_truth.env' "$0" && ok verified_truth_observability || bad verified_truth_observability
+  grep -Fq 'agent_execution_source' "$0" && grep -Fq 'AGENT_HARDWARE_TRUTH' "$0" && ok scoped_execution_attribution || bad scoped_execution_attribution
+  grep -Fq 'remote_repair_state' "$0" && ok remote_repair_observability || bad remote_repair_observability
+  grep -Fq 'case "$_ep" in https://*)' "$0" && ok https_only || bad https_only
+  grep -Fq 'DJAEGER_RAILWAY_AUDITBRIDGE1' "$0" && ok audit_payload || bad audit_payload
+  if [ -x "$LIVE_AUDIT" ]; then
+    # The audit's own selftest is a regression gate. Its runtime "run" result is
+    # observability only: it intentionally reports pre-existing component failures,
+    # so those findings must not make this bridge selftest fail and rollback an
+    # otherwise valid Railway software repair.
+    sh "$LIVE_AUDIT" selftest >/dev/null 2>&1 && ok live_audit_selftest || bad live_audit_selftest
+    sh "$LIVE_AUDIT" run >/dev/null 2>&1 || true
+    ok live_audit_observe
+  else bad live_audit_missing; fi
+  echo "PASS_COUNT=$_p"; echo "FAIL_COUNT=$_f"; [ "$_f" -eq 0 ]
+}
+
+case "${1:-once}" in
+  once) send_once;;
+  payload) ensure_runtime_config >/dev/null 2>&1 || true; build_payload;;
+  daemon) daemon;;
+  status) status;;
+  selftest) selftest;;
+  *) echo 'Usage: djaeger-railway-bridge {once|payload|daemon|status|selftest}'; exit 2;;
+esac
