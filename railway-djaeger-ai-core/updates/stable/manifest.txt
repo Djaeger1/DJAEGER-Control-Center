@@ -1,6 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
 SEQ='7'
-RELEASE='GEMINITRANSPORTFIX1'
+RELEASE='UPDATERALLOWPRED1'
 TARGET_VC='129659'
 FILE_COUNT='1'
-FILE|predictor-geminitransportfix1|predictor.sh|a2afef5aae2d1a0294a588b59a2326449914ba64ffa3b5ba6397f1815cfee95a|755
+FILE|djaeger-railway-updater-allowpred1|system/bin/djaeger-railway-updater|5cba172178ab888f402f58e235018126ff086b8414e5b0625820e24d9e50e813|755
