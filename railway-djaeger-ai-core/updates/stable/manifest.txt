@@ -1,8 +1,9 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='17'
-RELEASE='AUDITFIX2'
+SEQ='18'
+RELEASE='LIVEAUDIT1'
 TARGET_VC='129659'
-FILE_COUNT='3'
+FILE_COUNT='4'
 FILE|predictor-auditfix1|predictor.sh|8ea55c19f2c4cadd8282963a332fabe974931fe6565e707dfa31fb50f4aacd00|755
-FILE|djaeger-railway-bridge-geminidiag1|system/bin/djaeger-railway-bridge|42da6cabf9adbb6195eea1e239f1b39dfd69d292538a8bf65e27b07c3231c11d|755
 FILE|djaeger-railway-updater-auditfix2|system/bin/djaeger-railway-updater|e904df2d216671b2033b3d155850c44846265adc542cd39c1ad2bf9c059de257|755
+FILE|djaeger-live-audit-v1|system/bin/djaeger-live-audit|c8835eb16035a75831919bf5cc37cd2f59d4c34296ba47ebd1e710ff59835b8e|755
+FILE|djaeger-railway-bridge-auditbridge1|system/bin/djaeger-railway-bridge|1cf77e2fcd428e63604aa3fdab1053c3520ce4b34b1119783ae1f400d27781b8|755
