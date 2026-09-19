@@ -2,6 +2,8 @@
 
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const PORT = Number(process.env.PORT || 3000);
 const TOKEN = String(process.env.DJAEGER_ACCESS_TOKEN || '');
@@ -10,10 +12,12 @@ const BODY_LIMIT = Math.max(4096, Math.min(262144, Number(process.env.BODY_LIMIT
 const RELEASE = 'DJAEGER_AUTOHEAL_V1';
 const HARDWARE_AUTHORITY = 'NONE';
 const BUILD_ID = String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.DJAEGER_BUILD_ID || 'unknown').slice(0, 64);
+const UPDATE_ROOT = path.join(__dirname, 'updates', 'stable');
 
 let lastTelemetry = null;
 let lastKnownGood = null;
 let lastAnomalies = [];
+let lastUpdateAck = null;
 const telemetryStats = {
   accepted: 0,
   anomalous: 0,
@@ -140,7 +144,8 @@ function sanitizeTelemetry(x) {
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
     'hermes_cloud_state','hermes_cloud_http','gemini_status',
-    'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s','source'
+    'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s',
+    'remote_repair_state','remote_repair_seq','remote_repair_release','remote_repair_detail','source'
   ];
   const out = {};
   for (const k of allowed) {
@@ -180,6 +185,10 @@ function safeTelemetrySummary(t) {
     agent_execution_status: t.agent_execution_status || null,
     agent_execution_source: t.agent_execution_source || null,
     agent_execution_age_s: t.agent_execution_age_s ?? null,
+    remote_repair_state: t.remote_repair_state || null,
+    remote_repair_seq: t.remote_repair_seq ?? null,
+    remote_repair_release: t.remote_repair_release || null,
+    remote_repair_detail: t.remote_repair_detail || null,
     agent_execution_status_trust: t.agent_execution_source ? 'SCOPED' : 'LEGACY_UNSCOPED',
     source: t.source || null,
     server_received_at: t.server_received_at
@@ -292,7 +301,8 @@ function serviceSelftest() {
     { name: 'hardware_authority_none', ok: HARDWARE_AUTHORITY === 'NONE' },
     { name: 'trace_bounds', ok: MAX_TRACES >= 20 && MAX_TRACES <= 1000 },
     { name: 'body_limit_bounds', ok: BODY_LIMIT >= 4096 && BODY_LIMIT <= 262144 },
-    { name: 'release_defined', ok: RELEASE === 'DJAEGER_AUTOHEAL_V1' }
+    { name: 'release_defined', ok: RELEASE === 'DJAEGER_AUTOHEAL_V1' },
+    { name: 'update_manifest_present', ok: fs.existsSync(path.join(UPDATE_ROOT, 'manifest.txt')) }
   ];
 
   const failed = checks.filter(c => !c.ok).map(c => c.name);
@@ -334,6 +344,60 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
+    if (req.method === 'GET' && url.pathname === '/v1/device/update/manifest.txt') {
+      const manifestPath = path.join(UPDATE_ROOT, 'manifest.txt');
+      if (!fs.existsSync(manifestPath)) return json(res, 404, { ok: false, error: 'update_manifest_missing' });
+      const data = fs.readFileSync(manifestPath);
+      res.writeHead(200, {
+        'content-type': 'text/plain; charset=utf-8',
+        'content-length': data.length,
+        'cache-control': 'no-store'
+      });
+      return res.end(data);
+    }
+
+    if (req.method === 'GET' && url.pathname.startsWith('/v1/device/update/file/')) {
+      const id = url.pathname.slice('/v1/device/update/file/'.length);
+      if (!/^[A-Za-z0-9._-]+$/.test(id)) return json(res, 400, { ok: false, error: 'invalid_update_file_id' });
+      const filePath = path.join(UPDATE_ROOT, 'files', id);
+      if (!filePath.startsWith(path.join(UPDATE_ROOT, 'files') + path.sep) || !fs.existsSync(filePath)) {
+        return json(res, 404, { ok: false, error: 'update_file_not_found' });
+      }
+      const data = fs.readFileSync(filePath);
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-length': data.length,
+        'cache-control': 'no-store'
+      });
+      return res.end(data);
+    }
+
+    if (req.method === 'POST' && url.pathname === '/v1/device/update/ack') {
+      const body = await readBody(req);
+      const ack = {
+        device_id: String(body.device_id || 'UNKNOWN').slice(0, 96),
+        seq: normalizeNumber('update_seq', body.seq ?? 0, 0, 1000000000),
+        release: String(body.release || 'UNKNOWN').slice(0, 128),
+        state: String(body.state || 'UNKNOWN').slice(0, 64),
+        detail: String(body.detail || '').slice(0, 256),
+        module_version_code: String(body.module_version_code || 'UNKNOWN').slice(0, 32),
+        server_received_at: nowIso()
+      };
+      lastUpdateAck = ack;
+      const tr = addTrace('UPDATE_ACK', ack);
+      return json(res, 200, { ok: true, trace_id: tr.trace_id, ack });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/v1/device/update/status') {
+      return json(res, 200, {
+        ok: true,
+        channel: 'stable',
+        manifest_present: fs.existsSync(path.join(UPDATE_ROOT, 'manifest.txt')),
+        last_ack: lastUpdateAck,
+        at: nowIso()
+      });
+    }
+
     if (req.method === 'POST' && url.pathname === '/v1/device/telemetry') {
       const body = await readBody(req);
       const t = sanitizeTelemetry(body);
@@ -420,6 +484,8 @@ const server = http.createServer(async (req, res) => {
         telemetry_interval_idle_sec: 120,
         telemetry_interval_screen_off_sec: 300,
         remote_hardware_commands: false,
+        remote_software_repairs: true,
+        update_channel: 'stable',
         hardware_authority: HARDWARE_AUTHORITY
       });
     }
