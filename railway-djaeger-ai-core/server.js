@@ -137,6 +137,8 @@ function normalizeTelemetry(x) {
   out.gemini_vault_count = normalizeNumber('gemini_vault_count', x.gemini_vault_count, 0, 32);
   out.gemini_ready_slots = normalizeNumber('gemini_ready_slots', x.gemini_ready_slots, 0, 32);
   out.gemini_cooling_slots = normalizeNumber('gemini_cooling_slots', x.gemini_cooling_slots, 0, 32);
+  out.gemini_curl_rc = normalizeNumber('gemini_curl_rc', x.gemini_curl_rc, 0, 255);
+  out.gemini_http_at = normalizeNumber('gemini_http_at', x.gemini_http_at, 0, 4102444800);
 
   return out;
 }
@@ -149,7 +151,7 @@ function sanitizeTelemetry(x) {
     'skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c',
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
-    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots',
+    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model',
     'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s',
     'remote_repair_state','remote_repair_seq','remote_repair_release','remote_repair_detail','source'
   ];
@@ -196,6 +198,9 @@ function safeTelemetrySummary(t) {
     gemini_vault_count: t.gemini_vault_count ?? null,
     gemini_ready_slots: t.gemini_ready_slots ?? null,
     gemini_cooling_slots: t.gemini_cooling_slots ?? null,
+    gemini_curl_rc: t.gemini_curl_rc ?? null,
+    gemini_http_at: t.gemini_http_at ?? null,
+    gemini_model: t.gemini_model || null,
     control_loop_age_s: t.control_loop_age_s ?? null,
     agent_execution_status: t.agent_execution_status || null,
     agent_execution_source: t.agent_execution_source || null,
