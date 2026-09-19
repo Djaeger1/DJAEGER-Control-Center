@@ -22,6 +22,11 @@ num(){ case "${1:-}" in ''|*[!0-9]*) echo 0;; *) echo "$1";; esac; }
 diag_post(){
   _g="$P/app_control/ui_gemini_status.env"
   _v="$P/gemini_keys.vault"
+  _lb="$P/local_brain_state"
+  _rt="$P/reasoning_trace.env"
+  [ -r "$_rt" ] || _rt="$P/reasoning_trace"
+  _pp="$P/predictive_policy"
+  _rp="$P/root_authority_policy"
   _c="$P/gemini_key_cooldowns"
   _now="$(date +%s)"
   _st="$(qget "$_g" GEMINI_STATUS)"; [ -n "$_st" ] || _st=NOT_YET_CHECKED
@@ -33,6 +38,20 @@ diag_post(){
   _hat="$(qget "$P/gemini_http_state" AT)"; case "$_hat" in ''|*[!0-9]*) _hat=0;; esac
   _hmodel="$(qget "$P/gemini_http_state" MODEL)"; [ -n "$_hmodel" ] || _hmodel=NA
   _cu="$(qget "$_g" GEMINI_COOLDOWN_UNTIL)"; case "$_cu" in ''|*[!0-9]*) _cu=0;; esac
+  _cb="$(qget "$_lb" CURRENT_BRAIN)"; [ -n "$_cb" ] || _cb=NONE
+  _bm="$(qget "$_lb" BRAIN_MODE)"; [ -n "$_bm" ] || _bm=UNKNOWN
+  _fs="$(qget "$_lb" FINAL_SOURCE)"; [ -n "$_fs" ] || _fs=UNKNOWN
+  _cic="$(qget "$_lb" CLOUD_IN_CONTROL)"; [ -n "$_cic" ] || _cic=NO
+  _cps="$(qget "$_lb" CLOUD_PLAN_STATE)"; [ -n "$_cps" ] || _cps=NOT_USED
+  _ccp="$(qget "$_lb" CLOUD_CONTROL_PROVIDER)"; [ -n "$_ccp" ] || _ccp=NONE
+  _cpp="$(qget "$_lb" CLOUD_PLAN_PROVIDER)"; [ -n "$_cpp" ] || _cpp=NONE
+  _rs="$(qget "$_rt" STATUS)"; [ -n "$_rs" ] || _rs=UNPUBLISHED
+  _rr="$(qget "$_rt" EVENT_REASON)"; [ -n "$_rr" ] || _rr=UNPUBLISHED
+  _ra="$(qget "$_rt" PROPOSAL_ACTION)"; [ -n "$_ra" ] || _ra=NA
+  _rprof="$(qget "$_rt" PROPOSAL_PROFILE)"; [ -n "$_rprof" ] || _rprof=NA
+  _rconf="$(qget "$_rt" CONFIDENCE)"; [ -n "$_rconf" ] || _rconf=NA
+  _ppp=NO; _ppa=0; if [ -r "$_pp" ]; then _ppp=YES; _pat="$(qget "$_pp" POLICY_AT)"; case "$_pat" in ''|*[!0-9]*) _pat=0;; esac; [ "$_pat" -gt 0 ] 2>/dev/null && _ppa=$((_now-_pat)); [ "$_ppa" -lt 0 ] 2>/dev/null && _ppa=0; fi
+  _rpp=NO; _rpa=0; if [ -r "$_rp" ]; then _rpp=YES; _rat="$(qget "$_rp" POLICY_AT)"; case "$_rat" in ''|*[!0-9]*) _rat=0;; esac; [ "$_rat" -gt 0 ] 2>/dev/null && _rpa=$((_now-_rat)); [ "$_rpa" -lt 0 ] 2>/dev/null && _rpa=0; fi
   _rem=0; [ "$_cu" -gt "$_now" ] 2>/dev/null && _rem=$((_cu-_now))
   _vcnt=0; _ready=0; _cool=0; _i=0
   if [ -r "$_v" ]; then
@@ -49,7 +68,7 @@ diag_post(){
   _ver="$(sed -n 's/^version=//p' "$M/module.prop" 2>/dev/null | head -1)"
   _body="$RDIR/.gemdiag.$$"
   cat >"$_body" <<EOF
-{"schema":"DJAEGER_DEVICE_TELEMETRY_V1","module_version":"$(clean "$_ver")","gemini_status":"$(clean "$_st")","gemini_last_event_status":"$(clean "$_last")","gemini_status_age_s":$_age,"gemini_status_fresh":"$(clean "$_fresh")","gemini_http_code":"$(clean "$_code")","gemini_cooldown_until":$_cu,"gemini_cooldown_remaining_s":$_rem,"gemini_vault_count":$_vcnt,"gemini_ready_slots":$_ready,"gemini_cooling_slots":$_cool,"gemini_curl_rc":$_hrc,"gemini_http_at":$_hat,"gemini_model":"$(clean "$_hmodel")","source":"DJAEGER_RAILWAY_GEMINI_DIAG1"}
+{"schema":"DJAEGER_DEVICE_TELEMETRY_V1","module_version":"$(clean "$_ver")","gemini_status":"$(clean "$_st")","gemini_last_event_status":"$(clean "$_last")","gemini_status_age_s":$_age,"gemini_status_fresh":"$(clean "$_fresh")","gemini_http_code":"$(clean "$_code")","gemini_cooldown_until":$_cu,"gemini_cooldown_remaining_s":$_rem,"gemini_vault_count":$_vcnt,"gemini_ready_slots":$_ready,"gemini_cooling_slots":$_cool,"gemini_curl_rc":$_hrc,"gemini_http_at":$_hat,"gemini_model":"$(clean "$_hmodel")","current_brain":"$(clean "$_cb")","brain_mode":"$(clean "$_bm")","final_source":"$(clean "$_fs")","cloud_in_control":"$(clean "$_cic")","cloud_plan_state":"$(clean "$_cps")","cloud_control_provider":"$(clean "$_ccp")","cloud_plan_provider":"$(clean "$_cpp")","reasoning_status":"$(clean "$_rs")","reasoning_event_reason":"$(clean "$_rr")","reasoning_proposal_action":"$(clean "$_ra")","reasoning_proposal_profile":"$(clean "$_rprof")","reasoning_confidence":"$(clean "$_rconf")","predictive_policy_present":"$_ppp","predictive_policy_age_s":$_ppa,"root_policy_present":"$_rpp","root_policy_age_s":$_rpa,"source":"DJAEGER_RAILWAY_GEMINI_POLICY_DIAG1"}
 EOF
   curl -4 --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null     -H 'Content-Type: application/json' -H "Authorization: Bearer $_tok"     --data-binary @"$_body" "${_ep%/}/v1/device/telemetry" 2>/dev/null || true
   rm -f "$_body" 2>/dev/null
@@ -63,6 +82,13 @@ case "${1:-once}" in
     diag_post
     echo 'PASS|gemini_diag_snapshot_posted'
     exit 0
+    ;;
+  once|'')
+    [ -r "$BASE" ] || { echo 'DJAEGER_RAILWAY_BRIDGE_BASE_MISSING' >&2; exit 127; }
+    sh "$BASE" once
+    _rc=$?
+    diag_post
+    exit "$_rc"
     ;;
   *)
     [ -r "$BASE" ] || { echo 'DJAEGER_RAILWAY_BRIDGE_BASE_MISSING' >&2; exit 127; }
