@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace 'com.hermes.workinstaller'
+    namespace 'com.hermes.workdashboard'
     compileSdk 35
 
     signingConfigs {
@@ -16,11 +16,11 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.hermes.workinstaller"
+        applicationId "com.hermes.workdashboard"
         minSdk 23
         targetSdk 35
-        versionCode 110
-        versionName "1.1.0"
+        versionCode 111
+        versionName "1.1.1"
     }
 
     buildTypes {
