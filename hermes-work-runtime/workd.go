@@ -636,8 +636,7 @@ type PublicationRecord struct{
 func (s *S)publicationPath()string{return filepath.Join(s.Root,"data","channel","publications.jsonl")}
 func (s *S)loadPublications()[]PublicationRecord{
  b,e:=os.ReadFile(s.publicationPath());if e!=nil{return nil};out:=[]PublicationRecord{}
- for _,l:=range strings.Split(strings.TrimSpace(string(b)),"
-"){
+ for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){
   if strings.TrimSpace(l)==""{continue};var p PublicationRecord
   if json.Unmarshal([]byte(l),&p)==nil&&p.PlannerID!=""{out=append(out,p)}
  }
@@ -649,8 +648,7 @@ func (s *S)appendPublication(p PublicationRecord)error{
  if p.Status==""{p.Status="PUBLISHED"}
  os.MkdirAll(filepath.Dir(s.publicationPath()),0700)
  b,_:=json.Marshal(p);f,e:=os.OpenFile(s.publicationPath(),os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);if e!=nil{return e};defer f.Close()
- _,e=f.Write(append(b,'
-'));return e
+ _,e=f.Write(append(b,'\n'));return e
 }
 func (s *S)publicationSummary()map[string]any{
  a:=s.loadPublications();plats:=map[string]int{};latestTopic:="";latestURL:="";latestAt:=""
