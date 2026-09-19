@@ -6,7 +6,9 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
-        android:label="HERMES WORK Terminal">
+        android:label="HERMES WORK Terminal"
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher_round">
         <activity
             android:name=".MainActivity"
             android:exported="true"
