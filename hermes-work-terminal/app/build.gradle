@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace 'com.hermes.workterminal'
+    namespace 'com.hermes.workinstaller'
     compileSdk 35
 
     signingConfigs {
@@ -16,11 +16,11 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.hermes.workterminal"
+        applicationId "com.hermes.workinstaller"
         minSdk 23
         targetSdk 35
-        versionCode 3
-        versionName "0.1.1"
+        versionCode 100
+        versionName "1.0.0"
     }
 
     buildTypes {
