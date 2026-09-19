@@ -1,20 +1,131 @@
 import http from "node:http";
 import https from "node:https";
+import crypto from "node:crypto";
 
 const PORT = Number(process.env.PORT || 3000);
 const TOPIC = process.env.NTFY_TOPIC || "";
 const ACCESS_PATH = process.env.ACCESS_PATH || "";
 const NTFY = process.env.NTFY_BASE || "https://ntfy.sh";
+
 let directSnapshot = null;
 let directReceivedAt = 0;
 
-function send(res, code, obj) {
+// DJAEGER WORK remote-link state.
+// The device authenticates with the already-existing derived HERMES topic.
+// The app uses a separate deterministic key derived from that topic.
+// No secret value is logged.
+const commandQueue = [];
+const pollWaiters = [];
+const pending = new Map();
+let deviceSeenAt = 0;
+let deviceMeta = {};
+
+function send(res, code, obj, extraHeaders={}) {
   const body = JSON.stringify(obj);
   res.writeHead(code, {
     "content-type":"application/json; charset=utf-8",
-    "cache-control":"no-store"
+    "cache-control":"no-store",
+    ...extraHeaders
   });
   res.end(body);
+}
+
+function remoteClientKey() {
+  if (!TOPIC) return "";
+  return crypto.createHash("sha256")
+    .update("DJAEGER_WORK_REMOTE_CLIENT:" + TOPIC)
+    .digest("hex");
+}
+function deviceAuth(req) {
+  return !!TOPIC && req.headers["x-hermes-topic"] === TOPIC;
+}
+function clientAuth(req) {
+  const expected = remoteClientKey();
+  const got = String(req.headers["x-djaeger-remote-key"] || "");
+  if (!expected || !got || expected.length !== got.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got)); }
+  catch { return false; }
+}
+function deviceFresh() {
+  return deviceSeenAt > 0 && Date.now() - deviceSeenAt < 90000;
+}
+function id() {
+  return crypto.randomBytes(16).toString("hex");
+}
+function cleanHeaderValue(v,max=4096) {
+  return String(v ?? "").slice(0,max);
+}
+function pruneQueue() {
+  const now=Date.now();
+  for(let i=commandQueue.length-1;i>=0;i--){
+    if(commandQueue[i].expires_at <= now) commandQueue.splice(i,1);
+  }
+}
+function handCommand(cmd) {
+  pruneQueue();
+  while (pollWaiters.length) {
+    const waiter = pollWaiters.shift();
+    if (!waiter.done) {
+      waiter.done=true;
+      clearTimeout(waiter.timer);
+      waiter.resolve(cmd);
+      return;
+    }
+  }
+  commandQueue.push(cmd);
+  if (commandQueue.length > 64) commandQueue.shift();
+}
+function nextCommand(waitMs=25000) {
+  pruneQueue();
+  if (commandQueue.length) return Promise.resolve(commandQueue.shift());
+  return new Promise(resolve=>{
+    const waiter={done:false,resolve,timer:null};
+    waiter.timer=setTimeout(()=>{
+      if(waiter.done)return;
+      waiter.done=true;
+      const i=pollWaiters.indexOf(waiter);
+      if(i>=0)pollWaiters.splice(i,1);
+      resolve(null);
+    },waitMs);
+    pollWaiters.push(waiter);
+  });
+}
+function readBody(req, max=524288) {
+  return new Promise((resolve,reject)=>{
+    let body=""; let size=0; let finished=false;
+    req.setEncoding("utf8");
+    req.on("data",chunk=>{
+      if(finished)return;
+      size+=Buffer.byteLength(chunk);
+      if(size>max){finished=true;reject(Object.assign(new Error("payload_too_large"),{code:413}));req.destroy();return;}
+      body+=chunk;
+    });
+    req.on("end",()=>{if(!finished){finished=true;resolve(body)}});
+    req.on("error",e=>{if(!finished){finished=true;reject(e)}});
+  });
+}
+function queueProxy(req,u,body) {
+  const requestId=id();
+  const cmd={
+    id:requestId,
+    method:req.method,
+    path:u.pathname+u.search,
+    headers:{
+      "content-type":cleanHeaderValue(req.headers["content-type"] || "application/json"),
+      "x-hermes-token":cleanHeaderValue(req.headers["x-hermes-token"] || "")
+    },
+    body:body || "",
+    created_at:new Date().toISOString(),
+    expires_at:Date.now()+40000
+  };
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      pending.delete(requestId);
+      reject(new Error("device_response_timeout"));
+    },38000);
+    pending.set(requestId,{resolve,reject,timer});
+    handCommand(cmd);
+  });
 }
 
 function safeStudioJob(j) {
@@ -110,7 +221,7 @@ function safeSnapshot(x={}) {
 
 function ntfyViaHttps(url) {
   return new Promise((resolve,reject)=>{
-    const req=https.get(url,{family:4,headers:{"user-agent":"HERMES-WORK-ChatGPT-Relay/1.1"}},res=>{
+    const req=https.get(url,{family:4,headers:{"user-agent":"HERMES-WORK-ChatGPT-Relay/2.0"}},res=>{
       let data="";res.setEncoding("utf8");
       res.on("data",chunk=>{if(data.length<2_000_000)data+=chunk});
       res.on("end",()=>res.statusCode>=200&&res.statusCode<300?resolve(data):reject(new Error("NTFY_HTTP_"+res.statusCode)));
@@ -138,7 +249,7 @@ async function latestSnapshot() {
   const url = `${NTFY}/${encodeURIComponent(TOPIC)}/json?poll=1&since=30m`;
   let firstErr = null;
   try {
-    const r = await fetch(url, {headers:{"user-agent":"HERMES-WORK-ChatGPT-Relay/1.1"},signal:AbortSignal.timeout(15000)});
+    const r = await fetch(url, {headers:{"user-agent":"HERMES-WORK-ChatGPT-Relay/2.0"},signal:AbortSignal.timeout(15000)});
     if (!r.ok) throw new Error(`NTFY_HTTP_${r.status}`);
     const latest=parseNtfy(await r.text());
     if (latest) return latest;
@@ -157,9 +268,97 @@ async function latestSnapshot() {
 
 const server = http.createServer(async (req,res)=>{
   const u = new URL(req.url, "http://localhost");
+
   if (u.pathname === "/health") {
-    return send(res,200,{ok:true,service:"HERMES_WORK_CHATGPT_RELAY",direct_fresh:!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000)});
+    return send(res,200,{
+      ok:true,
+      service:"DJAEGER_WORK_REMOTE_RELAY",
+      version:"2.0.0",
+      direct_fresh:!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000),
+      remote_link:deviceFresh()?"CONNECTED":"WAITING_DEVICE"
+    });
   }
+
+  // Device side: outbound-only long-poll tunnel. Safe behind CGNAT.
+  if (u.pathname === "/remote/device/heartbeat" && req.method === "POST") {
+    if (!deviceAuth(req)) return send(res,401,{ok:false,error:"unauthorized"});
+    let meta={};
+    try { const raw=await readBody(req,65536); meta=raw?JSON.parse(raw):{}; } catch {}
+    deviceSeenAt=Date.now();
+    deviceMeta={
+      release:String(meta.release||"").slice(0,80),
+      device:String(meta.device||"REDMI_5A").slice(0,80),
+      seen_at:new Date(deviceSeenAt).toISOString()
+    };
+    return send(res,200,{ok:true,state:"CONNECTED"});
+  }
+
+  if (u.pathname === "/remote/device/poll" && req.method === "GET") {
+    if (!deviceAuth(req)) return send(res,401,{ok:false,error:"unauthorized"});
+    deviceSeenAt=Date.now();
+    const cmd=await nextCommand(25000);
+    return send(res,200,{ok:true,command:cmd});
+  }
+
+  if (u.pathname === "/remote/device/respond" && req.method === "POST") {
+    if (!deviceAuth(req)) return send(res,401,{ok:false,error:"unauthorized"});
+    deviceSeenAt=Date.now();
+    try {
+      const raw=await readBody(req,1_500_000);
+      const v=JSON.parse(raw||"{}");
+      const p=pending.get(String(v.id||""));
+      if(!p)return send(res,404,{ok:false,error:"unknown_request"});
+      pending.delete(String(v.id));
+      clearTimeout(p.timer);
+      p.resolve({
+        status:Math.max(100,Math.min(599,Number(v.status||502))),
+        content_type:String(v.content_type||"application/json; charset=utf-8").slice(0,200),
+        body_b64:String(v.body_b64||"")
+      });
+      return send(res,200,{ok:true});
+    } catch(e) {
+      return send(res,e?.code===413?413:400,{ok:false,error:String(e?.message||"invalid_response")});
+    }
+  }
+
+  if (u.pathname === "/remote/info" && req.method === "GET") {
+    if (!clientAuth(req)) return send(res,401,{ok:false,error:"unauthorized"});
+    return send(res,200,{
+      ok:true,
+      service:"DJAEGER_WORK_REMOTE",
+      device_connected:deviceFresh(),
+      device:deviceMeta,
+      queued:commandQueue.length,
+      pending:pending.size
+    });
+  }
+
+  // Client side: same DJAEGER WORK API paths. The relay never exposes arbitrary ports
+  // or shell access; only /api/work/* is eligible for tunneling.
+  if (u.pathname.startsWith("/api/work/")) {
+    if (!clientAuth(req)) return send(res,401,{ok:false,error:"unauthorized"});
+    if (!["GET","POST"].includes(req.method)) return send(res,405,{ok:false,error:"method_not_allowed"});
+    if (!deviceFresh()) return send(res,503,{ok:false,error:"device_offline"});
+    try {
+      const body=req.method==="POST"?await readBody(req,524288):"";
+      const upstream=await queueProxy(req,u,body);
+      let decoded;
+      try { decoded=Buffer.from(upstream.body_b64||"","base64"); }
+      catch { return send(res,502,{ok:false,error:"invalid_device_response"}); }
+      res.writeHead(upstream.status,{
+        "content-type":upstream.content_type,
+        "cache-control":"no-store",
+        "x-djaeger-route":"REMOTE"
+      });
+      res.end(decoded);
+      return;
+    } catch(e) {
+      const code=e?.code===413?413:504;
+      return send(res,code,{ok:false,error:String(e?.message||"remote_proxy_failed")});
+    }
+  }
+
+  // Existing read-only relay remains backward compatible.
   if (u.pathname === "/studio-feed" && req.method === "GET") {
     const fresh=!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000);
     if(!fresh)return send(res,503,{ok:false,state:"NO_FRESH_DEVICE_SNAPSHOT"});
@@ -167,21 +366,19 @@ const server = http.createServer(async (req,res)=>{
     if(!job||!job.planner_id)return send(res,200,{ok:true,state:directSnapshot.studio_state||"WAITING",job:null});
     return send(res,200,{ok:true,state:directSnapshot.studio_state||"WAITING_RENDER",job});
   }
+
   if (u.pathname === "/ingest" && req.method === "POST") {
     if (!TOPIC || req.headers["x-hermes-topic"] !== TOPIC) return send(res,401,{ok:false,error:"unauthorized"});
-    let body="";let tooLarge=false;
-    req.setEncoding("utf8");
-    req.on("data",chunk=>{body+=chunk;if(body.length>262144){tooLarge=true;req.destroy()}});
-    req.on("end",()=>{
-      if(tooLarge)return send(res,413,{ok:false,error:"payload_too_large"});
-      try{
-        const raw=JSON.parse(body);
-        directSnapshot=safeSnapshot(raw);directReceivedAt=Date.now();
-        return send(res,200,{ok:true,source:"direct-data-only",received_at:new Date(directReceivedAt).toISOString()});
-      }catch(e){return send(res,400,{ok:false,error:"invalid_json"})}
-    });
-    return;
+    try {
+      const body=await readBody(req,262144);
+      const raw=JSON.parse(body);
+      directSnapshot=safeSnapshot(raw);directReceivedAt=Date.now();
+      return send(res,200,{ok:true,source:"direct-data-only",received_at:new Date(directReceivedAt).toISOString()});
+    } catch(e) {
+      return send(res,e?.code===413?413:400,{ok:false,error:e?.code===413?"payload_too_large":"invalid_json"});
+    }
   }
+
   if (!ACCESS_PATH || u.pathname !== "/" + ACCESS_PATH) {
     return send(res,404,{error:"not_found"});
   }
@@ -193,8 +390,7 @@ const server = http.createServer(async (req,res)=>{
   }
 });
 
-server.listen(PORT,"0.0.0.0",()=>console.log(`relay listening on ${PORT}`));
-
+server.listen(PORT,"0.0.0.0",()=>console.log(`relay listening on ${PORT} remote-link=enabled`));
 
 async function logLatestSnapshot() {
   try {
@@ -204,6 +400,12 @@ async function logLatestSnapshot() {
     console.log("HERMES_SNAPSHOT_ERROR " + String(e?.message || e));
   }
 }
-
 setTimeout(logLatestSnapshot, 3000);
 setInterval(logLatestSnapshot, 60000);
+setInterval(()=>{
+  pruneQueue();
+  for(const [rid,p] of pending){
+    // Timers own expiry; this loop intentionally does not log request content.
+    if(!p || !p.timer) pending.delete(rid);
+  }
+},30000);
