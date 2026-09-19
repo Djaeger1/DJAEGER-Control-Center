@@ -1,11 +1,6 @@
 name: DJAEGER WORK Legacy Signing Bridge
 
 on:
-  push:
-    branches:
-      - djaeger-work-native-v1.2.7-id
-    paths:
-      - '.github/workflows/djaeger-work-signing-bridge.yml'
   workflow_dispatch:
 
 permissions:
