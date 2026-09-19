@@ -17,6 +17,39 @@ function send(res, code, obj) {
   res.end(body);
 }
 
+function safeStudioJob(j) {
+  if (!j || typeof j !== "object") return null;
+  const scenes = Array.isArray(j.scenes) ? j.scenes.slice(0,12).map(s=>({
+    number:Number(s.number||0),
+    duration_sec:Number(s.duration_sec||0),
+    purpose:String(s.purpose||"").slice(0,240),
+    voice_over:String(s.voice_over||"").slice(0,1200),
+    visual_prompt:String(s.visual_prompt||"").slice(0,2400),
+    on_screen_text:String(s.on_screen_text||"").slice(0,300),
+    edit_note:String(s.edit_note||"").slice(0,500)
+  })) : [];
+  return {
+    state:String(j.state||"WAITING_RENDER"),
+    engine:"AUTO_STUDIO_V1",
+    planner_id:String(j.planner_id||"").slice(0,80),
+    topic:String(j.topic||"").slice(0,500),
+    category:String(j.category||"").slice(0,80),
+    language:String(j.language||"").slice(0,16),
+    video_title:String(j.video_title||"").slice(0,500),
+    description:String(j.description||"").slice(0,4000),
+    duration_sec:Number(j.duration_sec||0),
+    scenes,
+    hashtags:Array.isArray(j.hashtags)?j.hashtags.slice(0,30).map(v=>String(v).slice(0,100)):[],
+    render_tag:String(j.render_tag||"").slice(0,120),
+    visual_provider:String(j.visual_provider||"").slice(0,120),
+    voice_provider:String(j.voice_provider||"").slice(0,120),
+    render_provider:String(j.render_provider||"").slice(0,120),
+    created_at:j.created_at||null,
+    ai_used:false,
+    neurons_used:0
+  };
+}
+
 function safeSnapshot(x={}) {
   return {
     service:"HERMES_WORK",
@@ -55,6 +88,9 @@ function safeSnapshot(x={}) {
     handoff_engine:x.handoff_engine ?? null,
     production_desk_state:x.production_desk_state ?? null,
     production_desk_engine:x.production_desk_engine ?? null,
+    studio_state:x.studio_state ?? null,
+    studio_engine:x.studio_engine ?? null,
+    studio_job:safeStudioJob(x.studio_job),
     publication_state:x.publication_state ?? null,
     publications_total:x.publications_total ?? null,
     publication_engine:x.publication_engine ?? null,
@@ -123,6 +159,13 @@ const server = http.createServer(async (req,res)=>{
   const u = new URL(req.url, "http://localhost");
   if (u.pathname === "/health") {
     return send(res,200,{ok:true,service:"HERMES_WORK_CHATGPT_RELAY",direct_fresh:!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000)});
+  }
+  if (u.pathname === "/studio-feed" && req.method === "GET") {
+    const fresh=!!(directSnapshot&&Date.now()-directReceivedAt<20*60*1000);
+    if(!fresh)return send(res,503,{ok:false,state:"NO_FRESH_DEVICE_SNAPSHOT"});
+    const job=safeStudioJob(directSnapshot.studio_job);
+    if(!job||!job.planner_id)return send(res,200,{ok:true,state:directSnapshot.studio_state||"WAITING",job:null});
+    return send(res,200,{ok:true,state:directSnapshot.studio_state||"WAITING_RENDER",job});
   }
   if (u.pathname === "/ingest" && req.method === "POST") {
     if (!TOPIC || req.headers["x-hermes-topic"] !== TOPIC) return send(res,401,{ok:false,error:"unauthorized"});
