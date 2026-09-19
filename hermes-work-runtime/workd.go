@@ -8,7 +8,7 @@ func (s *S)bridgeCred()(string,string){ep:=readenv(filepath.Join(s.Rel,"config",
 func (s *S)researchTotal()int{b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));n:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if strings.TrimSpace(l)!=""{n++}};return n}
 func (s *S)bridgeInfo()map[string]any{v:=map[string]any{"state":"STARTING","mode":"DATA_ONLY","ai_used":false,"neurons_used":0};b,e:=os.ReadFile(filepath.Join(s.Root,"state","bridge.json"));if e==nil{_ = json.Unmarshal(b,&v)};return v}
 func (s *S)writeBridge(st,reason string,httpCode int){ep,_:=s.bridgeCred();v:=map[string]any{"state":st,"reason":reason,"endpoint":ep,"mode":"DATA_ONLY","ai_used":false,"neurons_used":0,"http_code":httpCode,"updated_at":time.Now().Format(time.RFC3339)};if st=="CONNECTED"{v["last_sync"]=time.Now().Format(time.RFC3339)};b,_:=json.Marshal(v);os.MkdirAll(filepath.Join(s.Root,"state"),0700);tmp:=filepath.Join(s.Root,"state","bridge.json.tmp");_ = os.WriteFile(tmp,b,0600);_ = os.Rename(tmp,filepath.Join(s.Root,"state","bridge.json"))}
-func (s *S)bridgeSnapshot()map[string]any{ts,_:=iface("rndis0");worker:="READY";if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"};au:=s.autoUpdateInfo();db:=s.dailyBriefInfo();sp:=s.scriptPrepInfo();fs:=s.scriptInfo();pp:=s.productionInfo();pl:=s.plannerInfo();return map[string]any{"sent_at":time.Now().Format(time.RFC3339),"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","daily_brief_state":db["state"],"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1","planner_state":pl["state"],"planner_queue":pl["queue_total"],"next_for_script":pl["next_for_script"],"planner_engine":"PLANNER_V1","script_prep_state":sp["state"],"script_prep_ready":sp["ready"],"script_topic":sp["current_topic"],"script_prep_engine":"SCRIPT_PREP_V1","script_state":fs["state"],"scripts_ready":fs["ready"],"final_script_topic":fs["current_topic"],"script_engine":"SCRIPT_ENGINE_V1","production_pack_state":pp["state"],"production_ready":pp["ready"],"production_topic":pp["current_topic"],"production_engine":"PRODUCTION_PACK_V1","auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v3","ai_used":false,"neurons_used":0}}
+func (s *S)bridgeSnapshot()map[string]any{ts,_:=iface("rndis0");worker:="READY";if exists(filepath.Join(s.Root,"state","safe_mode")){worker="SAFE_MODE"}else if exists(filepath.Join(s.Root,"state","worker_paused")){worker="PAUSED"};au:=s.autoUpdateInfo();db:=s.dailyBriefInfo();sp:=s.scriptPrepInfo();fs:=s.scriptInfo();pp:=s.productionInfo();fb:=s.performanceSummary();pl:=s.plannerInfo();return map[string]any{"sent_at":time.Now().Format(time.RFC3339),"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"tether_state":ts,"temperature_c":temp(),"mem_available_mb":mem(),"worker_state":worker,"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","daily_brief_state":db["state"],"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"opportunity_engine":"OPPORTUNITY_V1","planner_state":pl["state"],"planner_queue":pl["queue_total"],"next_for_script":pl["next_for_script"],"planner_engine":"PLANNER_V1","script_prep_state":sp["state"],"script_prep_ready":sp["ready"],"script_topic":sp["current_topic"],"script_prep_engine":"SCRIPT_PREP_V1","script_state":fs["state"],"scripts_ready":fs["ready"],"final_script_topic":fs["current_topic"],"script_engine":"SCRIPT_ENGINE_V1","production_pack_state":pp["state"],"production_ready":pp["ready"],"production_topic":pp["current_topic"],"production_engine":"PRODUCTION_PACK_V1","feedback_state":fb["state"],"performance_records":fb["records"],"strong_signal":fb["strong_signal"],"weak_signal":fb["weak_signal"],"feedback_engine":"FEEDBACK_V1","auto_update_state":au["state"],"auto_update_last_check":au["last_check"],"bridge_agent":"HERMES_WORK_DATA_BRIDGE_v3","ai_used":false,"neurons_used":0}}
 func (s *S)ntfyTopic(key string)string{h:=sha256.Sum256([]byte("HERMES_WORK_NTFY:"+key));return "hermes-work-"+hex.EncodeToString(h[:24])}
 func (s *S)pushNtfy(key string)(int,string,error){topic:=s.ntfyTopic(key);snap,_:=json.Marshal(s.bridgeSnapshot());u:="https://ntfy.sh/"+topic;req,e:=http.NewRequest("POST",u,strings.NewReader(string(snap)));if e!=nil{return 0,"",e};req.Header.Set("Content-Type","text/plain; charset=utf-8");req.Header.Set("Title","HERMES WORK status");req.Header.Set("Tags","computer");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,"",e};io.Copy(io.Discard,io.LimitReader(resp.Body,4096));resp.Body.Close();readURL:="https://ntfy.sh/"+topic+"/json?poll=1&since=10m";if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,readURL,nil};return resp.StatusCode,readURL,fmt.Errorf("ntfy http %d",resp.StatusCode)}
 func (s *S)pushCloud(ep,key string)(int,error){b,_:=json.Marshal(s.bridgeSnapshot());req,e:=http.NewRequest("POST",ep+"/v1/bridge/push",strings.NewReader(string(b)));if e!=nil{return 0,e};req.Header.Set("Authorization","Bearer "+key);req.Header.Set("Content-Type","application/json");cl:=androidHTTPClient();cl.Timeout=20*time.Second;resp,e:=cl.Do(req);if e!=nil{return 0,e};body,_:=io.ReadAll(io.LimitReader(resp.Body,4096));resp.Body.Close();if resp.StatusCode>=200&&resp.StatusCode<300{return resp.StatusCode,nil};return resp.StatusCode,fmt.Errorf("cloud http %d %s",resp.StatusCode,strings.TrimSpace(string(body)))}
@@ -25,7 +25,7 @@ func exists(p string)bool{_,e:=os.Stat(p);return e==nil}
 func temp()float64{b,e:=os.ReadFile("/sys/class/power_supply/battery/temp");if e!=nil{return -1};v,_:=strconv.ParseFloat(strings.TrimSpace(string(b)),64);if v>200{v/=10};return v}
 func mem()int64{b,_:=os.ReadFile("/proc/meminfo");for _,l:=range strings.Split(string(b),"\n"){if strings.HasPrefix(l,"MemAvailable:"){f:=strings.Fields(l);if len(f)>1{n,_:=strconv.ParseInt(f[1],10,64);return n/1024}}};return -1}
 func iface(n string)(string,string){i,e:=net.InterfaceByName(n);if e!=nil{return"DOWN",""};a,_:=i.Addrs();ip:="";for _,x:=range a{if y,ok:=x.(*net.IPNet);ok&&y.IP.To4()!=nil{ip=y.IP.String()}};if ip==""{return"DOWN",""};return"UP",ip}
-func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="v0.2.0-control-center"};bi:=s.bridgeInfo();bst,_:=bi["state"].(string);if bst==""{bst="STARTING"};au:=s.autoUpdateInfo();aus,_:=au["state"].(string);if aus==""{aus="STARTING"};js(w,map[string]any{"service":"HERMES_WORK","control_center":"v1.9.0","release":cur,"auto_update_state":aus,"auto_update":au,"temperature_c":temp(),"mem_available_mb":mem(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","bridge_state":bst,"bridge_last_sync":bi["last_sync"],"bridge_mode":"DATA_ONLY","bridge_ai_used":false,"bridge_neurons_used":0,"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","components":map[string]string{"collector":"READY_V2","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V2","opportunity_engine":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V3","script_prep":"READY_V1","script_engine":"READY_V1","production_pack":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_V2","bridge":bst,"auto_updater":aus}})}
+func (s *S)status(w http.ResponseWriter,r *http.Request){ts,ip:=iface("rndis0");cur:=strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")));if cur==""{cur="v0.2.0-control-center"};bi:=s.bridgeInfo();bst,_:=bi["state"].(string);if bst==""{bst="STARTING"};au:=s.autoUpdateInfo();aus,_:=au["state"].(string);if aus==""{aus="STARTING"};js(w,map[string]any{"service":"HERMES_WORK","control_center":"v2.0.0","release":cur,"auto_update_state":aus,"auto_update":au,"temperature_c":temp(),"mem_available_mb":mem(),"tether_state":ts,"tether_ip":ip,"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"bridge_enabled":readenv(filepath.Join(s.Rel,"config","work.env"),"BRIDGE_ENABLED")=="1","bridge_state":bst,"bridge_last_sync":bi["last_sync"],"bridge_mode":"DATA_ONLY","bridge_ai_used":false,"bridge_neurons_used":0,"research_total":s.researchTotal(),"last_research":strings.TrimSpace(readfile(filepath.Join(s.Root,"state","last_research"))),"research_engine":"SUGGEST_MULTI_V2","components":map[string]string{"collector":"READY_V2","dedup":"READY_V1","categorizer":"READY_V1","trend_scoring":"READY_V2","opportunity_engine":"READY_V1","reasoning":"DEFERRED","content_planner":"READY_V3","script_prep":"READY_V1","script_engine":"READY_V1","production_pack":"READY_V1","feedback":"READY_V1","knowledge":"READY_FOUNDATION","scheduler":"READY_V2","bridge":bst,"auto_updater":aus}})}
 func (s *S)action(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};var q struct{Action string `json:"action"`};json.NewDecoder(r.Body).Decode(&q);st:=filepath.Join(s.Root,"state");switch q.Action{case"pause":os.WriteFile(filepath.Join(st,"worker_paused"),[]byte(time.Now().Format(time.RFC3339)),0600);case"resume":os.Remove(filepath.Join(st,"worker_paused"));os.Remove(filepath.Join(st,"safe_mode"));case"safe_mode":os.WriteFile(filepath.Join(st,"safe_mode"),[]byte("safe_mode"),0600);os.WriteFile(filepath.Join(st,"worker_paused"),[]byte("safe_mode"),0600);case"backup":os.MkdirAll(filepath.Join(s.Root,"backups"),0700);os.WriteFile(filepath.Join(s.Root,"backups","state-"+time.Now().Format("20060102-150405")+".txt"),[]byte("release="+strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release")))+"\n"),0600);case"rollback":p:=strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release")));if p==""{http.Error(w,"no previous release",409);return};os.WriteFile(filepath.Join(s.Root,"current_release"),[]byte(p+"\n"),0600);default:http.Error(w,"unknown action",400);return};js(w,map[string]any{"ok":true,"action":q.Action})}
 func tail(p string,n int)string{b,_:=os.ReadFile(p);a:=strings.Split(string(b),"\n");if len(a)>n{a=a[len(a)-n:]};return strings.Join(a,"\n")}
 func (s *S)diag(w http.ResponseWriter,r *http.Request){if !s.auth(r){http.Error(w,"unauthorized",401);return};ts,ip:=iface("rndis0");js(w,map[string]any{"time":time.Now().Format(time.RFC3339),"temp_c":temp(),"mem_mb":mem(),"rndis":ts,"rndis_ip":ip,"release":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"bootstrap_log_tail":tail(filepath.Join(s.Root,"logs","hermesd.log"),60),"work_log_tail":tail(filepath.Join(s.Root,"logs","workd.log"),60)})}
@@ -144,7 +144,7 @@ func (s *S)opportunityList(limit int)[]Opportunity{
   nk:=normTopic(title);if nk==""{nk=strings.ToLower(strings.TrimSpace(title))};if seen[nk]{continue};seen[nk]=true
   // Small deterministic quality adjustment: reward concise, clearly educational queries; penalize generic "other".
   adj:=sc
-  wc:=len(strings.Fields(title));if wc>=3&&wc<=9{adj+=3};if cat=="other"{adj-=8};if adj>100{adj=100};if adj<1{adj=1}
+  wc:=len(strings.Fields(title));if wc>=3&&wc<=9{adj+=3};if cat=="other"{adj-=8};adj+=s.performanceAdjustment(cat);if adj>100{adj=100};if adj<1{adj=1}
   rows=append(rows,raw{Title:title,Category:cat,URL:u,Score:adj})
  }
  sort.Slice(rows,func(i,j int)bool{if rows[i].Score==rows[j].Score{return rows[i].Title<rows[j].Title};return rows[i].Score>rows[j].Score})
@@ -560,11 +560,89 @@ func (s *S)daily(w http.ResponseWriter,r *http.Request){
  db:=s.dailyBriefInfo()
  js(w,map[string]any{"generated_at":time.Now().Format(time.RFC3339),"last_run":last,"total_research_items":total,"categories":cats,"brief":db,"ideas_ready":db["ideas_ready"],"top_opportunity":db["top_opportunity"],"brief_endpoint":"/api/work/brief"})
 }
-func (s *S)channel(w http.ResponseWriter,r *http.Request){p:=filepath.Join(s.Root,"data","channel","metrics.json");b,e:=os.ReadFile(p);if e!=nil{js(w,map[string]any{"state":"NOT_CONNECTED","views":"NOT_AVAILABLE","retention":"NOT_AVAILABLE","ctr":"NOT_AVAILABLE","watch_time":"NOT_AVAILABLE","best_topic":"NOT_AVAILABLE","weak_topic":"NOT_AVAILABLE"});return};var v any;if json.Unmarshal(b,&v)!=nil{js(w,map[string]any{"state":"INVALID_DATA"});return};js(w,map[string]any{"state":"CONNECTED","metrics":v})}
-func (s *S)knowledge(w http.ResponseWriter,r *http.Request){b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));seen:=map[string]bool{};cats:=map[string]int{};total:=0;for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)!=nil{continue};total++;if u,_:=z["url"].(string);u!=""{seen[u]=true};if x,_:=z["category"].(string);x!=""{cats[x]++}};js(w,map[string]any{"research_items":total,"unique_keys":len(seen),"categories":cats,"produced":"NOT_CONNECTED","successful":"NOT_CONNECTED","underperforming":"NOT_CONNECTED","ideas_not_produced":"NOT_CONNECTED"})}
+
+type PerformanceRecord struct{
+ PlannerID string `json:"planner_id"`
+ Topic string `json:"topic"`
+ Category string `json:"category"`
+ Views int64 `json:"views"`
+ RetentionPct float64 `json:"retention_pct"`
+ CTRPct float64 `json:"ctr_pct"`
+ WatchTimeMin float64 `json:"watch_time_min"`
+ Likes int64 `json:"likes"`
+ Comments int64 `json:"comments"`
+ Source string `json:"source"`
+ CapturedAt string `json:"captured_at"`
+}
+func (s *S)performancePath()string{return filepath.Join(s.Root,"data","channel","performance.jsonl")}
+func (s *S)loadPerformance()[]PerformanceRecord{
+ b,e:=os.ReadFile(s.performancePath());if e!=nil{return nil};out:=[]PerformanceRecord{}
+ for _,l:=range strings.Split(strings.TrimSpace(string(b)),"
+"){if strings.TrimSpace(l)==""{continue};var p PerformanceRecord;if json.Unmarshal([]byte(l),&p)==nil&&p.PlannerID!=""{out=append(out,p)}}
+ return out
+}
+func (s *S)appendPerformance(p PerformanceRecord)error{
+ if p.CapturedAt==""{p.CapturedAt=time.Now().Format(time.RFC3339)};if p.Source==""{p.Source="manual_or_connector"}
+ os.MkdirAll(filepath.Dir(s.performancePath()),0700);b,_:=json.Marshal(p);f,e:=os.OpenFile(s.performancePath(),os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);if e!=nil{return e};defer f.Close();_,e=f.Write(append(b,'
+'));return e
+}
+func perfSignal(p PerformanceRecord)string{
+ if p.RetentionPct>=55{return"STRONG"}
+ if p.RetentionPct>0&&p.RetentionPct<35{return"WEAK"}
+ return"NEUTRAL"
+}
+func (s *S)performanceSummary()map[string]any{
+ a:=s.loadPerformance();strong:=0;weak:=0;neutral:=0;views:=int64(0);watch:=0.0;retSum:=0.0;retN:=0;ctrSum:=0.0;ctrN:=0
+ cats:=map[string]map[string]float64{}
+ for _,p:=range a{
+  views+=p.Views;watch+=p.WatchTimeMin
+  if p.RetentionPct>0{retSum+=p.RetentionPct;retN++}
+  if p.CTRPct>0{ctrSum+=p.CTRPct;ctrN++}
+  switch perfSignal(p){case"STRONG":strong++;case"WEAK":weak++;default:neutral++}
+  if p.Category!=""{
+   z:=cats[p.Category];if z==nil{z=map[string]float64{"records":0,"retention_sum":0,"retention_n":0};cats[p.Category]=z}
+   z["records"]++
+   if p.RetentionPct>0{z["retention_sum"]+=p.RetentionPct;z["retention_n"]++}
+  }
+ }
+ avgRet:=0.0;if retN>0{avgRet=retSum/float64(retN)};avgCTR:=0.0;if ctrN>0{avgCTR=ctrSum/float64(ctrN)}
+ catOut:=map[string]any{};for k,z:=range cats{ar:=0.0;if z["retention_n"]>0{ar=z["retention_sum"]/z["retention_n"]};catOut[k]=map[string]any{"records":int(z["records"]),"avg_retention_pct":ar}}
+ state:="WAITING_REAL_DATA";if len(a)>0{state="LEARNING"}
+ return map[string]any{"state":state,"engine":"FEEDBACK_V1","records":len(a),"strong_signal":strong,"weak_signal":weak,"neutral_signal":neutral,"views":views,"watch_time_min":watch,"avg_retention_pct":avgRet,"avg_ctr_pct":avgCTR,"categories":catOut,"ai_used":false,"neurons_used":0}
+}
+func (s *S)performanceAdjustment(cat string)float64{
+ a:=s.loadPerformance();sum:=0.0;n:=0
+ for _,p:=range a{if p.Category!=cat||p.RetentionPct<=0{continue};n++;if p.RetentionPct>=55{sum+=4}else if p.RetentionPct<35{sum-=3}}
+ if n==0{return 0};adj:=sum/float64(n);if adj>8{adj=8};if adj < -8{adj=-8};return adj
+}
+func (s *S)performance(w http.ResponseWriter,r *http.Request){
+ if r.Method=="GET"{js(w,s.performanceSummary());return}
+ if r.Method!="POST"{http.Error(w,"method not allowed",405);return}
+ if !s.auth(r){http.Error(w,"unauthorized",401);return}
+ var p PerformanceRecord
+ if json.NewDecoder(io.LimitReader(r.Body,131072)).Decode(&p)!=nil||!safePlanID(p.PlannerID)||p.Views<0||p.RetentionPct<0||p.RetentionPct>100||p.CTRPct<0||p.CTRPct>100||p.WatchTimeMin<0{http.Error(w,"invalid performance data",400);return}
+ plans:=s.syncPlanner();found:=false
+ for i:=range plans{if plans[i].ID==p.PlannerID{found=true;if p.Topic==""{p.Topic=plans[i].Title};if p.Category==""{p.Category=plans[i].Category};if plans[i].Stage!="PUBLISHED"{plans[i].Stage="PUBLISHED";plans[i].UpdatedAt=time.Now().Format(time.RFC3339)};break}}
+ if !found{http.Error(w,"planner item not found",404);return}
+ if e:=s.appendPerformance(p);e!=nil{http.Error(w,e.Error(),500);return};_ = s.savePlan(plans)
+ js(w,map[string]any{"ok":true,"signal":perfSignal(p),"summary":s.performanceSummary()})
+}
+func (s *S)channel(w http.ResponseWriter,r *http.Request){
+ ps:=s.performanceSummary();records,_:=ps["records"].(int)
+ if records==0{js(w,map[string]any{"state":"NOT_CONNECTED","views":"NOT_AVAILABLE","retention":"NOT_AVAILABLE","ctr":"NOT_AVAILABLE","watch_time":"NOT_AVAILABLE","best_topic":"NOT_AVAILABLE","weak_topic":"NOT_AVAILABLE","feedback":"READY_WAITING_REAL_DATA"});return}
+ best:="";weak:="";bestR:=-1.0;weakR:=101.0
+ for _,p:=range s.loadPerformance(){if p.RetentionPct>bestR{bestR=p.RetentionPct;best=p.Topic};if p.RetentionPct>0&&p.RetentionPct<weakR{weakR=p.RetentionPct;weak=p.Topic}}
+ js(w,map[string]any{"state":"FEEDBACK_CONNECTED","views":ps["views"],"retention":ps["avg_retention_pct"],"ctr":ps["avg_ctr_pct"],"watch_time":ps["watch_time_min"],"best_topic":best,"weak_topic":weak,"records":records,"engine":"FEEDBACK_V1"})
+}
+func (s *S)knowledge(w http.ResponseWriter,r *http.Request){
+ b,_:=os.ReadFile(filepath.Join(s.Root,"data","database","research.jsonl"));seen:=map[string]bool{};cats:=map[string]int{};total:=0
+ for _,l:=range strings.Split(strings.TrimSpace(string(b)),"\n"){if l==""{continue};var z map[string]any;if json.Unmarshal([]byte(l),&z)!=nil{continue};total++;if u,_:=z["url"].(string);u!=""{seen[u]=true};if x,_:=z["category"].(string);x!=""{cats[x]++}}
+ ps:=s.performanceSummary();plans:=s.syncPlanner();notProduced:=0;for _,p:=range plans{if p.Stage!="PUBLISHED"{notProduced++}}
+ js(w,map[string]any{"research_items":total,"unique_keys":len(seen),"categories":cats,"produced":ps["records"],"successful":ps["strong_signal"],"underperforming":ps["weak_signal"],"ideas_not_produced":notProduced,"feedback_state":ps["state"],"feedback_engine":"FEEDBACK_V1"})
+}
 func (s *S)recovery(w http.ResponseWriter,r *http.Request){js(w,map[string]any{"current":strings.TrimSpace(readfile(filepath.Join(s.Root,"current_release"))),"previous":strings.TrimSpace(readfile(filepath.Join(s.Root,"previous_release"))),"safe_mode":exists(filepath.Join(s.Root,"state","safe_mode")),"worker_paused":exists(filepath.Join(s.Root,"state","worker_paused")),"handoff_log":tail(filepath.Join(s.Root,"logs","handoff.log"),20)})}
 func (s *S)index(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");io.WriteString(w,page)}
-func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);go s.schedulerLoop();go s.bridgeLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
+func main(){root:=flag.String("root","/data/adb/hermes_work","");rel:=flag.String("release","","");flag.Parse();p:=8766;if x:=readenv(filepath.Join(*rel,"config","work.env"),"WORK_PORT");x!=""{p,_=strconv.Atoi(x)};s:=&S{Root:*root,Rel:*rel,Port:p,Token:readenv(filepath.Join(*root,"config.env"),"ADMIN_TOKEN")};m:=http.NewServeMux();m.HandleFunc("/",s.index);m.HandleFunc("/api/work/status",s.status);m.HandleFunc("/api/work/action",s.action);m.HandleFunc("/api/work/diagnostics",s.diag);m.HandleFunc("/api/work/update",s.update);m.HandleFunc("/api/work/collect",s.collect);m.HandleFunc("/api/work/research",s.research);m.HandleFunc("/api/work/brief",s.brief);m.HandleFunc("/api/work/opportunities",s.opportunities);m.HandleFunc("/api/work/planner",s.planner);m.HandleFunc("/api/work/script-prep",s.scriptPrep);m.HandleFunc("/api/work/scripts",s.scripts);m.HandleFunc("/api/work/production",s.production);m.HandleFunc("/api/work/production/download",s.productionDownload);m.HandleFunc("/api/work/performance",s.performance);m.HandleFunc("/api/work/schedule",s.schedule);m.HandleFunc("/api/work/run-research",s.runResearch);m.HandleFunc("/api/work/daily",s.daily);m.HandleFunc("/api/work/channel",s.channel);m.HandleFunc("/api/work/knowledge",s.knowledge);m.HandleFunc("/api/work/recovery",s.recovery);m.HandleFunc("/api/work/bridge",s.bridgeStatus);m.HandleFunc("/api/work/autoupdate",s.autoUpdateStatus);go s.schedulerLoop();go s.bridgeLoop();http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d",p),m)}
 const page=`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HERMES WORK</title>
