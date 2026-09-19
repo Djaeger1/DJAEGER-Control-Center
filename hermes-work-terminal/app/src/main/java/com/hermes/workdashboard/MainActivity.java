@@ -762,9 +762,9 @@ public class MainActivity extends Activity {
                 JSONObject body = new JSONObject();
                 body.put("command", cmd);
                 HttpResult ex = request("POST", bootstrapUrl() + "/api/exec", body.toString(), true);
-                if (ex.code < 200 || ex.code >= 300) throw new Exception("Bootstrap HTTP " + ex.code + "\\n" + ex.body);
+                if (ex.code < 200 || ex.code >= 300) throw new Exception("HTTP bootstrap " + ex.code + "\\n" + ex.body);
                 ui(() -> {
-                    out.setText("BOOTSTRAP UPDATE SUCCESS\\n\\n" + ex.body.trim() + "\\n\\nVerifying active release…");
+                    out.setText("PEMBARUAN BOOTSTRAP BERHASIL\\n\\n" + ex.body.trim() + "\\n\\nMemverifikasi rilis aktif…");
                     loadRecovery(current, previous);
                     refreshOnlineOnly();
                     out.postDelayed(() -> {
@@ -780,7 +780,7 @@ public class MainActivity extends Activity {
                 });
             } catch (Exception e) {
                 ui(() -> {
-                    out.setText("UPDATE FAILED\\n\\n" + e.getMessage());
+                    out.setText("PEMBARUAN GAGAL\\n\\n" + e.getMessage());
                     update.setEnabled(true);
                 });
             }
