@@ -67,13 +67,13 @@ async function request(path, options = {}) {
         schema: 'DJAEGER_TELEMETRY_V1',
         device_id: 'SELFTEST',
         profile: 'STABLE',
-        neurons_used: 10000,
-        neurons_limit: 10000,
+        neurons_used: '10000',
+        neurons_limit: '10000',
         provider_quota_state: 'UNKNOWN',
         hermes_cloud_state: 'ONLINE',
-        skin_temp_c: 39.5,
-        fps: 60,
-        jank_pct: 1.2
+        skin_temp_c: '39.5',
+        fps: '60',
+        jank_pct: '1.2'
       })
     });
     assert(good.status === 200 && good.body && good.body.ok === true, 'valid_telemetry_rejected');
@@ -81,11 +81,29 @@ async function request(path, options = {}) {
     const state = await request('/v1/device/state', { headers });
     assert(state.status === 200, 'state_failed');
     assert(state.body.state.neurons_used === 10000 && state.body.state.neurons_limit === 10000, 'neuron_state_corrupt');
+    assert(state.body.state.skin_temp_c === 39.5 && state.body.state.fps === 60, 'numeric_string_not_normalized');
+
+    const unknownSentinel = await request('/v1/device/telemetry', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        neurons_used: '0',
+        neurons_limit: '0',
+        skin_temp_c: 'UNKNOWN',
+        fps: ''
+      })
+    });
+    assert(unknownSentinel.status === 200, 'unknown_sentinel_rejected');
+
+    const unknownState = await request('/v1/device/state', { headers });
+    assert(unknownState.body.state.neurons_used === 0, 'zero_neuron_used_changed');
+    assert(unknownState.body.state.neurons_limit === null, 'zero_limit_not_normalized_to_unknown');
+    assert(unknownState.body.state.skin_temp_c === null && unknownState.body.state.fps === null, 'sentinel_not_normalized');
 
     const badNeuron = await request('/v1/device/telemetry', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ neurons_used: 10001, neurons_limit: 10000 })
+      body: JSON.stringify({ neurons_used: '10001', neurons_limit: '10000' })
     });
     assert(badNeuron.status === 422, 'invalid_neuron_state_not_rejected');
 
@@ -104,6 +122,8 @@ async function request(path, options = {}) {
     console.log('PASS|ready');
     console.log('PASS|hardware_authority_none');
     console.log('PASS|valid_neurons_10000_10000');
+    console.log('PASS|numeric_string_compat');
+    console.log('PASS|unknown_sentinel_compat');
     console.log('PASS|reject_neurons_over_limit');
     console.log('PASS|reject_invalid_json');
     console.log('PASS|auth_guard');

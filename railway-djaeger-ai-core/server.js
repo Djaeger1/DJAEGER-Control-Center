@@ -75,38 +75,54 @@ function readBody(req) {
   });
 }
 
-function assertFiniteRange(name, value, min, max) {
-  if (value === undefined || value === null) return;
+function normalizeNumber(name, value, min, max, options = {}) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+
+  if (typeof value === 'string') {
+    const raw = value.trim();
+    const sentinel = raw.toUpperCase();
+    if (!raw || ['UNKNOWN','UNAVAILABLE','N/A','NA','NULL','NONE'].includes(sentinel)) return null;
+    value = Number(raw);
+  }
+
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
     throw Object.assign(new Error('invalid_' + name), { code: 422 });
   }
+
+  if (options.zeroAsUnknown && value === 0) return null;
+  return value;
 }
 
-function validateTelemetry(x) {
+function normalizeTelemetry(x) {
   if (!x || typeof x !== 'object' || Array.isArray(x)) {
     throw Object.assign(new Error('invalid_payload'), { code: 400 });
   }
 
-  assertFiniteRange('neurons_used', x.neurons_used, 0, 1000000000);
-  assertFiniteRange('neurons_limit', x.neurons_limit, 1, 1000000000);
-  if (x.neurons_used !== undefined && x.neurons_limit !== undefined &&
-      x.neurons_used !== null && x.neurons_limit !== null &&
-      x.neurons_used > x.neurons_limit) {
+  const out = { ...x };
+  out.neurons_used = normalizeNumber('neurons_used', x.neurons_used, 0, 1000000000);
+  out.neurons_limit = normalizeNumber('neurons_limit', x.neurons_limit, 0, 1000000000, { zeroAsUnknown: true });
+
+  if (out.neurons_used !== undefined && out.neurons_limit !== undefined &&
+      out.neurons_used !== null && out.neurons_limit !== null &&
+      out.neurons_used > out.neurons_limit) {
     throw Object.assign(new Error('neurons_used_exceeds_limit'), { code: 422 });
   }
 
   for (const k of ['skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c']) {
-    assertFiniteRange(k, x[k], -30, 150);
+    out[k] = normalizeNumber(k, x[k], -30, 150);
   }
-  assertFiniteRange('fps', x.fps, 0, 1000);
-  assertFiniteRange('jank_pct', x.jank_pct, 0, 100);
-  assertFiniteRange('p95_ms', x.p95_ms, 0, 60000);
-  assertFiniteRange('p99_ms', x.p99_ms, 0, 60000);
-  assertFiniteRange('control_loop_age_s', x.control_loop_age_s, 0, 86400);
+  out.fps = normalizeNumber('fps', x.fps, 0, 1000);
+  out.jank_pct = normalizeNumber('jank_pct', x.jank_pct, 0, 100);
+  out.p95_ms = normalizeNumber('p95_ms', x.p95_ms, 0, 60000);
+  out.p99_ms = normalizeNumber('p99_ms', x.p99_ms, 0, 60000);
+  out.control_loop_age_s = normalizeNumber('control_loop_age_s', x.control_loop_age_s, 0, 86400);
+
+  return out;
 }
 
 function sanitizeTelemetry(x) {
-  validateTelemetry(x);
+  x = normalizeTelemetry(x);
   const allowed = [
     'schema','device_id','at','module_version','module_version_code',
     'workload_class','subject_package','profile','user_mode','window_mode',
@@ -243,8 +259,12 @@ const server = http.createServer(async (req, res) => {
     return json(res, 404, { ok: false, error: 'not_found' });
   } catch (err) {
     const code = Number(err && err.code) || 500;
-    addTrace('SERVER_ERROR', { path: url.pathname, error: String(err && err.message || err).slice(0, 256) });
-    return json(res, code, { ok: false, error: code === 500 ? 'internal_error' : String(err.message || 'bad_request') });
+    const error = String(err && err.message || err).slice(0, 256);
+    addTrace('SERVER_ERROR', { path: url.pathname, error });
+    if (url.pathname === '/v1/device/telemetry' && code >= 400 && code < 500) {
+      console.warn(JSON.stringify({ event: 'DJAEGER_TELEMETRY_REJECT', code, error, at: nowIso() }));
+    }
+    return json(res, code, { ok: false, error: code === 500 ? 'internal_error' : error });
   }
 });
 
