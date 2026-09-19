@@ -63,6 +63,8 @@ public class MainActivity extends Activity {
     private LinearLayout navBar;
     private int currentPage = 0;
     private boolean destroyed = false;
+    private volatile String lastRoute = "LOCAL";
+    private volatile boolean pairingRemote = false;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -917,11 +919,13 @@ public class MainActivity extends Activity {
     private void refreshOnlineOnly() {
         apiAsync("GET", "/api/work/status", null, false, (code, s) -> {
             if (code >= 200 && code < 300) {
-                online.setText("● TERHUBUNG");
+                online.setText("REMOTE".equals(lastRoute) ? "● JARAK JAUH" : "● LOKAL");
+                online.setTextSize("REMOTE".equals(lastRoute) ? 9 : 11);
                 online.setTextColor(OK);
                 online.setBackground(solidBg(Color.rgb(5, 34, 23), Color.rgb(19, 81, 49), dp(20)));
             } else {
                 online.setText("● TERPUTUS");
+                online.setTextSize(10);
                 online.setTextColor(BAD);
                 online.setBackground(solidBg(Color.rgb(42, 17, 25), Color.rgb(83, 40, 50), dp(20)));
             }
@@ -932,25 +936,47 @@ public class MainActivity extends Activity {
 
     private void apiAsync(String method, String path, String body, boolean auth, ApiCallback cb) {
         io.execute(() -> {
+            Exception localError = null;
             try {
-                HttpResult r = request(method, runtimeUrl() + path, body, auth);
+                HttpResult r = request(method, runtimeUrl() + path, body, auth, false);
+                lastRoute = "LOCAL";
+                ensureRemotePairing();
                 ui(() -> cb.done(r.code, r.body));
+                return;
             } catch (Exception e) {
-                ui(() -> {
-                    online.setText("● TERPUTUS"); online.setTextColor(BAD);
-                    cb.done(0, "GALAT: " + e.getMessage());
-                });
+                localError = e;
             }
+
+            String remote = remoteUrl();
+            String key = remoteKey();
+            if (!remote.isEmpty() && !key.isEmpty()) {
+                try {
+                    HttpResult r = request(method, remote + path, body, auth, true);
+                    lastRoute = "REMOTE";
+                    ui(() -> cb.done(r.code, r.body));
+                    return;
+                } catch (Exception ignored) {}
+            }
+
+            final Exception err = localError;
+            ui(() -> {
+                online.setText("● TERPUTUS");
+                online.setTextSize(10);
+                online.setTextColor(BAD);
+                online.setBackground(solidBg(Color.rgb(42, 17, 25), Color.rgb(83, 40, 50), dp(20)));
+                cb.done(0, "GALAT: " + (err == null ? "DJAEGER WORK tidak dapat dijangkau" : err.getMessage()));
+            });
         });
     }
 
-    private HttpResult request(String method, String target, String body, boolean auth) throws Exception {
+    private HttpResult request(String method, String target, String body, boolean auth, boolean remote) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
         c.setRequestMethod(method);
-        c.setConnectTimeout(5000);
-        c.setReadTimeout(60000);
+        c.setConnectTimeout(remote ? 8000 : 1400);
+        c.setReadTimeout(remote ? 65000 : 60000);
         c.setUseCaches(false);
         c.setRequestProperty("Accept", "application/json, text/plain, */*");
+        if (remote) c.setRequestProperty("X-Djaeger-Remote-Key", remoteKey());
         if (auth) c.setRequestProperty("X-Hermes-Token", token());
         if (body != null) {
             byte[] data = body.getBytes(StandardCharsets.UTF_8);
@@ -973,7 +999,28 @@ public class MainActivity extends Activity {
         return new HttpResult(code, sb.toString());
     }
 
+    private void ensureRemotePairing() {
+        if (pairingRemote) return;
+        pairingRemote = true;
+        try {
+            HttpResult pair = request("GET", runtimeUrl() + "/api/work/remote", null, false, false);
+            if (pair.code >= 200 && pair.code < 300) {
+                JSONObject j = new JSONObject(pair.body);
+                String ru = cleanRemote(j.optString("remote_url", ""));
+                String rk = j.optString("remote_key", "").trim();
+                if (!ru.isEmpty() && rk.length() >= 32) {
+                    prefs.edit().putString("remote_url", ru).putString("remote_key", rk).apply();
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            pairingRemote = false;
+        }
+    }
+
     private String runtimeUrl() { return clean(prefs.getString("runtime", DEFAULT_RUNTIME)); }
+    private String remoteUrl() { return cleanRemote(prefs.getString("remote_url", "")); }
+    private String remoteKey() { return prefs.getString("remote_key", "").trim(); }
     private String token() { return prefs.getString("token", "").trim(); }
     private String bootstrapUrl() {
         try {
@@ -985,6 +1032,14 @@ public class MainActivity extends Activity {
         s = s == null ? "" : s.trim();
         if (s.isEmpty()) s = DEFAULT_RUNTIME;
         if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://" + s;
+        while (s.endsWith("/")) s = s.substring(0, s.length() - 1);
+        return s;
+    }
+
+    private String cleanRemote(String s) {
+        s = s == null ? "" : s.trim();
+        if (s.isEmpty()) return "";
+        if (!s.startsWith("https://") && !s.startsWith("http://")) return "";
         while (s.endsWith("/")) s = s.substring(0, s.length() - 1);
         return s;
     }
