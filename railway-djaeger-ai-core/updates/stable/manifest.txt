@@ -1,6 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='21'
-RELEASE='HERMESLOCALPOLICYRESTORE1'
+SEQ='22'
+RELEASE='NEURONTRUTH1'
 TARGET_VC='129659'
 FILE_COUNT='1'
-FILE|hermes-local-policy-baseline1|system/etc/djaeger/hermes/hermes-local-policy.conf|89d02189a892d539641b93d78523806e42e0b6b1490c895a09bd9f65a80fed67|644
+FILE|djaeger-neuron-truth1|system/bin/djaeger-neuron-truth1|PLACEHOLDER|755
