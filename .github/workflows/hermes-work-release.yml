@@ -27,16 +27,16 @@ jobs:
           cp worker/tick.sh out/payload/worker/tick.sh
           cp config/work.env out/payload/config/work.env
           cd out
-          zip -qr ../HERMES_WORK_RUNTIME_v0.4.0_READY.zip manifest.json payload
+          zip -qr ../HERMES_WORK_RUNTIME_v0.5.0_RESEARCH_CORE.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v0.4.0_READY.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v0.4.0_READY.zip.sha256
+          sha256sum HERMES_WORK_RUNTIME_v0.5.0_RESEARCH_CORE.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v0.5.0_RESEARCH_CORE.zip.sha256
           cat > channel.json <<EOF
-          {"channel":"stable","version":"v0.4.0-ready","bundle":"HERMES_WORK_RUNTIME_v0.4.0_READY.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v0.4.0_READY.zip.sha256)"}
+          {"channel":"stable","version":"v0.5.0-research-core","bundle":"HERMES_WORK_RUNTIME_v0.5.0_RESEARCH_CORE.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v0.5.0_RESEARCH_CORE.zip.sha256)"}
           EOF
       - name: Publish channel files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v0.4.0_READY.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v0.4.0_READY.zip.sha256 hermes-work-runtime/channel.json
+          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v0.5.0_RESEARCH_CORE.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v0.5.0_RESEARCH_CORE.zip.sha256 hermes-work-runtime/channel.json
           git commit -m "Publish HERMES WORK runtime v0.2.0" || exit 0
           git push
