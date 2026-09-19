@@ -25,6 +25,8 @@ function safeSnapshot(x={}) {
     safe_mode:x.safe_mode ?? null,
     research_total:x.research_total ?? null,
     last_research:x.last_research ?? null,
+    auto_update_state:x.auto_update_state ?? null,
+    auto_update_last_check:x.auto_update_last_check ?? null,
     bridge_agent:x.bridge_agent ?? null,
     ai_used:x.ai_used ?? false,
     neurons_used:x.neurons_used ?? 0,
