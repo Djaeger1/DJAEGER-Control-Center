@@ -1,1 +1,1 @@
-{"version":"v1.2.1-bridgefix","description":"HERMES WORK bridge credential fix: generates its own local bridge key automatically; no Hermes AI token and zero Neurons for bridge telemetry","restart":false}
+{"version":"v1.2.2-relay","description":"HERMES WORK automatic zero-neuron telemetry relay fallback using private high-entropy ntfy topic; no Cloudflare deploy credential required","restart":false}
