@@ -1,7 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='20'
-RELEASE='LIVEAUDIT3'
+SEQ='21'
+RELEASE='HERMESLOCALPOLICYRESTORE1'
 TARGET_VC='129659'
-FILE_COUNT='2'
-FILE|djaeger-live-audit-v2|system/bin/djaeger-live-audit|73591a9486da14b2ad5c605b33d460c202b966b2afa5be2eac28a54c3c7a8adc|755
-FILE|djaeger-railway-bridge-auditfix2|system/bin/djaeger-railway-bridge|c8c25b61990ce4cf6f9a2a7e648bce9a68ce0175e1d58de19ca3420d51d4d9ce|755
+FILE_COUNT='1'
+FILE|hermes-local-policy-baseline1|system/etc/djaeger/hermes/hermes-local-policy.conf|89d02189a892d539641b93d78523806e42e0b6b1490c895a09bd9f65a80fed67|644
