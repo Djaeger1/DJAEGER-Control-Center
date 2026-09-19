@@ -1,1 +1,1 @@
-{"version":"v1.9.1-updaterfix","description":"HERMES WORK updater reliability fix: handoff no longer kills the updater that owns the update, supervisor tick self-heals a missing updater, production pack retained","restart":false}
+{"version":"v2.0.0-feedback","description":"HERMES WORK feedback learning loop: real performance ingestion, strong/weak signal classification, channel summary, knowledge feedback and bounded category score adjustment; no fake metrics and zero HERMES Neurons","restart":false}
