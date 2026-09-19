@@ -523,7 +523,7 @@ public class MainActivity extends Activity {
 
         LinearLayout actions = card();
         actions.addView(text("UPDATER", 11, MUTED, true));
-        Button update = actionButton("CHECK / UPDATE NOW", true);
+        Button update = actionButton("UPDATE TO LATEST", true);
         Button backup = actionButton("BACKUP", false);
         Button rollback = actionButton("ROLLBACK", false);
         Button safe = actionButton("SAFE MODE", false);
@@ -550,22 +550,8 @@ public class MainActivity extends Activity {
         update.setOnClickListener(v -> {
             save.performClick();
             update.setEnabled(false);
-            out.setText("Checking release channel and updating…");
-            apiAsync("POST", "/api/work/update", null, true, (code, s) -> {
-                if (code >= 200 && code < 300) {
-                    out.setText(s.trim());
-                    out.append("\n\nHandoff scheduled. Waiting for health check…");
-                    out.postDelayed(() -> {
-                        loadRecovery(current, previous);
-                        refreshOnlineOnly();
-                        generateUpdateReport(out, null);
-                        update.setEnabled(true);
-                    }, 7000);
-                } else {
-                    out.setText("Native updater unavailable. Using bootstrap recovery updater…\n\n" + s.trim());
-                    bootstrapFallbackUpdate(out, update, current, previous);
-                }
-            });
+            out.setText("Installing latest verified HERMES WORK release…");
+            bootstrapFallbackUpdate(out, update, current, previous);
         });
 
         backup.setOnClickListener(v -> action("backup", out, current, previous));
@@ -626,9 +612,18 @@ public class MainActivity extends Activity {
                 HttpResult ex = request("POST", bootstrapUrl() + "/api/exec", body.toString(), true);
                 if (ex.code < 200 || ex.code >= 300) throw new Exception("Bootstrap HTTP " + ex.code + "\\n" + ex.body);
                 ui(() -> {
-                    out.setText("BOOTSTRAP UPDATE SUCCESS\\n\\n" + ex.body.trim());
+                    out.setText("BOOTSTRAP UPDATE SUCCESS\\n\\n" + ex.body.trim() + "\\n\\nVerifying active release…");
                     loadRecovery(current, previous);
                     refreshOnlineOnly();
+                    out.postDelayed(() -> {
+                        generateUpdateReport(out, report -> {
+                            if (report.contains("RELEASE=" + ver) && report.contains("CURRENT=" + ver)) {
+                                Toast.makeText(this, "Latest release active: " + ver, Toast.LENGTH_LONG).show();
+                            } else {
+                                Toast.makeText(this, "Release verification not matched yet. Tap REFRESH UPDATE RESULT.", Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }, 5000);
                     update.setEnabled(true);
                 });
             } catch (Exception e) {
