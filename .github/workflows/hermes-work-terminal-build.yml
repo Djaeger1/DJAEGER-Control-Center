@@ -1,9 +1,9 @@
-name: HERMES WORK Installer APK
+name: HERMES WORK Dashboard APK
 
 on:
   push:
     branches:
-      - hermes-work-installer-v1.0
+      - hermes-work-dashboard-v1.1
     paths:
       - 'hermes-work-terminal/**'
       - '.github/workflows/hermes-work-terminal-build.yml'
@@ -31,10 +31,10 @@ jobs:
         working-directory: hermes-work-terminal
         run: gradle :app:assembleRelease --stacktrace
       - name: Rename APK
-        run: cp hermes-work-terminal/app/build/outputs/apk/release/app-release.apk HERMES_WORK_Installer_v1.1.0.apk
+        run: cp hermes-work-terminal/app/build/outputs/apk/release/app-release.apk HERMES_WORK_Dashboard_v1.1.1.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES-WORK-Installer-v1.1.0-APK
-          path: HERMES_WORK_Installer_v1.1.0.apk
+          name: HERMES-WORK-Dashboard-v1.1.1-APK
+          path: HERMES_WORK_Dashboard_v1.1.1.apk
           retention-days: 30
