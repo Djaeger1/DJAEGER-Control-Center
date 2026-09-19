@@ -1,0 +1,98 @@
+name: Build DJAEGER WORK APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [djaeger-work-build]
+    paths:
+      - 'djaeger-work-v132/**'
+      - '.github/workflows/build-djaeger-work.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Restore exact UI and agreed logo
+        working-directory: djaeger-work-v132
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets app/src/main/res/drawable
+          cat source-assets/index.*.b64 | base64 -d > app/src/main/assets/index.html
+          rm -f app/src/main/res/drawable/djaeger_logo.xml
+          cat source-assets/logo.*.b64 | base64 -d > app/src/main/res/drawable/djaeger_logo.png
+          cp app/src/main/res/drawable/djaeger_logo.png app/src/main/assets/djaeger_logo.png
+          echo "da8909636bb1893e6bd8f76ffb87d373e4128d1a8e01ff40168f65bc1e291313  app/src/main/assets/index.html" | sha256sum -c -
+          echo "db60ad3b00744246520b53a40d3e28c229496591cd41d3feb5c8ae1ab474e6b7  app/src/main/res/drawable/djaeger_logo.png" | sha256sum -c -
+          file app/src/main/res/drawable/djaeger_logo.png
+
+      - name: Static contract checks
+        working-directory: djaeger-work-v132
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "applicationId 'com.djaeger.workdashboard'" app/build.gradle
+          grep -q 'android:label="DJAEGER WORK"' app/src/main/AndroidManifest.xml
+          grep -q 'onclick="refreshAll()"' app/src/main/assets/index.html
+          grep -q '/api/work/status' app/src/main/assets/index.html
+          grep -q '/api/work/research' app/src/main/assets/index.html
+          grep -q '/api/work/brief' app/src/main/assets/index.html
+          grep -q '/api/work/schedule' app/src/main/assets/index.html
+          grep -q '/api/work/bridge' app/src/main/assets/index.html
+          grep -q '/api/work/run-research' app/src/main/assets/index.html
+          grep -q 'DJAEGER <span>WORK</span>' app/src/main/assets/index.html
+          ! grep -q 'HERMES WORK' app/src/main/assets/index.html
+          grep -q 'http://192.168.42.129:8765' app/src/main/java/com/djaeger/workdashboard/MainActivity.java
+
+      - name: Build signed debug APK
+        working-directory: djaeger-work-v132
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Verify installable APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find djaeger-work-v132/app/build/outputs/apk/debug -type f -name '*debug*.apk' | head -1)"
+          test -n "$APK" && test -s "$APK"
+          unzip -t "$APK"
+          BT="$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/apksigner" verify --verbose --print-certs "$APK"
+          "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "package: name='com.djaeger.workdashboard'" /tmp/badging.txt
+          grep -q "application-label:'DJAEGER WORK'" /tmp/badging.txt
+          mkdir -p output
+          cp "$APK" output/DJAEGER_WORK_Dashboard_v1.3.2.apk
+          sha256sum output/DJAEGER_WORK_Dashboard_v1.3.2.apk | tee output/SHA256.txt
+          ls -lh output/DJAEGER_WORK_Dashboard_v1.3.2.apk
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-WORK-v1.3.2-INSTALLABLE
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30
