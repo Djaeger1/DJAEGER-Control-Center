@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json ./
 COPY server.js ./
 COPY selftest.js ./
+COPY updates ./updates
 ENV NODE_ENV=production
 RUN npm test
 EXPOSE 3000
