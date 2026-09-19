@@ -1,0 +1,52 @@
+name: DJAEGER AI Autoheal Gate
+
+on:
+  push:
+    branches:
+      - djaeger-ai-autoheal-shadow
+      - djaeger-ai-railway-v1
+    paths:
+      - 'railway-djaeger-ai-core/**'
+      - '.github/workflows/djaeger-ai-autoheal.yml'
+  pull_request:
+    branches:
+      - djaeger-ai-railway-v1
+    paths:
+      - 'railway-djaeger-ai-core/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-ai-autoheal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression-gate:
+    name: Regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: railway-djaeger-ai-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax and runtime self-test
+        run: npm test
+
+      - name: Guard hardware authority
+        run: |
+          grep -q "const HARDWARE_AUTHORITY = 'NONE'" server.js
+          ! grep -Eq '/sys/|setprop|su -c|magisk|cpu[0-9]+/cpufreq' server.js
+
+      - name: Guard Work isolation
+        run: |
+          ! grep -Eqi 'hermes-work|railway-relay|HERMES-WORK-Relay' server.js

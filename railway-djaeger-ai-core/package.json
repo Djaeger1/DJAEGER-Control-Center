@@ -1,11 +1,12 @@
 {
   "name": "djaeger-ai-railway-core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "DJAEGER AI Railway observability/debug core. No hardware authority.",
+  "description": "DJAEGER AI Railway observability/debug core with auto-heal regression gates. No hardware authority.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --check server.js && node selftest.js"
   },
   "engines": {
     "node": ">=20"
