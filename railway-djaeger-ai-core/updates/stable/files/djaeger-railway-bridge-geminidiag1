@@ -43,6 +43,7 @@ diag_post(){
   _fs="$(qget "$_lb" FINAL_SOURCE)"; [ -n "$_fs" ] || _fs=UNKNOWN
   _cic="$(qget "$_lb" CLOUD_IN_CONTROL)"; [ -n "$_cic" ] || _cic=NO
   _cps="$(qget "$_lb" CLOUD_PLAN_STATE)"; [ -n "$_cps" ] || _cps=NOT_USED
+  _cpr="$(qget "$_lb" CLOUD_PLAN_REASON)"; [ -n "$_cpr" ] || _cpr=UNPUBLISHED
   _ccp="$(qget "$_lb" CLOUD_CONTROL_PROVIDER)"; [ -n "$_ccp" ] || _ccp=NONE
   _cpp="$(qget "$_lb" CLOUD_PLAN_PROVIDER)"; [ -n "$_cpp" ] || _cpp=NONE
   _rs="$(qget "$_rt" STATUS)"; [ -n "$_rs" ] || _rs=UNPUBLISHED
@@ -50,6 +51,18 @@ diag_post(){
   _ra="$(qget "$_rt" PROPOSAL_ACTION)"; [ -n "$_ra" ] || _ra=NA
   _rprof="$(qget "$_rt" PROPOSAL_PROFILE)"; [ -n "$_rprof" ] || _rprof=NA
   _rconf="$(qget "$_rt" CONFIDENCE)"; [ -n "$_rconf" ] || _rconf=NA
+  _psid="$(qget "$_pp" POLICY_SESSION_ID)"; [ -n "$_psid" ] || _psid=NA
+  _pgame="$(qget "$_pp" POLICY_GAME)"; [ -n "$_pgame" ] || _pgame=NA
+  _pum="$(qget "$_pp" POLICY_USER_MODE)"; [ -n "$_pum" ] || _pum=NA
+  _pwm="$(qget "$_pp" POLICY_WINDOW_MODE)"; [ -n "$_pwm" ] || _pwm=NA
+  _pwe="$(qget "$_pp" POLICY_WINDOW_EPOCH)"; [ -n "$_pwe" ] || _pwe=NA
+  _puntil="$(qget "$_pp" POLICY_UNTIL)"; case "$_puntil" in ''|*[!0-9]*) _puntil=0;; esac
+  _prem=0; [ "$_puntil" -gt 0 ] 2>/dev/null && _prem=$((_puntil-_now))
+  _lsid="$(cat "$P/session_id" 2>/dev/null | tr -d '\r\n')"; [ -n "$_lsid" ] || _lsid=NA
+  _lgame="$(cat "$P/session_game" 2>/dev/null | tr -d '\r\n')"; [ -n "$_lgame" ] || _lgame=NA
+  _lum="$(cat "$P/user_mode" 2>/dev/null | tr -d '\r\n ' | tr '[:lower:]' '[:upper:]')"; [ -n "$_lum" ] || _lum=AUTO
+  _lwm="$(qget "$P/window_context" WINDOW_MODE)"; [ -n "$_lwm" ] || _lwm=INACTIVE
+  _lwe="$(cat "$P/window_context_epoch" 2>/dev/null | tr -cd '0-9')"; [ -n "$_lwe" ] || _lwe=0
   _ppp=NO; _ppa=0; if [ -r "$_pp" ]; then _ppp=YES; _pat="$(qget "$_pp" POLICY_AT)"; case "$_pat" in ''|*[!0-9]*) _pat=0;; esac; [ "$_pat" -gt 0 ] 2>/dev/null && _ppa=$((_now-_pat)); [ "$_ppa" -lt 0 ] 2>/dev/null && _ppa=0; fi
   _rpp=NO; _rpa=0; if [ -r "$_rp" ]; then _rpp=YES; _rat="$(qget "$_rp" POLICY_AT)"; case "$_rat" in ''|*[!0-9]*) _rat=0;; esac; [ "$_rat" -gt 0 ] 2>/dev/null && _rpa=$((_now-_rat)); [ "$_rpa" -lt 0 ] 2>/dev/null && _rpa=0; fi
   _rem=0; [ "$_cu" -gt "$_now" ] 2>/dev/null && _rem=$((_cu-_now))
@@ -68,7 +81,7 @@ diag_post(){
   _ver="$(sed -n 's/^version=//p' "$M/module.prop" 2>/dev/null | head -1)"
   _body="$RDIR/.gemdiag.$$"
   cat >"$_body" <<EOF
-{"schema":"DJAEGER_DEVICE_TELEMETRY_V1","module_version":"$(clean "$_ver")","gemini_status":"$(clean "$_st")","gemini_last_event_status":"$(clean "$_last")","gemini_status_age_s":$_age,"gemini_status_fresh":"$(clean "$_fresh")","gemini_http_code":"$(clean "$_code")","gemini_cooldown_until":$_cu,"gemini_cooldown_remaining_s":$_rem,"gemini_vault_count":$_vcnt,"gemini_ready_slots":$_ready,"gemini_cooling_slots":$_cool,"gemini_curl_rc":$_hrc,"gemini_http_at":$_hat,"gemini_model":"$(clean "$_hmodel")","current_brain":"$(clean "$_cb")","brain_mode":"$(clean "$_bm")","final_source":"$(clean "$_fs")","cloud_in_control":"$(clean "$_cic")","cloud_plan_state":"$(clean "$_cps")","cloud_control_provider":"$(clean "$_ccp")","cloud_plan_provider":"$(clean "$_cpp")","reasoning_status":"$(clean "$_rs")","reasoning_event_reason":"$(clean "$_rr")","reasoning_proposal_action":"$(clean "$_ra")","reasoning_proposal_profile":"$(clean "$_rprof")","reasoning_confidence":"$(clean "$_rconf")","predictive_policy_present":"$_ppp","predictive_policy_age_s":$_ppa,"root_policy_present":"$_rpp","root_policy_age_s":$_rpa,"source":"DJAEGER_RAILWAY_GEMINI_POLICY_DIAG1"}
+{"schema":"DJAEGER_DEVICE_TELEMETRY_V1","module_version":"$(clean "$_ver")","gemini_status":"$(clean "$_st")","gemini_last_event_status":"$(clean "$_last")","gemini_status_age_s":$_age,"gemini_status_fresh":"$(clean "$_fresh")","gemini_http_code":"$(clean "$_code")","gemini_cooldown_until":$_cu,"gemini_cooldown_remaining_s":$_rem,"gemini_vault_count":$_vcnt,"gemini_ready_slots":$_ready,"gemini_cooling_slots":$_cool,"gemini_curl_rc":$_hrc,"gemini_http_at":$_hat,"gemini_model":"$(clean "$_hmodel")","current_brain":"$(clean "$_cb")","brain_mode":"$(clean "$_bm")","final_source":"$(clean "$_fs")","cloud_in_control":"$(clean "$_cic")","cloud_plan_state":"$(clean "$_cps")","cloud_plan_reason":"$(clean "$_cpr")","cloud_control_provider":"$(clean "$_ccp")","cloud_plan_provider":"$(clean "$_cpp")","policy_session_id":"$(clean "$_psid")","policy_game":"$(clean "$_pgame")","policy_user_mode":"$(clean "$_pum")","policy_window_mode":"$(clean "$_pwm")","policy_window_epoch":"$(clean "$_pwe")","policy_until":$_puntil,"policy_remaining_s":$_prem,"live_session_id":"$(clean "$_lsid")","live_game":"$(clean "$_lgame")","live_user_mode":"$(clean "$_lum")","live_window_mode":"$(clean "$_lwm")","live_window_epoch":"$(clean "$_lwe")","reasoning_status":"$(clean "$_rs")","reasoning_event_reason":"$(clean "$_rr")","reasoning_proposal_action":"$(clean "$_ra")","reasoning_proposal_profile":"$(clean "$_rprof")","reasoning_confidence":"$(clean "$_rconf")","predictive_policy_present":"$_ppp","predictive_policy_age_s":$_ppa,"root_policy_present":"$_rpp","root_policy_age_s":$_rpa,"source":"DJAEGER_RAILWAY_GEMINI_POLICY_DIAG1"}
 EOF
   curl -4 --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null     -H 'Content-Type: application/json' -H "Authorization: Bearer $_tok"     --data-binary @"$_body" "${_ep%/}/v1/device/telemetry" 2>/dev/null || true
   rm -f "$_body" 2>/dev/null
