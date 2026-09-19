@@ -1,1 +1,1 @@
-{"version":"v0.2.0-control-center","description":"HERMES WORK Control Center: work dashboard, research pipeline slots, recovery, diagnostics, bridge foundation and one-tap update foundation","restart":false}\n
+{"version":"v0.3.0-native-updater","description":"HERMES WORK Control Center with native HTTPS release updater, SHA-256 verification, staging and rollback foundation","restart":false}
