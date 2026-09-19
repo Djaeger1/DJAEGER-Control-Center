@@ -969,6 +969,10 @@ public class MainActivity extends Activity {
         });
     }
 
+    private HttpResult request(String method, String target, String body, boolean auth) throws Exception {
+        return request(method, target, body, auth, false);
+    }
+
     private HttpResult request(String method, String target, String body, boolean auth, boolean remote) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(target).openConnection();
         c.setRequestMethod(method);
