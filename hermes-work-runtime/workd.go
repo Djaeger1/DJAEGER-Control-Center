@@ -533,7 +533,7 @@ func (s *S)production(w http.ResponseWriter,r *http.Request){js(w,s.productionIn
 func (s *S)productionDownload(w http.ResponseWriter,r *http.Request){
  id:=strings.TrimSpace(r.URL.Query().Get("id"));if !safePlanID(id){http.Error(w,"invalid id",400);return}
  p:=s.productionZip(id);if !exists(p){s.ensureProductionPacks()};if !exists(p){http.Error(w,"production pack not found",404);return}
- w.Header().Set("Content-Type","application/zip");w.Header().Set("Content-Disposition","attachment; filename="HERMES_WORK_"+id+"_production.zip"");http.ServeFile(w,r,p)
+ w.Header().Set("Content-Type","application/zip");w.Header().Set("Content-Disposition","attachment; filename=\"HERMES_WORK_"+id+"_production.zip\"");http.ServeFile(w,r,p)
 }
 
 
