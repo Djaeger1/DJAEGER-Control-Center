@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 3000); // rollout marker: validated LIVEAUDIT gate repair
 const TOKEN = String(process.env.DJAEGER_ACCESS_TOKEN || '');
 const MAX_TRACES = Math.max(20, Math.min(1000, Number(process.env.MAX_TRACES || 200)));
 const BODY_LIMIT = Math.max(4096, Math.min(262144, Number(process.env.BODY_LIMIT_BYTES || 65536)));
