@@ -16,3 +16,5 @@ Endpoints:
 - GET /v1/device/state
 - GET /v1/debug/traces
 - GET /v1/config
+
+Deployment note: LIVEAUDIT rollback-gate repair validated through the DJAEGER AI shadow regression gate.
