@@ -460,6 +460,7 @@ const server = http.createServer(async (req, res) => {
         server_received_at: nowIso()
       };
       lastUpdateAck = ack;
+      console.log(JSON.stringify({ level: 'info', event: 'DJAEGER_UPDATE_ACK', ack, at: nowIso() }));
       const tr = addTrace('UPDATE_ACK', ack);
       return json(res, 200, { ok: true, trace_id: tr.trace_id, ack });
     }
