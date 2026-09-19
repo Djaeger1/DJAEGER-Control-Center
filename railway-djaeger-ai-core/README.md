@@ -18,3 +18,4 @@ Endpoints:
 - GET /v1/config
 
 Deployment note: LIVEAUDIT rollback-gate repair validated through the DJAEGER AI shadow regression gate.
+Deployment trigger: validated LIVEAUDIT fix production rollout 2026-09-19.
