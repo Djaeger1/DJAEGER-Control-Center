@@ -53,6 +53,8 @@ function safeSnapshot(x={}) {
     handoff_queue:x.handoff_queue ?? null,
     next_handoff_job:x.next_handoff_job ?? null,
     handoff_engine:x.handoff_engine ?? null,
+    production_desk_state:x.production_desk_state ?? null,
+    production_desk_engine:x.production_desk_engine ?? null,
     publication_state:x.publication_state ?? null,
     publications_total:x.publications_total ?? null,
     publication_engine:x.publication_engine ?? null,
