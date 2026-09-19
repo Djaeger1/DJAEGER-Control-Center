@@ -1,6 +1,6 @@
 #!/system/bin/sh
 ROOT="${HERMES_ROOT:-/data/adb/hermes_work}"
-REL="${HERMES_RELEASE:-$ROOT/releases/v0.2.0-control-center}"
+REL="${HERMES_RELEASE:-$ROOT/releases/$(cat "$ROOT/current_release" 2>/dev/null)}"
 PID="$ROOT/state/workd.pid"; LOG="$ROOT/logs/workd.log"
 mkdir -p "$ROOT/data/research" "$ROOT/data/knowledge" "$ROOT/data/database" "$ROOT/state" "$ROOT/logs" "$ROOT/backups" "$ROOT/updates"
 if [ -f "$PID" ] && kill -0 "$(cat "$PID" 2>/dev/null)" 2>/dev/null; then exit 0; fi
