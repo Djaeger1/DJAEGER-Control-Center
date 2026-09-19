@@ -6,11 +6,27 @@ android {
     namespace 'com.hermes.workterminal'
     compileSdk 35
 
+    signingConfigs {
+        release {
+            storeFile file('hermes_work_terminal.jks')
+            storePassword 'HermesWork2026'
+            keyAlias 'hermeswork'
+            keyPassword 'HermesWork2026'
+        }
+    }
+
     defaultConfig {
         applicationId "com.hermes.workterminal"
         minSdk 23
         targetSdk 35
-        versionCode 2
+        versionCode 3
         versionName "0.1.1"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
     }
 }
