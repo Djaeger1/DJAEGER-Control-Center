@@ -1,6 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='4'
-RELEASE='NEURONUSAGEFIX2_CLOUDTRUTH1_FIX1'
+SEQ='5'
+RELEASE='GEMINIDIAG1'
 TARGET_VC='129659'
 FILE_COUNT='1'
-FILE|hc-neuronusagefix2-cloudtruth1|system/bin/djaeger-hermes-cloud|6e7cf4ff5685fc1651012b4d5803e1efbbcaf6311c20aaa51fe540a9b64c4826|755
+FILE|djaeger-railway-bridge-geminidiag1|system/bin/djaeger-railway-bridge|87c03735f21ca324ee9dbce2013403e9d78133c57fd9d3ac16db08cc33318bc5|755
