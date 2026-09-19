@@ -1,1 +1,1 @@
-{"version":"v1.6.0-planner","description":"HERMES WORK persistent content planner: automatic queue from top opportunities, production stages, dashboard counters and next-for-script telemetry, zero HERMES Neurons","restart":false}
+{"version":"v1.7.0-scriptprep","description":"HERMES WORK Script Preparation Engine: deterministic preschool production briefs, scene plans, narration/visual guidance, planner integration, zero HERMES Neurons; includes auto updater self-test fix","restart":false}
