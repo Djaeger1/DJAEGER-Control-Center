@@ -543,15 +543,18 @@ public class MainActivity extends Activity {
             update.setEnabled(false);
             out.setText("Checking release channel and updating…");
             apiAsync("POST", "/api/work/update", null, true, (code, s) -> {
-                out.setText(s.trim());
                 if (code >= 200 && code < 300) {
+                    out.setText(s.trim());
                     out.append("\n\nHandoff scheduled. Waiting for health check…");
                     out.postDelayed(() -> {
                         loadRecovery(current, previous);
                         refreshOnlineOnly();
                         update.setEnabled(true);
                     }, 5000);
-                } else update.setEnabled(true);
+                } else {
+                    out.setText("Native updater unavailable. Using bootstrap recovery updater…\n\n" + s.trim());
+                    bootstrapFallbackUpdate(out, update, current, previous);
+                }
             });
         });
 
@@ -563,6 +566,61 @@ public class MainActivity extends Activity {
         diag.setOnClickListener(v -> apiAsync("GET", "/api/work/diagnostics", null, true, (code, s) -> out.setText(s.trim())));
 
         loadRecovery(current, previous);
+    }
+
+    private void bootstrapFallbackUpdate(TextView out, Button update, TextView current, TextView previous) {
+        io.execute(() -> {
+            try {
+                String channelUrl = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-Control-Center/hermes-work-release-channel/hermes-work-runtime/channel.json";
+                HttpResult ch = request("GET", channelUrl, null, false);
+                if (ch.code != 200) throw new Exception("Channel HTTP " + ch.code);
+                JSONObject j = new JSONObject(ch.body);
+                String ver = j.getString("version");
+                String bundle = j.getString("bundle");
+                String sha = j.getString("sha256").toLowerCase(Locale.US);
+                if (!ver.matches("[A-Za-z0-9._-]+") || !bundle.matches("[A-Za-z0-9._-]+") || !sha.matches("[0-9a-f]{64}")) {
+                    throw new Exception("Invalid release metadata");
+                }
+                String raw = "https://raw.githubusercontent.com/Djaeger1/DJAEGER-Control-Center/hermes-work-release-channel/hermes-work-runtime/" + bundle;
+                String cmd =
+                        "ROOT=/data/adb/hermes_work; " +
+                        "VER='" + ver + "'; URL='" + raw + "'; SHA='" + sha + "'; " +
+                        "mkdir -p \"$ROOT/updates\" \"$ROOT/releases\"; " +
+                        "TMP=\"$ROOT/updates/$VER.zip\"; STAGE=\"$ROOT/releases/.stage-$VER\"; DEST=\"$ROOT/releases/$VER\"; " +
+                        "rm -f \"$TMP\"; " +
+                        "/system/bin/wget -qO \"$TMP\" \"$URL\" || exit 10; " +
+                        "GOT=$(sha256sum \"$TMP\" 2>/dev/null | awk '{print $1}'); [ \"$GOT\" = \"$SHA\" ] || exit 11; " +
+                        "rm -rf \"$STAGE\" \"$DEST.new\"; mkdir -p \"$STAGE\" \"$DEST.new\"; " +
+                        "if command -v unzip >/dev/null 2>&1; then unzip -oq \"$TMP\" -d \"$STAGE\" || exit 12; " +
+                        "elif [ -x /data/adb/magisk/busybox ]; then /data/adb/magisk/busybox unzip -oq \"$TMP\" -d \"$STAGE\" || exit 12; " +
+                        "elif command -v busybox >/dev/null 2>&1; then busybox unzip -oq \"$TMP\" -d \"$STAGE\" || exit 12; " +
+                        "else exit 13; fi; " +
+                        "[ -f \"$STAGE/manifest.json\" ] && [ -x \"$STAGE/payload/bin/workd\" -o -f \"$STAGE/payload/bin/workd\" ] || exit 14; " +
+                        "cp \"$STAGE/manifest.json\" \"$DEST.new/manifest.json\" || exit 15; " +
+                        "cp -R \"$STAGE/payload/.\" \"$DEST.new/\" || exit 15; " +
+                        "chmod 755 \"$DEST.new/bin/workd\" \"$DEST.new/worker/tick.sh\" \"$DEST.new/worker/handoff.sh\" 2>/dev/null; " +
+                        "CUR=$(cat \"$ROOT/current_release\" 2>/dev/null); [ -n \"$CUR\" ] && [ \"$CUR\" != \"$VER\" ] && printf '%s\\n' \"$CUR\" > \"$ROOT/previous_release\"; " +
+                        "rm -rf \"$DEST\"; mv \"$DEST.new\" \"$DEST\" || exit 16; printf '%s\\n' \"$VER\" > \"$ROOT/current_release\"; " +
+                        "PREV=$(cat \"$ROOT/previous_release\" 2>/dev/null); " +
+                        "sh \"$DEST/worker/handoff.sh\" \"$ROOT\" \"$VER\" \"$PREV\" || exit 17; " +
+                        "sleep 2; /system/bin/wget -qO- http://127.0.0.1:8766/api/work/status || exit 18";
+                JSONObject body = new JSONObject();
+                body.put("command", cmd);
+                HttpResult ex = request("POST", bootstrapUrl() + "/api/exec", body.toString(), true);
+                if (ex.code < 200 || ex.code >= 300) throw new Exception("Bootstrap HTTP " + ex.code + "\\n" + ex.body);
+                ui(() -> {
+                    out.setText("BOOTSTRAP UPDATE SUCCESS\\n\\n" + ex.body.trim());
+                    loadRecovery(current, previous);
+                    refreshOnlineOnly();
+                    update.setEnabled(true);
+                });
+            } catch (Exception e) {
+                ui(() -> {
+                    out.setText("UPDATE FAILED\\n\\n" + e.getMessage());
+                    update.setEnabled(true);
+                });
+            }
+        });
     }
 
     private void loadRecovery(TextView current, TextView previous) {
