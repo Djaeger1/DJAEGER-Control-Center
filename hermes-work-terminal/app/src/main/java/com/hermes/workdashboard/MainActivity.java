@@ -453,6 +453,7 @@ public class MainActivity extends Activity {
         auto.addView(text("Dedup · READY", 13, OK, true));
         auto.addView(text("Categorization · READY", 13, OK, true));
         auto.addView(text("Trend Scoring · READY_V1", 13, OK, true));
+        auto.addView(text("Bridge Telemetry · DATA ONLY · 0 AI / 0 Neurons", 13, OK, true));
         auto.addView(text("Local Reasoning · DEFERRED", 13, WARN, true));
         body.addView(auto);
 
@@ -472,7 +473,8 @@ public class MainActivity extends Activity {
                 setMetric(ram, j.optInt("mem_available_mb") + " MB", j.optInt("mem_available_mb") < 220 ? BAD : OK);
                 String w = j.optBoolean("safe_mode") ? "SAFE MODE" : (j.optBoolean("worker_paused") ? "PAUSED" : "READY");
                 setMetric(worker, w, "READY".equals(w) ? OK : WARN);
-                setMetric(bridge, j.optBoolean("bridge_enabled") ? "CONNECTED" : "OFF", j.optBoolean("bridge_enabled") ? OK : MUTED);
+                String bs = j.optString("bridge_state", j.optBoolean("bridge_enabled") ? "STARTING" : "OFF");
+                setMetric(bridge, bs, "CONNECTED".equals(bs) ? OK : ("OFF".equals(bs) ? MUTED : WARN));
                 JSONObject c = j.optJSONObject("components");
                 if (c != null) {
                     StringBuilder x = new StringBuilder();
