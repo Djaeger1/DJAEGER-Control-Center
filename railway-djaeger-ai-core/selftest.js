@@ -83,6 +83,12 @@ async function request(path, options = {}) {
     assert(state.body.state.neurons_used === 10000 && state.body.state.neurons_limit === 10000, 'neuron_state_corrupt');
     assert(state.body.state.skin_temp_c === 39.5 && state.body.state.fps === 60, 'numeric_string_not_normalized');
 
+    const obsGood = await request('/v1/device/observability', { headers });
+    assert(obsGood.status === 200 && obsGood.body && obsGood.body.ok === true, 'observability_failed');
+    assert(obsGood.body.telemetry_stats.accepted === 1, 'observability_accepted_count_wrong');
+    assert(obsGood.body.last_known_good.neurons_used === 10000, 'known_good_baseline_missing');
+    assert(Array.isArray(obsGood.body.last_anomalies) && obsGood.body.last_anomalies.length === 0, 'false_anomaly_on_good_sample');
+
     const unknownSentinel = await request('/v1/device/telemetry', {
       method: 'POST',
       headers,
@@ -99,6 +105,22 @@ async function request(path, options = {}) {
     assert(unknownState.body.state.neurons_used === 0, 'zero_neuron_used_changed');
     assert(unknownState.body.state.neurons_limit === null, 'zero_limit_not_normalized_to_unknown');
     assert(unknownState.body.state.skin_temp_c === null && unknownState.body.state.fps === null, 'sentinel_not_normalized');
+
+    const obsUnknown = await request('/v1/device/observability', { headers });
+    assert(obsUnknown.body.telemetry_stats.accepted === 2, 'observability_second_sample_missing');
+    assert(obsUnknown.body.last_known_good.neurons_used === 0, 'info_anomaly_should_remain_known_good');
+    assert(obsUnknown.body.last_anomalies.some(a => a.code === 'NEURON_LIMIT_UNKNOWN' && a.severity === 'INFO'), 'unknown_limit_info_missing');
+
+    const zeroBug = await request('/v1/device/telemetry', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ neurons_used: '0', neurons_limit: '10000' })
+    });
+    assert(zeroBug.status === 200 && zeroBug.body.known_good === false, 'zero_neuron_warning_not_detected');
+
+    const obsZero = await request('/v1/device/observability', { headers });
+    assert(obsZero.body.last_anomalies.some(a => a.code === 'NEURONS_ZERO_WITH_LIMIT' && a.severity === 'WARN'), 'zero_neuron_anomaly_missing');
+    assert(obsZero.body.telemetry_stats.anomalous === 1, 'anomalous_count_wrong');
 
     const badNeuron = await request('/v1/device/telemetry', {
       method: 'POST',
@@ -124,6 +146,9 @@ async function request(path, options = {}) {
     console.log('PASS|valid_neurons_10000_10000');
     console.log('PASS|numeric_string_compat');
     console.log('PASS|unknown_sentinel_compat');
+    console.log('PASS|telemetry_observability');
+    console.log('PASS|last_known_good_baseline');
+    console.log('PASS|zero_neuron_anomaly_detection');
     console.log('PASS|reject_neurons_over_limit');
     console.log('PASS|reject_invalid_json');
     console.log('PASS|auth_guard');

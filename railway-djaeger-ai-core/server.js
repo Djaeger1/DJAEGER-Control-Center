@@ -12,6 +12,15 @@ const HARDWARE_AUTHORITY = 'NONE';
 const BUILD_ID = String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.DJAEGER_BUILD_ID || 'unknown').slice(0, 64);
 
 let lastTelemetry = null;
+let lastKnownGood = null;
+let lastAnomalies = [];
+const telemetryStats = {
+  accepted: 0,
+  anomalous: 0,
+  first_received_at: null,
+  last_received_at: null,
+  baseline_updates: 0
+};
 const traces = [];
 
 function nowIso() { return new Date().toISOString(); }
@@ -143,6 +152,119 @@ function sanitizeTelemetry(x) {
   return out;
 }
 
+function safeTelemetrySummary(t) {
+  if (!t) return null;
+  return {
+    schema: t.schema || null,
+    module_version: t.module_version || null,
+    workload_class: t.workload_class || null,
+    profile: t.profile || null,
+    skin_temp_c: t.skin_temp_c ?? null,
+    battery_temp_c: t.battery_temp_c ?? null,
+    cpu_temp_c: t.cpu_temp_c ?? null,
+    gpu_temp_c: t.gpu_temp_c ?? null,
+    fps: t.fps ?? null,
+    jank_pct: t.jank_pct ?? null,
+    p95_ms: t.p95_ms ?? null,
+    p99_ms: t.p99_ms ?? null,
+    neurons_used: t.neurons_used ?? null,
+    neurons_limit: t.neurons_limit ?? null,
+    neuron_tier: t.neuron_tier || null,
+    provider_quota_state: t.provider_quota_state || null,
+    provider_quota_reason: t.provider_quota_reason || null,
+    hermes_cloud_state: t.hermes_cloud_state || null,
+    hermes_cloud_http: t.hermes_cloud_http ?? null,
+    gemini_status: t.gemini_status || null,
+    control_loop_age_s: t.control_loop_age_s ?? null,
+    agent_execution_status: t.agent_execution_status || null,
+    source: t.source || null,
+    server_received_at: t.server_received_at
+  };
+}
+
+function detectTelemetryAnomalies(t) {
+  const anomalies = [];
+
+  if (t.neurons_limit !== undefined && t.neurons_limit !== null &&
+      t.neurons_used !== undefined && t.neurons_used !== null &&
+      t.neurons_limit > 0 && t.neurons_used === 0) {
+    anomalies.push({
+      code: 'NEURONS_ZERO_WITH_LIMIT',
+      severity: 'WARN',
+      detail: 'neurons_used is zero while neurons_limit is available'
+    });
+  }
+
+  if (t.control_loop_age_s !== undefined && t.control_loop_age_s !== null &&
+      t.control_loop_age_s > 900) {
+    anomalies.push({
+      code: 'CONTROL_LOOP_STALE',
+      severity: 'WARN',
+      detail: 'control_loop_age_s exceeds 900 seconds'
+    });
+  }
+
+  if (t.neurons_limit === null && t.neurons_used !== undefined) {
+    anomalies.push({
+      code: 'NEURON_LIMIT_UNKNOWN',
+      severity: 'INFO',
+      detail: 'neurons_limit is unavailable or sentinel'
+    });
+  }
+
+  return anomalies;
+}
+
+function isKnownGoodTelemetry(t, anomalies) {
+  if (!t || !t.server_received_at) return false;
+  return !anomalies.some(a => a.severity === 'WARN' || a.severity === 'CRITICAL');
+}
+
+function observeTelemetry(t) {
+  telemetryStats.accepted += 1;
+  telemetryStats.first_received_at ||= t.server_received_at;
+  telemetryStats.last_received_at = t.server_received_at;
+
+  const anomalies = detectTelemetryAnomalies(t);
+  lastAnomalies = anomalies;
+  if (anomalies.some(a => a.severity === 'WARN' || a.severity === 'CRITICAL')) {
+    telemetryStats.anomalous += 1;
+  }
+
+  const summary = safeTelemetrySummary(t);
+  const knownGood = isKnownGoodTelemetry(t, anomalies);
+  if (knownGood) {
+    lastKnownGood = summary;
+    telemetryStats.baseline_updates += 1;
+  }
+
+  const shouldLog = telemetryStats.accepted <= 5 ||
+    telemetryStats.accepted % 10 === 0 ||
+    anomalies.length > 0;
+
+  if (shouldLog) {
+    console.log(JSON.stringify({
+      event: 'DJAEGER_TELEMETRY_SUMMARY',
+      sample: telemetryStats.accepted,
+      known_good: knownGood,
+      anomalies,
+      telemetry: summary,
+      at: nowIso()
+    }));
+  }
+
+  if (anomalies.length > 0) {
+    console.warn(JSON.stringify({
+      event: 'DJAEGER_TELEMETRY_ANOMALY',
+      sample: telemetryStats.accepted,
+      anomalies,
+      at: nowIso()
+    }));
+  }
+
+  return { summary, anomalies, knownGood };
+}
+
 function serviceSelftest() {
   const checks = [
     { name: 'token_configured', ok: TOKEN.length >= 16 },
@@ -195,6 +317,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const t = sanitizeTelemetry(body);
       lastTelemetry = t;
+      const observation = observeTelemetry(t);
       const tr = addTrace('TELEMETRY', {
         device_id: t.device_id || 'UNKNOWN',
         workload_class: t.workload_class || 'UNKNOWN',
@@ -205,7 +328,13 @@ const server = http.createServer(async (req, res) => {
         provider_quota_reason: t.provider_quota_reason || 'NONE',
         hermes_cloud_state: t.hermes_cloud_state || 'UNKNOWN'
       });
-      return json(res, 200, { ok: true, trace_id: tr.trace_id, received_at: t.server_received_at });
+      return json(res, 200, {
+        ok: true,
+        trace_id: tr.trace_id,
+        received_at: t.server_received_at,
+        known_good: observation.knownGood,
+        anomaly_count: observation.anomalies.length
+      });
     }
 
     if (req.method === 'POST' && url.pathname === '/v1/device/event') {
@@ -231,6 +360,24 @@ const server = http.createServer(async (req, res) => {
         hardware_authority: HARDWARE_AUTHORITY,
         state: lastTelemetry,
         trace_count: traces.length,
+        at: nowIso()
+      });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/v1/device/observability') {
+      const ageMs = lastTelemetry && lastTelemetry.server_received_at
+        ? Math.max(0, Date.now() - Date.parse(lastTelemetry.server_received_at))
+        : null;
+      return json(res, 200, {
+        ok: true,
+        service: 'DJAEGER-AI-Core',
+        release: RELEASE,
+        build_id: BUILD_ID,
+        telemetry_age_ms: ageMs,
+        telemetry_stats: telemetryStats,
+        current: safeTelemetrySummary(lastTelemetry),
+        last_known_good: lastKnownGood,
+        last_anomalies: lastAnomalies,
         at: nowIso()
       });
     }
