@@ -273,11 +273,12 @@ function observeTelemetry(t) {
     }));
   }
 
-  if (anomalies.length > 0) {
+  const actionableAnomalies = anomalies.filter(a => a.severity === 'WARN' || a.severity === 'CRITICAL');
+  if (actionableAnomalies.length > 0) {
     console.warn(JSON.stringify({
       event: 'DJAEGER_TELEMETRY_ANOMALY',
       sample: telemetryStats.accepted,
-      anomalies,
+      anomalies: actionableAnomalies,
       at: nowIso()
     }));
   }
