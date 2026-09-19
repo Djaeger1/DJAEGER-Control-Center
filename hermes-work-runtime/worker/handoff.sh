@@ -10,11 +10,14 @@ if kill -0 "$NEW" 2>/dev/null && /system/bin/wget -qO- http://127.0.0.1:8766/api
   APID="$ROOT/state/autoupdate.pid"
   AUP="$DEST/worker/autoupdate.sh"
   if [ -f "$AUP" ]; then
+    # Always hand updater ownership to the newly activated release.
     OLD_AUP="$(cat "$APID" 2>/dev/null)"
-    if [ -z "$OLD_AUP" ] || ! kill -0 "$OLD_AUP" 2>/dev/null; then
-      HERMES_ROOT="$ROOT" nohup /system/bin/sh "$AUP" >>"$ROOT/logs/autoupdate.log" 2>&1 &
-      echo $! > "$APID"
+    if [ -n "$OLD_AUP" ] && kill -0 "$OLD_AUP" 2>/dev/null; then
+      kill "$OLD_AUP" 2>/dev/null
+      sleep 1
     fi
+    HERMES_ROOT="$ROOT" nohup /system/bin/sh "$AUP" >>"$ROOT/logs/autoupdate.log" 2>&1 &
+    echo $! > "$APID"
   fi
   echo "$(date) PASS $VER pid=$NEW" >>"$LOG"; exit 0
 fi
