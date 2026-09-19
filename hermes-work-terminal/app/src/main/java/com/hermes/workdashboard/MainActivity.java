@@ -95,9 +95,9 @@ public class MainActivity extends Activity {
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
         TextView brand = text("DJAEGER WORK", 20, TEXT, true);
-        TextView tagline = text("WORK · RESEARCH · GROW", 8, MUTED, true);
+        TextView tagline = text("KERJA · RISET · TUMBUH", 8, MUTED, true);
         tagline.setLetterSpacing(0.16f);
-        pageTitle = text("WORK", 9, ACCENT, true);
+        pageTitle = text("KERJA", 9, ACCENT, true);
         pageTitle.setPadding(0, dp(3), 0, 0);
         titles.addView(brand);
         titles.addView(tagline);
@@ -114,7 +114,7 @@ public class MainActivity extends Activity {
         refreshLp.setMargins(dp(4), 0, dp(8), 0);
         top.addView(refresh, refreshLp);
 
-        online = text("● CHECKING", 11, MUTED, true);
+        online = text("● MEMERIKSA", 11, MUTED, true);
         online.setGravity(Gravity.CENTER);
         online.setPadding(dp(10), 0, dp(10), 0);
         online.setBackground(solidBg(Color.rgb(25, 28, 34), Color.rgb(48, 58, 72), dp(20)));
@@ -134,7 +134,7 @@ public class MainActivity extends Activity {
         navBar.setPadding(dp(3), dp(5), dp(3), dp(6));
         navScroll.addView(navBar, new HorizontalScrollView.LayoutParams(-1, -2));
 
-        String[] labels = {"WORK", "RESEARCH", "PLANNER", "INSIGHTS", "SYSTEM", "UPDATE"};
+        String[] labels = {"KERJA", "RISET", "RENCANA", "WAWASAN", "SISTEM", "PEMBARUAN"};
         for (int i = 0; i < labels.length; i++) {
             final int p = i;
             Button b = navButton(labels[i]);
@@ -147,7 +147,7 @@ public class MainActivity extends Activity {
 
     private void showPage(int page) {
         currentPage = page;
-        String[] names = {"WORK", "RESEARCH", "PLANNER", "INSIGHTS", "SYSTEM", "UPDATE"};
+        String[] names = {"KERJA", "RISET", "RENCANA", "WAWASAN", "SISTEM", "PEMBARUAN"};
         pageTitle.setText(names[page]);
         updateNav();
 
@@ -183,40 +183,40 @@ public class MainActivity extends Activity {
     }
 
     private void buildWork(LinearLayout body) {
-        body.addView(sectionTitle("Today's Work", "Fokus utama: apa yang harus dikerjakan hari ini."));
+        body.addView(sectionTitle("Pekerjaan Hari Ini", "Fokus utama: apa yang harus dikerjakan hari ini."));
 
         LinearLayout health = card();
-        health.addView(text("WORKER STATUS", 11, MUTED, true));
+        health.addView(text("STATUS PEKERJA", 11, MUTED, true));
         LinearLayout healthRow = row();
         TextView modem = metric(healthRow, "MODEM", "…");
-        TextView worker = metric(healthRow, "WORKER", "…");
+        TextView worker = metric(healthRow, "PEKERJA", "…");
         health.addView(healthRow);
         body.addView(health);
 
         LinearLayout stats = card();
-        stats.addView(text("RESEARCH TODAY", 11, MUTED, true));
+        stats.addView(text("RISET HARI INI", 11, MUTED, true));
         LinearLayout r1 = row();
-        TextView sources = metric(r1, "SOURCES", "—");
-        TextView found = metric(r1, "FOUND", "—");
+        TextView sources = metric(r1, "SUMBER", "—");
+        TextView found = metric(r1, "DITEMUKAN", "—");
         stats.addView(r1);
         LinearLayout r2 = row();
-        TextView added = metric(r2, "NEW", "—");
-        TextView dup = metric(r2, "DUPLICATES", "—");
+        TextView added = metric(r2, "BARU", "—");
+        TextView dup = metric(r2, "DUPLIKAT", "—");
         stats.addView(r2);
-        TextView last = text("Last research: —", 12, MUTED, false);
+        TextView last = text("Riset terakhir: —", 12, MUTED, false);
         last.setPadding(0, dp(8), 0, 0);
         stats.addView(last);
 
-        Button run = actionButton("RUN RESEARCH NOW", true);
+        Button run = actionButton("JALANKAN RISET SEKARANG", true);
         stats.addView(run);
-        TextView runOut = mono("Ready.");
+        TextView runOut = mono("Siap.");
         stats.addView(runOut);
         body.addView(stats);
 
         LinearLayout briefCard = card();
-        briefCard.addView(text("DAILY BRIEF", 11, MUTED, true));
+        briefCard.addView(text("RINGKASAN HARIAN", 11, MUTED, true));
 
-        TextView topLabel = text("TOP OPPORTUNITY", 9, ACCENT, true);
+        TextView topLabel = text("PELUANG TERATAS", 9, ACCENT, true);
         topLabel.setPadding(0, dp(10), 0, dp(3));
         briefCard.addView(topLabel);
 
@@ -225,39 +225,39 @@ public class MainActivity extends Activity {
         briefCard.addView(topTitle);
 
         LinearLayout briefMetrics = row();
-        TextView briefScore = metric(briefMetrics, "PRIORITY SCORE", "—");
-        TextView briefDemand = metric(briefMetrics, "DEMAND", "—");
-        TextView briefTrend = metric(briefMetrics, "TREND", "—");
+        TextView briefScore = metric(briefMetrics, "SKOR PRIORITAS", "—");
+        TextView briefDemand = metric(briefMetrics, "PERMINTAAN", "—");
+        TextView briefTrend = metric(briefMetrics, "TREN", "—");
         briefCard.addView(briefMetrics);
 
-        TextView whyTitle = text("WHY THIS MATTERS", 9, MUTED, true);
+        TextView whyTitle = text("MENGAPA INI PENTING", 9, MUTED, true);
         whyTitle.setPadding(0, dp(8), 0, dp(2));
         briefCard.addView(whyTitle);
         TextView briefWhy = text("—", 12, TEXT, false);
         briefWhy.setLineSpacing(0, 1.15f);
         briefCard.addView(briefWhy);
 
-        TextView formatTitle = text("RECOMMENDED FORMAT", 9, MUTED, true);
+        TextView formatTitle = text("FORMAT DISARANKAN", 9, MUTED, true);
         formatTitle.setPadding(0, dp(10), 0, dp(2));
         briefCard.addView(formatTitle);
         TextView briefFormat = text("—", 12, ACCENT, true);
         briefCard.addView(briefFormat);
 
-        TextView actionTitle = text("NEXT ACTION", 9, MUTED, true);
+        TextView actionTitle = text("LANGKAH BERIKUTNYA", 9, MUTED, true);
         actionTitle.setPadding(0, dp(10), 0, dp(2));
         briefCard.addView(actionTitle);
         TextView briefAction = text("—", 12, OK, true);
         briefAction.setLineSpacing(0, 1.15f);
         briefCard.addView(briefAction);
 
-        TextView otherTitle = text("TOP IDEAS", 9, MUTED, true);
+        TextView otherTitle = text("IDE TERATAS", 9, MUTED, true);
         otherTitle.setPadding(0, dp(12), 0, dp(3));
         briefCard.addView(otherTitle);
         TextView briefList = text("Belum ada ide.", 12, TEXT, false);
         briefList.setLineSpacing(0, 1.18f);
         briefCard.addView(briefList);
 
-        TextView briefGenerated = text("Generated: —", 10, MUTED, false);
+        TextView briefGenerated = text("Dibuat: —", 10, MUTED, false);
         briefGenerated.setPadding(0, dp(10), 0, 0);
         briefCard.addView(briefGenerated);
 
@@ -265,7 +265,7 @@ public class MainActivity extends Activity {
 
         run.setOnClickListener(v -> {
             run.setEnabled(false);
-            runOut.setText("Research berjalan…");
+            runOut.setText("Riset berjalan…");
             apiAsync("POST", "/api/work/run-research", null, true, (code, s) -> {
                 run.setEnabled(true);
                 runOut.setText(s.trim());
@@ -308,7 +308,7 @@ public class MainActivity extends Activity {
         });
 
         apiAsync("GET", "/api/work/research", null, false, (code, s) -> {
-            try { last.setText("Last research: " + dash(new JSONObject(s).optString("last_research"))); } catch (Exception ignored) {}
+            try { last.setText("Riset terakhir: " + dash(new JSONObject(s).optString("last_research"))); } catch (Exception ignored) {}
         });
 
         apiAsync("GET", "/api/work/brief", null, false, (code, s) -> {
@@ -316,13 +316,13 @@ public class MainActivity extends Activity {
                 JSONObject j = new JSONObject(s);
                 JSONArray a = j.optJSONArray("ideas");
                 if (a == null || a.length() == 0) {
-                    topTitle.setText("Belum ada ide. Jalankan research.");
+                    topTitle.setText("Belum ada ide. Jalankan riset.");
                     setMetric(briefScore, "—", MUTED);
                     setMetric(briefDemand, "—", MUTED);
                     setMetric(briefTrend, "—", MUTED);
                     briefWhy.setText("Belum ada data.");
                     briefFormat.setText("—");
-                    briefAction.setText("Jalankan research untuk membuat Daily Brief.");
+                    briefAction.setText("Jalankan riset untuk membuat Ringkasan Harian.");
                     briefList.setText("Belum ada ide.");
                     briefGenerated.setText("Generated: —");
                     return;
@@ -330,7 +330,7 @@ public class MainActivity extends Activity {
 
                 JSONObject top = a.getJSONObject(0);
                 String title = dash(top.optString("Title", top.optString("title")));
-                String category = top.optString("Category", top.optString("category"));
+                String category = localizeCategory(top.optString("Category", top.optString("category")));
                 double score = top.optDouble("Score", top.optDouble("score", 0));
                 String demand = top.optString("Demand", top.optString("demand", "DISCOVERY"));
                 String why = top.optString("Why", top.optString("why", "Belum ada alasan."));
@@ -346,23 +346,23 @@ public class MainActivity extends Activity {
                 String trend;
                 int trendColor;
                 if (!title.equals(prevTitle) || prevScore < 0) {
-                    trend = "NEW";
+                    trend = "BARU";
                     trendColor = ACCENT;
                 } else if (score > prevScore + 0.9f) {
-                    trend = "↑ UP";
+                    trend = "↑ NAIK";
                     trendColor = OK;
                 } else if (score < prevScore - 0.9f) {
-                    trend = "↓ DOWN";
+                    trend = "↓ TURUN";
                     trendColor = BAD;
                 } else {
-                    trend = "→ STABLE";
+                    trend = "→ STABIL";
                     trendColor = MUTED;
                 }
                 setMetric(briefTrend, trend, trendColor);
                 prefs.edit().putString("daily_brief_top_title", title).putFloat("daily_brief_top_score", (float) score).apply();
 
-                briefWhy.setText(why);
-                briefFormat.setText(format);
+                briefWhy.setText(localizeWhy(why));
+                briefFormat.setText(localizeFormat(format));
 
                 String action;
                 if ("HIGH".equalsIgnoreCase(demand)) {
@@ -378,7 +378,7 @@ public class MainActivity extends Activity {
                 for (int i = 0; i < Math.min(3, a.length()); i++) {
                     JSONObject o = a.getJSONObject(i);
                     String t = dash(o.optString("Title", o.optString("title")));
-                    String cat = o.optString("Category", o.optString("category"));
+                    String cat = localizeCategory(o.optString("Category", o.optString("category")));
                     double sc = o.optDouble("Score", o.optDouble("score", 0));
                     list.append(i + 1).append(". ").append(t);
                     if (!cat.isEmpty()) list.append("  ·  ").append(cat);
@@ -388,7 +388,7 @@ public class MainActivity extends Activity {
                 briefList.setText(list.toString());
 
                 String generated = j.optString("generated_at", "");
-                briefGenerated.setText("Generated: " + (generated.isEmpty() ? "—" : generated));
+                briefGenerated.setText("Dibuat: " + (generated.isEmpty() ? "—" : generated));
             } catch (Exception e) {
                 topTitle.setText("Daily Brief belum dapat dibaca.");
                 briefAction.setText("Coba refresh setelah research selesai.");
@@ -397,25 +397,25 @@ public class MainActivity extends Activity {
     }
 
     private void buildResearch(LinearLayout body) {
-        body.addView(sectionTitle("Research Intelligence", "Apa yang dicari dan dibutuhkan, lalu dikelompokkan menjadi topik."));
+        body.addView(sectionTitle("Analisis Riset", "Apa yang dicari dan dibutuhkan, lalu dikelompokkan menjadi topik."));
 
         LinearLayout summary = card();
-        summary.addView(text("RESEARCH SUMMARY", 11, MUTED, true));
+        summary.addView(text("RINGKASAN RISET", 11, MUTED, true));
         LinearLayout r = row();
-        TextView total = metric(r, "TOTAL ITEMS", "—");
-        TextView last = metric(r, "LAST RUN", "—");
+        TextView total = metric(r, "TOTAL ITEM", "—");
+        TextView last = metric(r, "PROSES TERAKHIR", "—");
         summary.addView(r);
         body.addView(summary);
 
         LinearLayout catCard = card();
-        catCard.addView(text("TOPIC CATEGORIES", 11, MUTED, true));
+        catCard.addView(text("KATEGORI TOPIK", 11, MUTED, true));
         LinearLayout cats = new LinearLayout(this);
         cats.setOrientation(LinearLayout.VERTICAL);
         catCard.addView(cats);
         body.addView(catCard);
 
         LinearLayout searchCard = card();
-        searchCard.addView(text("WHAT PEOPLE NEED / SEARCH", 11, MUTED, true));
+        searchCard.addView(text("YANG DICARI / DIBUTUHKAN ORANG", 11, MUTED, true));
         TextView top = text("Belum ada data.", 14, TEXT, false);
         top.setPadding(0, dp(8), 0, 0);
         searchCard.addView(top);
@@ -464,36 +464,36 @@ public class MainActivity extends Activity {
                 line.setGravity(Gravity.CENTER_VERTICAL);
                 target.addView(line);
             }
-            if (!any) target.addView(text("NO DATA YET", 13, WARN, true));
+            if (!any) target.addView(text("BELUM ADA DATA", 13, WARN, true));
         } catch (Exception e) {
-            target.addView(text("NO DATA YET", 13, WARN, true));
+            target.addView(text("BELUM ADA DATA", 13, WARN, true));
         }
     }
 
     private void buildPlanner(LinearLayout body) {
-        body.addView(sectionTitle("Content Planner", "Dari hasil research menjadi prioritas konten yang siap dikerjakan."));
+        body.addView(sectionTitle("Perencana Konten", "Dari hasil riset menjadi prioritas konten yang siap dikerjakan."));
 
         LinearLayout pipe = card();
-        pipe.addView(text("WORKFLOW", 11, MUTED, true));
-        pipe.addView(text("Research  →  Dedup  →  Categorize  →  Score", 13, TEXT, true));
-        pipe.addView(text("Idea  →  Script  →  Production  →  Published  →  Performance", 13, TEXT, true));
+        pipe.addView(text("ALUR KERJA", 11, MUTED, true));
+        pipe.addView(text("Riset  →  Deduplikasi  →  Kategorisasi  →  Skor", 13, TEXT, true));
+        pipe.addView(text("Ide  →  Naskah  →  Produksi  →  Terbit  →  Performa", 13, TEXT, true));
         body.addView(pipe);
 
         LinearLayout state = card();
-        state.addView(text("PRODUCTION STATE", 11, MUTED, true));
+        state.addView(text("STATUS PRODUKSI", 11, MUTED, true));
         LinearLayout r1 = row();
-        TextView ideas = metric(r1, "IDEAS READY", "—");
-        TextView scripts = metric(r1, "SCRIPTS READY", "NOT CONNECTED");
+        TextView ideas = metric(r1, "IDE SIAP", "—");
+        TextView scripts = metric(r1, "NASKAH SIAP", "BELUM TERHUBUNG");
         state.addView(r1);
         LinearLayout r2 = row();
-        TextView produced = metric(r2, "PRODUCED", "NOT CONNECTED");
-        TextView uploaded = metric(r2, "UPLOADED", "NOT CONNECTED");
+        TextView produced = metric(r2, "SUDAH DIPRODUKSI", "BELUM TERHUBUNG");
+        TextView uploaded = metric(r2, "SUDAH DIUNGGAH", "BELUM TERHUBUNG");
         state.addView(r2);
         scripts.setTextColor(WARN); produced.setTextColor(WARN); uploaded.setTextColor(WARN);
         body.addView(state);
 
         LinearLayout listCard = card();
-        listCard.addView(text("TOP OPPORTUNITIES", 11, MUTED, true));
+        listCard.addView(text("PELUANG TERATAS", 11, MUTED, true));
         TextView list = text("Belum ada ide.", 14, TEXT, false);
         list.setPadding(0, dp(8), 0, 0);
         listCard.addView(list);
@@ -504,7 +504,7 @@ public class MainActivity extends Activity {
                 JSONArray a = new JSONObject(s).optJSONArray("ideas");
                 int n = a == null ? 0 : a.length();
                 setMetric(ideas, String.valueOf(n), n > 0 ? OK : MUTED);
-                if (n == 0) { list.setText("Belum ada ide. Jalankan research."); return; }
+                if (n == 0) { list.setText("Belum ada ide. Jalankan riset."); return; }
                 StringBuilder x = new StringBuilder();
                 for (int i = 0; i < Math.min(10, n); i++) {
                     JSONObject o = a.getJSONObject(i);
@@ -512,7 +512,7 @@ public class MainActivity extends Activity {
                     String cat = dash(o.optString("Category", o.optString("category")));
                     double score = o.optDouble("Score", o.optDouble("score", 0));
                     x.append(i + 1).append(". ").append(title)
-                            .append("\n   ").append(cat).append("  ·  score ").append(Math.round(score)).append("\n\n");
+                            .append("\n   ").append(localizeCategory(cat)).append("  ·  skor ").append(Math.round(score)).append("\n\n");
                 }
                 list.setText(x.toString().trim());
             } catch (Exception ignored) {}
@@ -520,37 +520,37 @@ public class MainActivity extends Activity {
     }
 
     private void buildInsights(LinearLayout body) {
-        body.addView(sectionTitle("Insights & Memory", "Performa channel dan pengetahuan yang sudah dikumpulkan DJAEGER WORK."));
+        body.addView(sectionTitle("Wawasan & Memori", "Performa kanal dan pengetahuan yang sudah dikumpulkan DJAEGER WORK."));
 
         LinearLayout channel = card();
-        channel.addView(text("MY CHANNEL", 11, MUTED, true));
+        channel.addView(text("KANAL SAYA", 11, MUTED, true));
         LinearLayout r1 = row();
-        TextView conn = metric(r1, "CONNECTION", "—");
-        TextView views = metric(r1, "VIEWS", "—");
+        TextView conn = metric(r1, "KONEKSI", "—");
+        TextView views = metric(r1, "TAYANGAN", "—");
         channel.addView(r1);
         LinearLayout r2 = row();
-        TextView retention = metric(r2, "RETENTION", "—");
-        TextView ctr = metric(r2, "CTR / ENGAGEMENT", "—");
+        TextView retention = metric(r2, "RETENSI", "—");
+        TextView ctr = metric(r2, "CTR / INTERAKSI", "—");
         channel.addView(r2);
         LinearLayout r3 = row();
-        TextView watch = metric(r3, "WATCH TIME", "—");
-        TextView best = metric(r3, "BEST TOPIC", "—");
+        TextView watch = metric(r3, "WAKTU TONTON", "—");
+        TextView best = metric(r3, "TOPIK TERBAIK", "—");
         channel.addView(r3);
         body.addView(channel);
 
         LinearLayout memory = card();
-        memory.addView(text("MEMORY / KNOWLEDGE", 11, MUTED, true));
+        memory.addView(text("MEMORI / PENGETAHUAN", 11, MUTED, true));
         LinearLayout m1 = row();
-        TextView items = metric(m1, "RESEARCH ITEMS", "—");
-        TextView unique = metric(m1, "UNIQUE KEYS", "—");
+        TextView items = metric(m1, "ITEM RISET", "—");
+        TextView unique = metric(m1, "KUNCI UNIK", "—");
         memory.addView(m1);
         LinearLayout m2 = row();
-        TextView success = metric(m2, "SUCCESSFUL", "—");
-        TextView under = metric(m2, "UNDERPERFORM", "—");
+        TextView success = metric(m2, "BERHASIL", "—");
+        TextView under = metric(m2, "KINERJA RENDAH", "—");
         memory.addView(m2);
         LinearLayout m3 = row();
-        TextView pending = metric(m3, "NOT PRODUCED", "—");
-        TextView cats = metric(m3, "CATEGORIES", "—");
+        TextView pending = metric(m3, "BELUM DIPRODUKSI", "—");
+        TextView cats = metric(m3, "KATEGORI", "—");
         memory.addView(m3);
         body.addView(memory);
 
@@ -582,7 +582,7 @@ public class MainActivity extends Activity {
     }
 
     private void buildSystem(LinearLayout body) {
-        body.addView(sectionTitle("System", "Status worker, modem priority, resource guard, dan automation."));
+        body.addView(sectionTitle("Sistem", "Status pekerja, prioritas modem, pengaman sumber daya, dan otomatisasi."));
 
         LinearLayout device = card();
         device.addView(text("REDMI 5A / MODEM", 11, MUTED, true));
@@ -591,31 +591,31 @@ public class MainActivity extends Activity {
         TextView ip = metric(r1, "IP", "—");
         device.addView(r1);
         LinearLayout r2 = row();
-        TextView temp = metric(r2, "TEMP", "—");
-        TextView ram = metric(r2, "FREE RAM", "—");
+        TextView temp = metric(r2, "SUHU", "—");
+        TextView ram = metric(r2, "RAM BEBAS", "—");
         device.addView(r2);
         LinearLayout r3 = row();
-        TextView worker = metric(r3, "WORKER", "—");
+        TextView worker = metric(r3, "PEKERJA", "—");
         TextView bridge = metric(r3, "BRIDGE", "—");
         device.addView(r3);
         body.addView(device);
 
         LinearLayout auto = card();
-        auto.addView(text("AUTOMATION", 11, MUTED, true));
+        auto.addView(text("OTOMATISASI", 11, MUTED, true));
         LinearLayout a1 = row();
-        TextView schedule = metric(a1, "MORNING RESEARCH", "—");
-        TextView guard = metric(a1, "GUARD", "—");
+        TextView schedule = metric(a1, "RISET PAGI", "—");
+        TextView guard = metric(a1, "PENGAMAN", "—");
         auto.addView(a1);
-        auto.addView(text("Dedup · READY", 13, OK, true));
-        auto.addView(text("Categorization · READY", 13, OK, true));
-        auto.addView(text("Trend Scoring · READY_V1", 13, OK, true));
-        auto.addView(text("Bridge Telemetry · DATA ONLY · 0 AI / 0 Neurons", 13, OK, true));
-        auto.addView(text("Local Reasoning · DEFERRED", 13, WARN, true));
+        auto.addView(text("Deduplikasi · SIAP", 13, OK, true));
+        auto.addView(text("Kategorisasi · SIAP", 13, OK, true));
+        auto.addView(text("Penilaian Tren · SIAP_V1", 13, OK, true));
+        auto.addView(text("Telemetri Bridge · HANYA DATA · 0 AI / 0 Neuron", 13, OK, true));
+        auto.addView(text("Penalaran Lokal · DITUNDA", 13, WARN, true));
         body.addView(auto);
 
         LinearLayout comps = card();
-        comps.addView(text("COMPONENTS", 11, MUTED, true));
-        TextView comp = text("Loading…", 13, TEXT, false);
+        comps.addView(text("KOMPONEN", 11, MUTED, true));
+        TextView comp = text("Memuat…", 13, TEXT, false);
         comp.setPadding(0, dp(8), 0, 0);
         comps.addView(comp);
         body.addView(comps);
@@ -653,41 +653,41 @@ public class MainActivity extends Activity {
     }
 
     private void buildUpdate(LinearLayout body) {
-        body.addView(sectionTitle("Updater & Recovery", "Halaman terakhir khusus update, backup, rollback, safe mode, dan diagnostics."));
+        body.addView(sectionTitle("Pembaruan & Pemulihan", "Halaman terakhir khusus pembaruan, cadangan, rollback, mode aman, dan diagnostik."));
 
         LinearLayout rel = card();
-        rel.addView(text("RELEASE STATUS", 11, MUTED, true));
+        rel.addView(text("STATUS RILIS", 11, MUTED, true));
         LinearLayout r = row();
-        TextView current = metric(r, "CURRENT", "—");
-        TextView previous = metric(r, "LAST GOOD", "—");
+        TextView current = metric(r, "SAAT INI", "—");
+        TextView previous = metric(r, "TERAKHIR STABIL", "—");
         rel.addView(r);
         body.addView(rel);
 
         LinearLayout conn = card();
-        conn.addView(text("CONNECTION", 11, MUTED, true));
+        conn.addView(text("KONEKSI", 11, MUTED, true));
         EditText runtime = field("Runtime URL", runtimeUrl(), false);
-        EditText token = field("ADMIN TOKEN", token(), true);
+        EditText token = field("TOKEN ADMIN", token(), true);
         conn.addView(runtime);
         conn.addView(token);
-        Button save = actionButton("SAVE CONNECTION", false);
+        Button save = actionButton("SIMPAN KONEKSI", false);
         conn.addView(save);
         body.addView(conn);
 
         LinearLayout actions = card();
-        actions.addView(text("UPDATER", 11, MUTED, true));
-        Button update = actionButton("UPDATE TO LATEST", true);
-        Button backup = actionButton("BACKUP", false);
-        Button rollback = actionButton("ROLLBACK", false);
-        Button safe = actionButton("SAFE MODE", false);
-        Button resume = actionButton("RESUME", false);
-        Button recover = actionButton("RECOVER RUNTIME", false);
-        Button diag = actionButton("DIAGNOSTICS", false);
-        Button refreshReport = actionButton("REFRESH UPDATE RESULT", false);
-        Button copyReport = actionButton("COPY RESULT FOR CHATGPT", true);
+        actions.addView(text("PEMBARU", 11, MUTED, true));
+        Button update = actionButton("PERBARUI KE VERSI TERBARU", true);
+        Button backup = actionButton("CADANGKAN", false);
+        Button rollback = actionButton("KEMBALIKAN VERSI", false);
+        Button safe = actionButton("MODE AMAN", false);
+        Button resume = actionButton("LANJUTKAN", false);
+        Button recover = actionButton("PULIHKAN RUNTIME", false);
+        Button diag = actionButton("DIAGNOSTIK", false);
+        Button refreshReport = actionButton("SEGARKAN HASIL PEMBARUAN", false);
+        Button copyReport = actionButton("SALIN HASIL UNTUK CHATGPT", true);
         actions.addView(update); actions.addView(backup); actions.addView(rollback);
         actions.addView(safe); actions.addView(resume); actions.addView(recover); actions.addView(diag);
         actions.addView(refreshReport); actions.addView(copyReport);
-        TextView out = mono("Ready.\n\nAfter update, tap REFRESH UPDATE RESULT, then COPY RESULT FOR CHATGPT.");
+        TextView out = mono("Siap.\n\nSetelah pembaruan, tekan SEGARKAN HASIL PEMBARUAN, lalu SALIN HASIL UNTUK CHATGPT.");
         actions.addView(out);
         body.addView(actions);
 
@@ -695,20 +695,20 @@ public class MainActivity extends Activity {
             String u = runtime.getText().toString().trim();
             if (u.isEmpty()) u = DEFAULT_RUNTIME;
             prefs.edit().putString("runtime", clean(u)).putString("token", token.getText().toString().trim()).apply();
-            out.setText("Connection saved.");
+            out.setText("Koneksi tersimpan.");
             refreshOnlineOnly();
         });
 
         update.setOnClickListener(v -> {
             save.performClick();
             update.setEnabled(false);
-            out.setText("Installing latest verified HERMES WORK release…");
+            out.setText("Memasang rilis DJAEGER WORK terbaru yang terverifikasi…");
             bootstrapFallbackUpdate(out, update, current, previous);
         });
 
         backup.setOnClickListener(v -> action("backup", out, current, previous));
-        rollback.setOnClickListener(v -> confirm("Rollback ke last-good release?", () -> action("rollback", out, current, previous)));
-        safe.setOnClickListener(v -> confirm("Aktifkan Safe Mode? Workload akan dipause, modem/control plane tetap hidup.", () -> action("safe_mode", out, current, previous)));
+        rollback.setOnClickListener(v -> confirm("Kembalikan ke rilis stabil terakhir?", () -> action("rollback", out, current, previous)));
+        safe.setOnClickListener(v -> confirm("Aktifkan Mode Aman? Beban kerja akan dijeda, modem/control plane tetap hidup.", () -> action("safe_mode", out, current, previous)));
         resume.setOnClickListener(v -> action("resume", out, current, previous));
         recover.setOnClickListener(v -> recover(out, current, previous));
         diag.setOnClickListener(v -> apiAsync("GET", "/api/work/diagnostics", null, true, (code, s) -> out.setText(s.trim())));
@@ -897,7 +897,7 @@ public class MainActivity extends Activity {
     }
 
     private void recover(TextView out, TextView current, TextView previous) {
-        out.setText("Recovering runtime…");
+        out.setText("Memulihkan runtime…");
         io.execute(() -> {
             try {
                 String cmd = "ROOT=/data/adb/hermes_work; VER=$(cat $ROOT/current_release 2>/dev/null); REL=$ROOT/releases/$VER; [ -x \"$REL/bin/workd\" ] || exit 7; PID=$ROOT/state/workd.pid; OLD=$(cat $PID 2>/dev/null); [ -n \"$OLD\" ] && kill \"$OLD\" 2>/dev/null; nohup \"$REL/bin/workd\" --root \"$ROOT\" --release \"$REL\" >>\"$ROOT/logs/workd.log\" 2>&1 & echo $! > \"$PID\"; sleep 2";
@@ -909,7 +909,7 @@ public class MainActivity extends Activity {
                     refreshOnlineOnly();
                 });
             } catch (Exception e) {
-                ui(() -> out.setText("Recovery failed: " + e.getMessage()));
+                ui(() -> out.setText("Pemulihan gagal: " + e.getMessage()));
             }
         });
     }
@@ -917,11 +917,11 @@ public class MainActivity extends Activity {
     private void refreshOnlineOnly() {
         apiAsync("GET", "/api/work/status", null, false, (code, s) -> {
             if (code >= 200 && code < 300) {
-                online.setText("● ONLINE");
+                online.setText("● TERHUBUNG");
                 online.setTextColor(OK);
                 online.setBackground(solidBg(Color.rgb(5, 34, 23), Color.rgb(19, 81, 49), dp(20)));
             } else {
-                online.setText("● OFFLINE");
+                online.setText("● TERPUTUS");
                 online.setTextColor(BAD);
                 online.setBackground(solidBg(Color.rgb(42, 17, 25), Color.rgb(83, 40, 50), dp(20)));
             }
@@ -937,7 +937,7 @@ public class MainActivity extends Activity {
                 ui(() -> cb.done(r.code, r.body));
             } catch (Exception e) {
                 ui(() -> {
-                    online.setText("● OFFLINE"); online.setTextColor(BAD);
+                    online.setText("● TERPUTUS"); online.setTextColor(BAD);
                     cb.done(0, "ERROR: " + e.getMessage());
                 });
             }
@@ -1116,8 +1116,73 @@ public class MainActivity extends Activity {
         return g;
     }
 
+    private String localizeCategory(String s) {
+        if (s == null) return "";
+        switch (s.trim().toLowerCase(Locale.US)) {
+            case "numbers": return "angka";
+            case "colors": return "warna";
+            case "alphabet": return "alfabet";
+            case "animals": return "hewan";
+            case "shapes": return "bentuk";
+            case "habits": return "kebiasaan";
+            case "english": return "bahasa Inggris";
+            case "stories": return "cerita";
+            case "other": return "lainnya";
+            default: return s;
+        }
+    }
+
+    private String localizeWhy(String s) {
+        if (s == null) return "—";
+        if (s.equals("High demand signal from search suggestions; prioritized for today's queue."))
+            return "Sinyal permintaan tinggi dari saran pencarian; diprioritaskan untuk antrean hari ini.";
+        if (s.equals("Repeated search interest with usable educational intent; good candidate for testing."))
+            return "Minat pencarian berulang dengan tujuan edukasi yang jelas; kandidat yang baik untuk diuji.";
+        if (s.equals("Relevant educational query in a target category; keep as a discovery test."))
+            return "Pencarian edukatif yang relevan dalam kategori sasaran; pertahankan sebagai uji eksplorasi.";
+        if (s.equals("Discovery query kept for exploration; lower priority than core learning categories."))
+            return "Pencarian eksplorasi dipertahankan untuk pengujian; prioritasnya di bawah kategori pembelajaran utama.";
+        return s;
+    }
+
+    private String localizeFormat(String s) {
+        if (s == null) return "—";
+        switch (s.trim().toUpperCase(Locale.US)) {
+            case "QUIZ + REPETITION": return "KUIS + PENGULANGAN";
+            case "SONG/CHANT": return "LAGU / NYANYIAN";
+            case "SHORT STORY": return "CERITA PENDEK";
+            case "REPEAT-AFTER-ME": return "ULANGI SETELAH SAYA";
+            case "NAME + SOUND + GUESS": return "NAMA + SUARA + TEBAK";
+            case "MINI STORY + MODELING": return "CERITA MINI + CONTOH";
+            case "SHORT EXPLAINER + REPETITION": return "PENJELASAN SINGKAT + PENGULANGAN";
+            default: return s;
+        }
+    }
+
+    private String localizeStatus(String s) {
+        if (s == null) return "—";
+        String x = s.trim();
+        switch (x.toUpperCase(Locale.US)) {
+            case "UP": return "AKTIF";
+            case "READY": return "SIAP";
+            case "SAFE MODE": return "MODE AMAN";
+            case "PAUSED": return "DIJEDA";
+            case "CONNECTED": return "TERHUBUNG";
+            case "STARTING": return "MEMULAI";
+            case "OFF": return "MATI";
+            case "NOT CONNECTED": return "BELUM TERHUBUNG";
+            case "HIGH": return "TINGGI";
+            case "MEDIUM": return "SEDANG";
+            case "DISCOVERY": return "EKSPLORASI";
+            case "DEFERRED": return "DITUNDA";
+            case "PUBLISHED": return "DITERBITKAN";
+            case "HOLD": return "DITAHAN";
+            default: return x;
+        }
+    }
+
     private void setMetric(TextView v, String s, int color) {
-        v.setText(dash(s));
+        v.setText(localizeStatus(dash(s)));
         v.setTextColor(color);
     }
 
@@ -1130,8 +1195,8 @@ public class MainActivity extends Activity {
 
     private void confirm(String msg, Runnable yes) {
         new AlertDialog.Builder(this).setTitle("DJAEGER WORK").setMessage(msg)
-                .setNegativeButton("CANCEL", null)
-                .setPositiveButton("CONTINUE", (d, w) -> yes.run()).show();
+                .setNegativeButton("BATAL", null)
+                .setPositiveButton("LANJUTKAN", (d, w) -> yes.run()).show();
     }
 
     private void ui(Runnable r) { if (!destroyed) runOnUiThread(r); }
