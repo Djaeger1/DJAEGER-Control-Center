@@ -1,0 +1,68 @@
+#!/system/bin/sh
+# DJAEGER GEMINIDIAG1 — temporary Railway observability wrapper.
+# Normal bridge behavior is delegated unchanged to the seq5 backup.
+# HARDWARE_AUTHORITY='NONE'
+# REMOTE_HARDWARE_COMMANDS='DISABLED'
+M="${DJAEGER_MODDIR:-/data/adb/modules/djaeger_game_stabilizer}"
+P="${DJAEGER_STATE_DIR:-/data/adb/djaeger_ai}"
+RDIR="$P/railway"
+BASE="$RDIR/rollback/5/system/bin/djaeger-railway-bridge"
+[ -r "$BASE" ] || BASE="$RDIR/rollback/4/system/bin/djaeger-railway-bridge"
+DEF="$M/system/etc/djaeger/railway/railway.conf"
+CFG="$P/railway.conf"
+
+qget(){
+  [ -r "$1" ] || return 0
+  awk -F= -v k="$2" '$1==k{v=substr($0,index($0,"=")+1);gsub(/^[[:space:]\047\042]+|[[:space:]\047\042]+$/,"",v);print v;exit}' "$1" 2>/dev/null
+}
+conf(){ _v="$(qget "$CFG" "$1")"; [ -n "$_v" ] || _v="$(qget "$DEF" "$1")"; printf '%s' "${_v:-$2}"; }
+clean(){ printf '%s' "${1:-}" | tr '\r\n\t' '   ' | tr '"' ' ' | cut -c1-120; }
+num(){ case "${1:-}" in ''|*[!0-9]*) echo 0;; *) echo "$1";; esac; }
+
+diag_post(){
+  _g="$P/app_control/ui_gemini_status.env"
+  _v="$P/gemini_keys.vault"
+  _c="$P/gemini_key_cooldowns"
+  _now="$(date +%s)"
+  _st="$(qget "$_g" GEMINI_STATUS)"; [ -n "$_st" ] || _st=NOT_YET_CHECKED
+  _last="$(qget "$_g" GEMINI_LAST_EVENT_STATUS)"; [ -n "$_last" ] || _last=NONE
+  _age="$(qget "$_g" GEMINI_STATUS_AGE_SEC)"; case "$_age" in ''|*[!0-9]*) _age=0;; esac
+  _fresh="$(qget "$_g" GEMINI_STATUS_FRESH)"; [ -n "$_fresh" ] || _fresh=NO
+  _code="$(qget "$_g" GEMINI_HTTP_CODE)"; [ -n "$_code" ] || _code=NA
+  _cu="$(qget "$_g" GEMINI_COOLDOWN_UNTIL)"; case "$_cu" in ''|*[!0-9]*) _cu=0;; esac
+  _rem=0; [ "$_cu" -gt "$_now" ] 2>/dev/null && _rem=$((_cu-_now))
+  _vcnt=0; _ready=0; _cool=0; _i=0
+  if [ -r "$_v" ]; then
+    while IFS= read -r _k; do
+      [ -n "$_k" ] || continue
+      _i=$((_i+1)); _vcnt=$_i
+      _u="$(awk -F'|' -v s="$_i" '$1==s{u=$2}END{print u+0}' "$_c" 2>/dev/null)"
+      case "${_u:-}" in ''|*[!0-9]*) _u=0;; esac
+      if [ "$_u" -gt "$_now" ] 2>/dev/null; then _cool=$((_cool+1)); else _ready=$((_ready+1)); fi
+    done <"$_v"
+  fi
+  _ep="$(conf ENDPOINT '')"; _tok="$(conf ACCESS_TOKEN '')"
+  [ -n "$_ep" ] && [ -n "$_tok" ] || return 0
+  _ver="$(sed -n 's/^version=//p' "$M/module.prop" 2>/dev/null | head -1)"
+  _body="$RDIR/.gemdiag.$$"
+  cat >"$_body" <<EOF
+{"schema":"DJAEGER_DEVICE_TELEMETRY_V1","module_version":"$(clean "$_ver")","gemini_status":"$(clean "$_st")","gemini_last_event_status":"$(clean "$_last")","gemini_status_age_s":$_age,"gemini_status_fresh":"$(clean "$_fresh")","gemini_http_code":"$(clean "$_code")","gemini_cooldown_until":$_cu,"gemini_cooldown_remaining_s":$_rem,"gemini_vault_count":$_vcnt,"gemini_ready_slots":$_ready,"gemini_cooling_slots":$_cool,"source":"DJAEGER_RAILWAY_GEMINI_DIAG1"}
+EOF
+  curl -4 --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null     -H 'Content-Type: application/json' -H "Authorization: Bearer $_tok"     --data-binary @"$_body" "${_ep%/}/v1/device/telemetry" 2>/dev/null || true
+  rm -f "$_body" 2>/dev/null
+  unset _tok
+}
+
+case "${1:-once}" in
+  selftest)
+    [ -r "$BASE" ] || { echo 'FAIL|base_bridge_missing'; echo 'PASS_COUNT=0'; echo 'FAIL_COUNT=1'; exit 1; }
+    sh "$BASE" selftest || exit $?
+    diag_post
+    echo 'PASS|gemini_diag_snapshot_posted'
+    exit 0
+    ;;
+  *)
+    [ -r "$BASE" ] || { echo 'DJAEGER_RAILWAY_BRIDGE_BASE_MISSING' >&2; exit 127; }
+    exec sh "$BASE" "$@"
+    ;;
+esac
