@@ -1,1 +1,1 @@
-{"version":"v1.8.1-script","description":"HERMES WORK Script Engine V1 plus updater ownership handoff so each healthy release takes over its own auto updater immediately","restart":false}
+{"version":"v1.8.2-bridgefix","description":"HERMES WORK direct Railway telemetry bridge with authenticated high-entropy topic header, resilient ntfy IPv4 fallback, updater self-test fix and updater ownership handoff","restart":false}
