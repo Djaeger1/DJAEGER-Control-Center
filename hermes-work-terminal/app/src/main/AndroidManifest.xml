@@ -6,7 +6,7 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
-        android:label="HERMES WORK Installer"
+        android:label="HERMES WORK Dashboard"
         android:icon="@drawable/ic_launcher"
         android:roundIcon="@drawable/ic_launcher_round">
         <activity
