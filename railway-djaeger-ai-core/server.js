@@ -141,6 +141,10 @@ function normalizeTelemetry(x) {
   out.gemini_http_at = normalizeNumber('gemini_http_at', x.gemini_http_at, 0, 4102444800);
   out.predictive_policy_age_s = normalizeNumber('predictive_policy_age_s', x.predictive_policy_age_s, 0, 86400);
   out.root_policy_age_s = normalizeNumber('root_policy_age_s', x.root_policy_age_s, 0, 86400);
+  out.audit_pass_count = normalizeNumber('audit_pass_count', x.audit_pass_count, 0, 10000);
+  out.audit_warn_count = normalizeNumber('audit_warn_count', x.audit_warn_count, 0, 10000);
+  out.audit_fail_count = normalizeNumber('audit_fail_count', x.audit_fail_count, 0, 10000);
+  out.audit_at = normalizeNumber('audit_at', x.audit_at, 0, 4102444800);
   out.policy_until = normalizeNumber('policy_until', x.policy_until, 0, 4102444800);
   out.policy_remaining_s = normalizeNumber('policy_remaining_s', x.policy_remaining_s, -86400, 86400);
 
@@ -155,7 +159,7 @@ function sanitizeTelemetry(x) {
     'skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c',
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
-    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model','current_brain','brain_mode','final_source','cloud_in_control','cloud_plan_state','cloud_plan_reason','cloud_control_provider','cloud_plan_provider','policy_session_id','policy_game','policy_user_mode','policy_window_mode','policy_window_epoch','policy_until','policy_remaining_s','live_session_id','live_game','live_user_mode','live_window_mode','live_window_epoch','reasoning_status','reasoning_event_reason','reasoning_proposal_action','reasoning_proposal_profile','reasoning_confidence','predictive_policy_present','predictive_policy_age_s','root_policy_present','root_policy_age_s',
+    'hermes_cloud_state','hermes_cloud_http','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model','current_brain','brain_mode','final_source','cloud_in_control','cloud_plan_state','cloud_plan_reason','cloud_control_provider','cloud_plan_provider','policy_session_id','policy_game','policy_user_mode','policy_window_mode','policy_window_epoch','policy_until','policy_remaining_s','live_session_id','live_game','live_user_mode','live_window_mode','live_window_epoch','reasoning_status','reasoning_event_reason','reasoning_proposal_action','reasoning_proposal_profile','reasoning_confidence','predictive_policy_present','predictive_policy_age_s','root_policy_present','root_policy_age_s','audit_status','audit_pass_count','audit_warn_count','audit_fail_count','audit_at','audit_controller_live','audit_predictor_live','audit_supervisor_live','audit_workload_live','audit_app_control_live','audit_bridge_live','audit_updater_live','audit_knowledge_sync_live','audit_endpoint_https','audit_secret_permissions','audit_selftest_summary','audit_hash_predictor','audit_hash_updater','audit_hash_bridge',
     'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s',
     'remote_repair_state','remote_repair_seq','remote_repair_release','remote_repair_detail','source'
   ];
@@ -234,6 +238,25 @@ function safeTelemetrySummary(t) {
     predictive_policy_age_s: t.predictive_policy_age_s ?? null,
     root_policy_present: t.root_policy_present || null,
     root_policy_age_s: t.root_policy_age_s ?? null,
+    audit_status: t.audit_status || null,
+    audit_pass_count: t.audit_pass_count ?? null,
+    audit_warn_count: t.audit_warn_count ?? null,
+    audit_fail_count: t.audit_fail_count ?? null,
+    audit_at: t.audit_at ?? null,
+    audit_controller_live: t.audit_controller_live || null,
+    audit_predictor_live: t.audit_predictor_live || null,
+    audit_supervisor_live: t.audit_supervisor_live || null,
+    audit_workload_live: t.audit_workload_live || null,
+    audit_app_control_live: t.audit_app_control_live || null,
+    audit_bridge_live: t.audit_bridge_live || null,
+    audit_updater_live: t.audit_updater_live || null,
+    audit_knowledge_sync_live: t.audit_knowledge_sync_live || null,
+    audit_endpoint_https: t.audit_endpoint_https || null,
+    audit_secret_permissions: t.audit_secret_permissions || null,
+    audit_selftest_summary: t.audit_selftest_summary || null,
+    audit_hash_predictor: t.audit_hash_predictor || null,
+    audit_hash_updater: t.audit_hash_updater || null,
+    audit_hash_bridge: t.audit_hash_bridge || null,
     control_loop_age_s: t.control_loop_age_s ?? null,
     agent_execution_status: t.agent_execution_status || null,
     agent_execution_source: t.agent_execution_source || null,
