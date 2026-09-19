@@ -817,7 +817,7 @@ const page=`<!doctype html>
 <h1>HERMES WORK <span id="online" class="warn">CONNECTING</span></h1>
 <div class="sub">Digital Work Control Center · Redmi 5A · modem-first worker</div>
 <div class="nav">
-<a href="#system">System</a><a href="#today">Today's Work</a><a href="#trends">Search & Trends</a><a href="#planner">Content Planner</a><a href="#channel">My Channel</a><a href="#knowledge">Knowledge</a><a href="#automation">Automation</a><a href="#recovery">Recovery</a>
+<a href="#system">System</a><a href="#today">Today's Work</a><a href="#trends">Search & Trends</a><a href="#planner">Content Planner</a><a href="#desk">Production Desk</a><a href="#channel">My Channel</a><a href="#knowledge">Knowledge</a><a href="#automation">Automation</a><a href="#recovery">Recovery</a>
 </div>
 
 <section id="system" class="card"><h3>System / Overview</h3><div class="grid">
@@ -850,6 +850,38 @@ const page=`<!doctype html>
 <div class="box"><div class="k">Published</div><div id="published" class="v">-</div></div>
 <div class="box"><div class="k">Next For Script</div><div id="nextscript" class="v small">-</div></div><div class="box"><div class="k">Final Script Topic</div><div id="finalscripttopic" class="v small">-</div></div><div class="box"><div class="k">Production Topic</div><div id="productiontopic" class="v small">-</div><a id="productiondownload" href="#" style="display:none;color:var(--accent)">DOWNLOAD PACK</a></div>
 </div><div id="brief"></div><div id="plannerqueue"></div></section>
+
+
+<section id="desk" class="card"><h3>Production Desk</h3>
+<div class="grid">
+<div class="box"><div class="k">Next Job</div><div id="desknext" class="v small">-</div></div>
+<div class="box"><div class="k">Ready to Produce</div><div id="deskready" class="v">-</div></div>
+<div class="box"><div class="k">Producing</div><div id="deskproducing" class="v">-</div></div>
+<div class="box"><div class="k">Ready to Upload</div><div id="deskupload" class="v">-</div></div>
+</div>
+<div id="deskqueue" style="margin-top:12px"></div>
+<div class="box" style="margin-top:12px">
+<div class="k">Record Publication</div>
+<input id="pubjob" placeholder="Job ID" readonly>
+<select id="pubplatform" style="background:#1b2430;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:4px">
+<option value="youtube">YouTube</option><option value="youtube_shorts">YouTube Shorts</option><option value="tiktok">TikTok</option><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="other">Other</option>
+</select>
+<input id="puburl" placeholder="Published URL">
+<input id="pubexternal" placeholder="Video / post ID (optional)">
+<button class="primary" id="pubsubmit">RECORD PUBLISHED</button>
+<div id="pubmsg" class="small">Select a READY_TO_UPLOAD job.</div>
+</div>
+<div class="box" style="margin-top:12px">
+<div class="k">Real Performance Feedback</div>
+<input id="perfjob" placeholder="Published Job ID" readonly>
+<input id="perfviews" type="number" min="0" placeholder="Views">
+<input id="perfret" type="number" min="0" max="100" step="0.1" placeholder="Retention %">
+<input id="perfctr" type="number" min="0" max="100" step="0.1" placeholder="CTR %">
+<input id="perfwatch" type="number" min="0" step="0.1" placeholder="Watch time (minutes)">
+<button id="perfsubmit">SAVE REAL METRICS</button>
+<div id="perfmsg" class="small">Only real channel data is accepted here.</div>
+</div>
+</section>
 
 <section id="channel" class="card"><h3>My Channel</h3><div class="grid">
 <div class="box"><div class="k">Connection</div><div id="channelstate" class="v">-</div></div><div class="box"><div class="k">Published Records</div><div id="publicationcount" class="v">-</div></div>
@@ -922,6 +954,53 @@ async function productionData(){
   let a=$('productiondownload');if(p.download_endpoint){a.href=p.download_endpoint;a.style.display='inline'}else{a.style.display='none'}
  }catch(e){}
 }
+
+function escHtml(x){return String(x??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
+async function handoffSet(id,state){
+ try{
+  let r=await fetch('/api/work/handoff',{method:'POST',headers:h(),body:JSON.stringify({id:id,state:state})});
+  if(!r.ok)throw new Error(await r.text());
+  await Promise.all([deskData(),plannerData()])
+ }catch(e){$('pubmsg').textContent='Handoff error: '+e}
+}
+function selectDeskJob(id,title){
+ $('pubjob').value=id;$('perfjob').value=id;$('pubmsg').textContent='Selected: '+title
+}
+async function deskData(){
+ try{
+  let d=await getj('/api/work/desk'),cc=d.counts||{},jobs=d.jobs||[];
+  $('desknext').textContent=txt(d.next_job);$('deskready').textContent=txt(cc.READY_TO_PRODUCE??0);$('deskproducing').textContent=txt(cc.PRODUCING??0);$('deskupload').textContent=txt(cc.READY_TO_UPLOAD??0);
+  let rows=jobs.slice(0,20).map(j=>{
+   let id=encodeURIComponent(j.id),topic=encodeURIComponent(j.topic||'');
+   let actions='<a href="'+escHtml(j.production_pack)+'" style="color:var(--accent)">PACK</a> ';
+   if(j.handoff_state==='READY_TO_PRODUCE')actions+='<button class="deskact" data-id="'+id+'" data-state="PRODUCING">START</button>';
+   if(j.handoff_state==='PRODUCING')actions+='<button class="deskact" data-id="'+id+'" data-state="READY_TO_UPLOAD">READY UPLOAD</button>';
+   if(j.handoff_state==='READY_TO_UPLOAD'||j.handoff_state==='PUBLISHED')actions+='<button class="deskselect" data-id="'+id+'" data-topic="'+topic+'">SELECT</button>';
+   return '<tr><td>'+escHtml(j.priority)+'</td><td>'+escHtml(j.handoff_state)+'</td><td>'+escHtml(j.topic)+'</td><td>'+actions+'</td></tr>'
+  }).join('');
+  $('deskqueue').innerHTML=rows?'<table><tr><th>#</th><th>State</th><th>Topic</th><th>Action</th></tr>'+rows+'</table>':'<p class="warn">No production jobs.</p>';
+ }catch(e){$('deskqueue').innerHTML='<p class="warn">Production Desk error: '+escHtml(e)+'</p>'}
+}
+async function submitPublication(){
+ let id=$('pubjob').value.trim(),url=$('puburl').value.trim(),platform=$('pubplatform').value,external_id=$('pubexternal').value.trim();
+ if(!id){$('pubmsg').textContent='Select a READY_TO_UPLOAD job first.';return}
+ try{
+  let r=await fetch('/api/work/publication',{method:'POST',headers:h(),body:JSON.stringify({planner_id:id,platform:platform,url:url,external_id:external_id})});
+  if(!r.ok)throw new Error(await r.text());
+  $('pubmsg').textContent='Publication recorded.';$('perfjob').value=id;
+  await Promise.all([deskData(),plannerData(),channel(),knowledge()])
+ }catch(e){$('pubmsg').textContent='Publication error: '+e}
+}
+async function submitPerformance(){
+ let id=$('perfjob').value.trim();if(!id){$('perfmsg').textContent='Select a published job first.';return}
+ let body={planner_id:id,views:Number($('perfviews').value||0),retention_pct:Number($('perfret').value||0),ctr_pct:Number($('perfctr').value||0),watch_time_min:Number($('perfwatch').value||0),source:'dashboard_real_data'};
+ try{
+  let r=await fetch('/api/work/performance',{method:'POST',headers:h(),body:JSON.stringify(body)});
+  if(!r.ok)throw new Error(await r.text());
+  $('perfmsg').textContent='Real metrics saved to Feedback Engine.';
+  await Promise.all([channel(),knowledge()])
+ }catch(e){$('perfmsg').textContent='Metrics error: '+e}
+}
 async function channel(){
  try{let j=await getj('/api/work/channel');$('channelstate').textContent=j.state;$('publicationcount').textContent=txt(j.publications??0);$('views').textContent=txt(j.views||j.metrics?.views);$('retention').textContent=txt(j.retention||j.metrics?.retention);$('ctr').textContent=txt(j.ctr||j.metrics?.ctr);$('watchtime').textContent=txt(j.watch_time||j.metrics?.watch_time);$('besttopic').textContent=txt(j.best_topic||j.metrics?.best_topic)}catch(e){}
 }
@@ -934,11 +1013,11 @@ async function automation(){
 async function recovery(){
  try{let j=await getj('/api/work/recovery');$('currel').textContent=txt(j.current);$('prevrel').textContent=txt(j.previous)}catch(e){}
 }
-async function refresh(){await status();await Promise.all([researchData(),plannerData(),scriptData(),productionData(),channel(),knowledge(),automation(),recovery()])}
+async function refresh(){await status();await Promise.all([researchData(),plannerData(),scriptData(),productionData(),deskData(),channel(),knowledge(),automation(),recovery()])}
 async function act(a){let r=await fetch('/api/work/action',{method:'POST',headers:h(),body:JSON.stringify({action:a})});$('out').textContent=await r.text();refresh()}
 $('backup').onclick=()=>act('backup');$('safe').onclick=()=>act('safe_mode');$('resume').onclick=()=>act('resume');$('rollback').onclick=()=>act('rollback');
 $('diag').onclick=async()=>{$('out').textContent=await(await fetch('/api/work/diagnostics',{headers:h()})).text()};
 $('research').onclick=async()=>{$('researchout').textContent='Running research...';let r=await fetch('/api/work/run-research',{method:'POST',headers:h()});$('researchout').textContent=await r.text();researchData()};
-$('update').onclick=async()=>{$('out').textContent='Updating...';let r=await fetch('/api/work/update',{method:'POST',headers:h()});$('out').textContent=await r.text()};
-refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),plannerData(),scriptData(),productionData(),automation(),recovery()]),30000);
+$('update').onclick=async()=>{$('out').textContent='Updating...';let r=await fetch('/api/work/update',{method:'POST',headers:h()});$('out').textContent=await r.text()};$('pubsubmit').onclick=submitPublication;$('perfsubmit').onclick=submitPerformance;$('deskqueue').onclick=e=>{let b=e.target.closest('button');if(!b)return;let id=decodeURIComponent(b.dataset.id||'');if(b.classList.contains('deskact'))handoffSet(id,b.dataset.state);if(b.classList.contains('deskselect'))selectDeskJob(id,decodeURIComponent(b.dataset.topic||''))};
+refresh();setInterval(status,5000);setInterval(()=>Promise.all([researchData(),plannerData(),scriptData(),productionData(),deskData(),automation(),recovery()]),30000);
 </script></body></html>`
