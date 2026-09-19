@@ -31,10 +31,10 @@ jobs:
         working-directory: hermes-work-terminal
         run: gradle :app:assembleRelease --stacktrace
       - name: Rename APK
-        run: cp hermes-work-terminal/app/build/outputs/apk/release/app-release.apk HERMES_WORK_Dashboard_v1.2.3.apk
+        run: cp hermes-work-terminal/app/build/outputs/apk/release/app-release.apk HERMES_WORK_Dashboard_v1.2.4.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES-WORK-Dashboard-v1.2.3-APK
-          path: HERMES_WORK_Dashboard_v1.2.3.apk
+          name: HERMES-WORK-Dashboard-v1.2.4-APK
+          path: HERMES_WORK_Dashboard_v1.2.4.apk
           retention-days: 30
