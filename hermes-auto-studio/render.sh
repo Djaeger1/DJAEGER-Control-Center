@@ -26,7 +26,7 @@ fi
 echo "Installing zero-card render tools..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq ffmpeg jq imagemagick espeak-ng fonts-dejavu-core
-python3 -m pip install --quiet --disable-pip-version-check edge-tts
+python3 -m pip install --quiet --disable-pip-version-check --break-system-packages edge-tts || echo "edge-tts unavailable; espeak-ng fallback will be used"
 
 rm -rf studio
 mkdir -p studio/scenes
