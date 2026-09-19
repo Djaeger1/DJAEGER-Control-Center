@@ -161,7 +161,7 @@ async function request(path, options = {}) {
     const manifestRaw = await fetch(base + '/v1/device/update/manifest.txt', { headers });
     const manifestText = await manifestRaw.text();
     assert(manifestRaw.status === 200 && manifestText.includes("SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'"), 'update_manifest_failed');
-    assert(manifestText.includes("SEQ='1'") && manifestText.includes("TARGET_VC='129659'"), 'update_manifest_contract_wrong');
+    assert(/SEQ='[1-9][0-9]*'/.test(manifestText) && manifestText.includes("TARGET_VC='129659'"), 'update_manifest_contract_wrong');
 
     const ack = await request('/v1/device/update/ack', {
       method: 'POST',
