@@ -31,22 +31,22 @@ jobs:
           cp config/work.env out/payload/config/work.env
           sh -n worker/tick.sh worker/handoff.sh worker/autoupdate.sh
           cd out
-          zip -qr ../HERMES_WORK_RUNTIME_v1.4.0_RESEARCH.zip manifest.json payload
+          zip -qr ../HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY.zip manifest.json payload
           cd ..
-          sha256sum HERMES_WORK_RUNTIME_v1.4.0_RESEARCH.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v1.4.0_RESEARCH.zip.sha256
+          sha256sum HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY.zip | awk '{print $1}' > HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY.zip.sha256
           cat > channel.json <<EOF
-          {"channel":"stable","version":"v1.4.0-research","bundle":"HERMES_WORK_RUNTIME_v1.4.0_RESEARCH.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v1.4.0_RESEARCH.zip.sha256)"}
+          {"channel":"stable","version":"v1.5.0-opportunity","bundle":"HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY.zip","sha256":"$(cat HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY.zip.sha256)"}
           EOF
       - name: Upload installable package
         uses: actions/upload-artifact@v4
         with:
-          name: HERMES_WORK_RUNTIME_v1.4.0_RESEARCH
-          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v1.4.0_RESEARCH.zip
+          name: HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY
+          path: hermes-work-runtime/HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY.zip
           retention-days: 30
       - name: Publish channel files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v1.4.0_RESEARCH.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v1.4.0_RESEARCH.zip.sha256 hermes-work-runtime/channel.json
-          git commit -m "Publish HERMES WORK runtime v1.4.0 research" || exit 0
+          git add hermes-work-runtime/HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY.zip hermes-work-runtime/HERMES_WORK_RUNTIME_v1.5.0_OPPORTUNITY.zip.sha256 hermes-work-runtime/channel.json
+          git commit -m "Publish HERMES WORK runtime v1.5.0 opportunity" || exit 0
           git push
