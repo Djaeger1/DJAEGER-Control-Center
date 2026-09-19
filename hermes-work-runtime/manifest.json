@@ -1,1 +1,1 @@
-{"version":"v1.3.1-autoupdate","description":"HERMES WORK guarded automatic runtime updater with SHA-256 verification, self-test, rollback, bad-release quarantine and remote updater telemetry","restart":false}
+{"version":"v1.4.0-research","description":"HERMES WORK Research Engine v2: guarded boot bootstrap, reliable daily scheduling, YouTube+web autocomplete demand discovery, dedup and scoring, zero HERMES Neurons","restart":false}
