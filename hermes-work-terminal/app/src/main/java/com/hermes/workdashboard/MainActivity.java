@@ -215,9 +215,52 @@ public class MainActivity extends Activity {
 
         LinearLayout briefCard = card();
         briefCard.addView(text("DAILY BRIEF", 11, MUTED, true));
-        TextView brief = text("Belum ada brief.", 14, TEXT, false);
-        brief.setPadding(0, dp(8), 0, 0);
-        briefCard.addView(brief);
+
+        TextView topLabel = text("TOP OPPORTUNITY", 9, ACCENT, true);
+        topLabel.setPadding(0, dp(10), 0, dp(3));
+        briefCard.addView(topLabel);
+
+        TextView topTitle = text("Belum ada brief.", 18, TEXT, true);
+        topTitle.setPadding(0, 0, 0, dp(8));
+        briefCard.addView(topTitle);
+
+        LinearLayout briefMetrics = row();
+        TextView briefScore = metric(briefMetrics, "PRIORITY SCORE", "—");
+        TextView briefDemand = metric(briefMetrics, "DEMAND", "—");
+        TextView briefTrend = metric(briefMetrics, "TREND", "—");
+        briefCard.addView(briefMetrics);
+
+        TextView whyTitle = text("WHY THIS MATTERS", 9, MUTED, true);
+        whyTitle.setPadding(0, dp(8), 0, dp(2));
+        briefCard.addView(whyTitle);
+        TextView briefWhy = text("—", 12, TEXT, false);
+        briefWhy.setLineSpacing(0, 1.15f);
+        briefCard.addView(briefWhy);
+
+        TextView formatTitle = text("RECOMMENDED FORMAT", 9, MUTED, true);
+        formatTitle.setPadding(0, dp(10), 0, dp(2));
+        briefCard.addView(formatTitle);
+        TextView briefFormat = text("—", 12, ACCENT, true);
+        briefCard.addView(briefFormat);
+
+        TextView actionTitle = text("NEXT ACTION", 9, MUTED, true);
+        actionTitle.setPadding(0, dp(10), 0, dp(2));
+        briefCard.addView(actionTitle);
+        TextView briefAction = text("—", 12, OK, true);
+        briefAction.setLineSpacing(0, 1.15f);
+        briefCard.addView(briefAction);
+
+        TextView otherTitle = text("TOP IDEAS", 9, MUTED, true);
+        otherTitle.setPadding(0, dp(12), 0, dp(3));
+        briefCard.addView(otherTitle);
+        TextView briefList = text("Belum ada ide.", 12, TEXT, false);
+        briefList.setLineSpacing(0, 1.18f);
+        briefCard.addView(briefList);
+
+        TextView briefGenerated = text("Generated: —", 10, MUTED, false);
+        briefGenerated.setPadding(0, dp(10), 0, 0);
+        briefCard.addView(briefGenerated);
+
         body.addView(briefCard);
 
         run.setOnClickListener(v -> {
@@ -226,14 +269,22 @@ public class MainActivity extends Activity {
             apiAsync("POST", "/api/work/run-research", null, true, (code, s) -> {
                 run.setEnabled(true);
                 runOut.setText(s.trim());
-                loadWorkData(modem, worker, sources, found, added, dup, last, brief);
+                loadWorkData(modem, worker, sources, found, added, dup, last,
+                        topTitle, briefScore, briefDemand, briefTrend, briefWhy,
+                        briefFormat, briefAction, briefList, briefGenerated);
             });
         });
 
-        loadWorkData(modem, worker, sources, found, added, dup, last, brief);
+        loadWorkData(modem, worker, sources, found, added, dup, last,
+                topTitle, briefScore, briefDemand, briefTrend, briefWhy,
+                briefFormat, briefAction, briefList, briefGenerated);
     }
 
-    private void loadWorkData(TextView modem, TextView worker, TextView sources, TextView found, TextView added, TextView dup, TextView last, TextView brief) {
+    private void loadWorkData(TextView modem, TextView worker, TextView sources, TextView found,
+                              TextView added, TextView dup, TextView last,
+                              TextView topTitle, TextView briefScore, TextView briefDemand,
+                              TextView briefTrend, TextView briefWhy, TextView briefFormat,
+                              TextView briefAction, TextView briefList, TextView briefGenerated) {
         apiAsync("GET", "/api/work/status", null, false, (code, s) -> {
             try {
                 JSONObject j = new JSONObject(s);
@@ -242,6 +293,7 @@ public class MainActivity extends Activity {
                 setMetric(worker, w, "READY".equals(w) ? OK : WARN);
             } catch (Exception ignored) {}
         });
+
         apiAsync("GET", "/api/work/daily", null, false, (code, s) -> {
             try {
                 JSONObject j = new JSONObject(s);
@@ -254,23 +306,93 @@ public class MainActivity extends Activity {
                 }
             } catch (Exception ignored) {}
         });
+
         apiAsync("GET", "/api/work/research", null, false, (code, s) -> {
             try { last.setText("Last research: " + dash(new JSONObject(s).optString("last_research"))); } catch (Exception ignored) {}
         });
+
         apiAsync("GET", "/api/work/brief", null, false, (code, s) -> {
             try {
-                JSONArray a = new JSONObject(s).optJSONArray("ideas");
-                if (a == null || a.length() == 0) { brief.setText("Belum ada ide. Jalankan research."); return; }
-                StringBuilder x = new StringBuilder();
+                JSONObject j = new JSONObject(s);
+                JSONArray a = j.optJSONArray("ideas");
+                if (a == null || a.length() == 0) {
+                    topTitle.setText("Belum ada ide. Jalankan research.");
+                    setMetric(briefScore, "—", MUTED);
+                    setMetric(briefDemand, "—", MUTED);
+                    setMetric(briefTrend, "—", MUTED);
+                    briefWhy.setText("Belum ada data.");
+                    briefFormat.setText("—");
+                    briefAction.setText("Jalankan research untuk membuat Daily Brief.");
+                    briefList.setText("Belum ada ide.");
+                    briefGenerated.setText("Generated: —");
+                    return;
+                }
+
+                JSONObject top = a.getJSONObject(0);
+                String title = dash(top.optString("Title", top.optString("title")));
+                String category = top.optString("Category", top.optString("category"));
+                double score = top.optDouble("Score", top.optDouble("score", 0));
+                String demand = top.optString("Demand", top.optString("demand", "DISCOVERY"));
+                String why = top.optString("Why", top.optString("why", "Belum ada alasan."));
+                String format = top.optString("Format", top.optString("format", "—"));
+
+                topTitle.setText(category.isEmpty() ? title : title + "  ·  " + category);
+                int scoreColor = score >= 82 ? OK : (score >= 65 ? WARN : MUTED);
+                setMetric(briefScore, Math.round(score) + "/100", scoreColor);
+                setMetric(briefDemand, demand, "HIGH".equalsIgnoreCase(demand) ? OK : ("MEDIUM".equalsIgnoreCase(demand) ? WARN : MUTED));
+
+                String prevTitle = prefs.getString("daily_brief_top_title", "");
+                float prevScore = prefs.getFloat("daily_brief_top_score", -1f);
+                String trend;
+                int trendColor;
+                if (!title.equals(prevTitle) || prevScore < 0) {
+                    trend = "NEW";
+                    trendColor = ACCENT;
+                } else if (score > prevScore + 0.9f) {
+                    trend = "↑ UP";
+                    trendColor = OK;
+                } else if (score < prevScore - 0.9f) {
+                    trend = "↓ DOWN";
+                    trendColor = BAD;
+                } else {
+                    trend = "→ STABLE";
+                    trendColor = MUTED;
+                }
+                setMetric(briefTrend, trend, trendColor);
+                prefs.edit().putString("daily_brief_top_title", title).putFloat("daily_brief_top_score", (float) score).apply();
+
+                briefWhy.setText(why);
+                briefFormat.setText(format);
+
+                String action;
+                if ("HIGH".equalsIgnoreCase(demand)) {
+                    action = "Prioritaskan hari ini → lanjutkan ke PLANNER dan siapkan script.";
+                } else if ("MEDIUM".equalsIgnoreCase(demand)) {
+                    action = "Layak diuji → jadwalkan di PLANNER lalu bandingkan performanya.";
+                } else {
+                    action = "Discovery test → validasi lagi sebelum masuk produksi.";
+                }
+                briefAction.setText(action);
+
+                StringBuilder list = new StringBuilder();
                 for (int i = 0; i < Math.min(3, a.length()); i++) {
                     JSONObject o = a.getJSONObject(i);
-                    x.append(i + 1).append(". ").append(dash(o.optString("Title", o.optString("title"))));
+                    String t = dash(o.optString("Title", o.optString("title")));
                     String cat = o.optString("Category", o.optString("category"));
-                    if (!cat.isEmpty()) x.append("  ·  ").append(cat);
-                    x.append("\n");
+                    double sc = o.optDouble("Score", o.optDouble("score", 0));
+                    list.append(i + 1).append(". ").append(t);
+                    if (!cat.isEmpty()) list.append("  ·  ").append(cat);
+                    list.append("  [").append(Math.round(sc)).append("]");
+                    if (i + 1 < Math.min(3, a.length())) list.append("\n");
                 }
-                brief.setText(x.toString().trim());
-            } catch (Exception ignored) {}
+                briefList.setText(list.toString());
+
+                String generated = j.optString("generated_at", "");
+                briefGenerated.setText("Generated: " + (generated.isEmpty() ? "—" : generated));
+            } catch (Exception e) {
+                topTitle.setText("Daily Brief belum dapat dibaca.");
+                briefAction.setText("Coba refresh setelah research selesai.");
+            }
         });
     }
 
