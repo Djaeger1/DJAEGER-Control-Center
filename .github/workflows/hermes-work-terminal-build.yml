@@ -1,0 +1,44 @@
+name: HERMES WORK Terminal APK
+
+on:
+  push:
+    branches:
+      - hermes-work-terminal-v0.1
+    paths:
+      - 'hermes-work-terminal/**'
+      - '.github/workflows/hermes-work-terminal-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build debug APK
+        working-directory: hermes-work-terminal
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: |
+          cp hermes-work-terminal/app/build/outputs/apk/debug/app-debug.apk HERMES_WORK_Terminal_v0.1.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HERMES-WORK-Terminal-v0.1-APK
+          path: HERMES_WORK_Terminal_v0.1.apk
+          retention-days: 30
