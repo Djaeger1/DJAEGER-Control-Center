@@ -112,6 +112,15 @@ async function dwExtras(){
 dwExtras();
 
 try{
+ const recovery=document.getElementById('recovery');
+ if(recovery){
+   const conn=document.createElement('div');conn.className='box';conn.style.marginBottom='10px';
+   conn.innerHTML='<div class="k">CONNECTION</div><input id="dw-runtime-url" placeholder="Runtime URL"><button id="dw-save-runtime">SAVE CONNECTION</button><button id="dw-copy-result">COPY RESULT FOR CHATGPT</button>';
+   const h=recovery.querySelector('h3');if(h)h.insertAdjacentElement('afterend',conn);else recovery.prepend(conn);
+   const ru=conn.querySelector('#dw-runtime-url');ru.value=DjaegerNative.getRuntimeUrl();
+   conn.querySelector('#dw-save-runtime').onclick=()=>{const ok=DjaegerNative.setRuntimeUrl(ru.value.trim());if(ok){location.href=DjaegerNative.getRuntimeUrl()+'/'}else alert('URL harus dimulai http:// atau https://')};
+   conn.querySelector('#dw-copy-result').onclick=async()=>{let text='';try{const d=document.getElementById('out');text=d?d.textContent:'';if(!text||text==='Ready.'){const j=await fetch('/api/work/diagnostics',{headers:{'X-Hermes-Token':(document.getElementById('token')||{}).value||''}}).then(r=>r.text());text=j}DjaegerNative.copyText(text||'No result.');}catch(e){DjaegerNative.copyText(String(e))}};
+ }
  const token=document.getElementById('token');
  if(token){
    const saved=DjaegerNative.getAdminToken();if(saved)token.value=saved;
