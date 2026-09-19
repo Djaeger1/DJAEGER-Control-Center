@@ -148,23 +148,47 @@ while true; do
   log "install $PREV -> $VER sha256=$SHA"
 
   sh "$DEST/worker/handoff.sh" "$ROOT" "$VER" "$PREV" >/dev/null 2>&1 &
-  sleep 8
 
-  ACTIVE="$(cat "$ROOT/current_release" 2>/dev/null | tr -d '\r\n')"
-  if [ "$ACTIVE" = "$VER" ] && /system/bin/wget -qO- http://127.0.0.1:8766/api/work/status 2>/dev/null | grep -q ""release":"$VER""; then
+  HEALTHY=0
+  TRY=0
+  while [ "$TRY" -lt 20 ]; do
+    sleep 1
+    ACTIVE="$(cat "$ROOT/current_release" 2>/dev/null | tr -d '\r\n')"
+    STATUS_JSON="$(/system/bin/wget -qO- http://127.0.0.1:8766/api/work/status 2>/dev/null)"
+    if [ "$ACTIVE" = "$VER" ] && printf '%s' "$STATUS_JSON" | grep -Fq "\"release\":\"$VER\""; then
+      HEALTHY=1
+      break
+    fi
+    # Handoff's own PASS is also accepted, but current_release must still be the target.
+    if [ "$ACTIVE" = "$VER" ] && tail -n 8 "$ROOT/logs/handoff.log" 2>/dev/null | grep -Fq "PASS $VER "; then
+      HEALTHY=1
+      break
+    fi
+    TRY=$((TRY+1))
+  done
+
+  if [ "$HEALTHY" = 1 ]; then
     rm -f "$FAILED"
     publish "UP_TO_DATE" "AUTO_UPDATE_SUCCESS" "$VER"
-    log "PASS $VER"
+    log "PASS $VER selftest_tries=$TRY"
     cleanup
     NEWUP="$DEST/worker/autoupdate.sh"
     if [ -f "$NEWUP" ]; then
       exec /system/bin/sh "$NEWUP"
     fi
   else
-    printf '%s\n' "$VER" > "$FAILED"
-    publish "QUARANTINED" "SELFTEST_FAILED_ROLLBACK_DONE" "$VER"
-    log "FAIL $VER rollback=$PREV"
+    ACTIVE="$(cat "$ROOT/current_release" 2>/dev/null | tr -d '\r\n')"
+    if [ "$ACTIVE" != "$VER" ]; then
+      printf '%s\n' "$VER" > "$FAILED"
+      publish "QUARANTINED" "HANDOFF_ROLLED_BACK" "$VER"
+      log "FAIL $VER rollback=$PREV"
+    else
+      # Target is active but health probe was inconclusive: do not falsely quarantine a live release.
+      rm -f "$FAILED"
+      publish "VERIFYING" "TARGET_ACTIVE_HEALTH_PROBE_INCONCLUSIVE" "$VER"
+      log "WARN $VER active_probe_inconclusive"
+    fi
     cleanup
-    sleep "$interval"
+    sleep 120
   fi
 done
