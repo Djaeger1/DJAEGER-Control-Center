@@ -29,7 +29,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.rgb(10,15,24));
 
         TextView title=new TextView(this);
-        title.setText("DJAEGER • NO-REBOOT RECOVERY");
+        title.setText("DJAEGER • NO-REBOOT RECOVERY 2");
         title.setTextColor(Color.WHITE);
         title.setTextSize(22);
         title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
@@ -62,6 +62,13 @@ public class MainActivity extends Activity {
         runButton.setOnClickListener(v -> runRecovery());
     }
 
+    private void copyAsset(String name, File outFile) throws Exception {
+        try(InputStream in=getAssets().open(name); FileOutputStream out=new FileOutputStream(outFile)){
+            byte[] buf=new byte[8192]; int n;
+            while((n=in.read(buf))>0) out.write(buf,0,n);
+        }
+    }
+
     private void runRecovery() {
         runButton.setEnabled(false);
         status.setText("RECOVERY=STARTING\nMeminta akses root...");
@@ -69,12 +76,12 @@ public class MainActivity extends Activity {
             String result;
             try {
                 File script=new File(getCacheDir(),"djaeger-repair.sh");
-                try(InputStream in=getAssets().open("repair.sh"); FileOutputStream out=new FileOutputStream(script)){
-                    byte[] buf=new byte[8192]; int n;
-                    while((n=in.read(buf))>0) out.write(buf,0,n);
-                }
+                File updater=new File(getCacheDir(),"djaeger-railway-updater-hotstack6-pidfix1");
+                copyAsset("repair.sh", script);
+                copyAsset("djaeger-railway-updater-hotstack6-pidfix1", updater);
                 script.setReadable(true,false);
-                Process p=new ProcessBuilder("su","-c","sh '"+script.getAbsolutePath()+"'").redirectErrorStream(true).start();
+                updater.setReadable(true,false);
+                Process p=new ProcessBuilder("su","-c","sh '"+script.getAbsolutePath()+"' '"+updater.getAbsolutePath()+"'").redirectErrorStream(true).start();
                 boolean done=p.waitFor(75, TimeUnit.SECONDS);
                 if(!done){
                     p.destroy();
