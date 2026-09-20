@@ -1,7 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='40'
-RELEASE='WORKLOADSSOT4-GAMESESSION3'
+SEQ='41'
+RELEASE='HOTSTACK3-RELOADVERIFY1'
 TARGET_VC='129659'
-FILE_COUNT='2'
-FILE|controller-workloadssot4|controller.sh|84a9f8db4c068f4720958e8eff5e48f9b5cfb92e0ff6b7541e7d982499455458|755
-FILE|djaeger-railway-bridge-gamecapture2|system/bin/djaeger-railway-bridge|4a77cad0140c88fa689c4230f84d794ca985d6c54485c71b11cf76d3ab8af074|755
+FILE_COUNT='1'
+FILE|djaeger-railway-updater-hotstack3|system/bin/djaeger-railway-updater|bd01cf26ce8472d07e5a90c35444b64e8dfa8ed9c4e4b6c9cc9fdde70881602c|755
