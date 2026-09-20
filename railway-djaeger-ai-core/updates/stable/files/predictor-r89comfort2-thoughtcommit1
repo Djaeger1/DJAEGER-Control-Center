@@ -1,0 +1,1932 @@
+#!/system/bin/sh
+M=${0%/*}
+JSON="$M/system/bin/djaeger-json"
+SCREEN_STATE="$M/system/bin/djaeger-screen-state"
+P=/data/adb/djaeger_ai
+CFG="$P/gemini.conf"
+TEL="$M/telemetry.csv"
+POL="$P/predictive_policy"
+# UI6_FIX1 canonical frequency contract: CPU policy values are kHz; GPU policy values are MHz.
+# Kernel/devfreq readback may expose GPU values in Hz (or occasionally kHz in legacy state).
+# Normalize only typed GPU fields; never guess units for arbitrary numbers.
+gpu_unit_to_mhz(){
+  _gu_v="$1"
+  case "$_gu_v" in ''|*[!0-9]*) return 1;; esac
+  if [ "$_gu_v" -ge 100000000 ] 2>/dev/null; then
+    [ $((_gu_v%1000000)) -eq 0 ] 2>/dev/null || return 1
+    printf '%s\n' $((_gu_v/1000000)); return 0
+  fi
+  if [ "$_gu_v" -ge 100000 ] 2>/dev/null; then
+    [ $((_gu_v%1000)) -eq 0 ] 2>/dev/null || return 1
+    printf '%s\n' $((_gu_v/1000)); return 0
+  fi
+  printf '%s\n' "$_gu_v"
+}
+gpu_pair_to_mhz(){
+  _gp="$1"; case "$_gp" in *-*) :;; *) return 1;; esac
+  _ga="${_gp%%-*}"; _gb="${_gp#*-}"
+  _ga="$(gpu_unit_to_mhz "$_ga")" || return 1
+  _gb="$(gpu_unit_to_mhz "$_gb")" || return 1
+  printf '%s-%s\n' "$_ga" "$_gb"
+}
+normalize_account_budget(){
+  _nab="$1"; _ngp="$(printf '%s\n' "$_nab" | sed -n 's/.* G=\([^ ]*\).*/\1/p')"
+  [ -n "$_ngp" ] || { printf '%s\n' "$_nab"; return 0; }
+  _ncanon="$(gpu_pair_to_mhz "$_ngp")" || { printf '%s\n' "$_nab"; return 0; }
+  printf '%s\n' "$_nab" | sed "s/G=$_ngp/G=$_ncanon/"
+}
+# One-time non-destructive runtime migration for historical learning rows that stored
+# GPU readback in Hz/kHz. Originals are retained as .pre_ui6_fix1_gpu_units backups.
+ui6_fix1_migrate_gpu_learning_units(){
+  _mark="$P/ui6_fix1_gpu_unit_migration_v1"
+  [ -e "$_mark" ] && return 0
+  _changed=0
+  for _spec in \
+    "$DYNLEARN:8:9:plain" \
+    "$EFFMEM:8:9:plain" \
+    "$HWLEARN:8:9:plain" \
+    "$DECISION_LEDGER:7:0:range" \
+    "$ACCOUNTABILITY_REVIEWS:11:0:range"
+  do
+    _f="${_spec%%:*}"; _rest="${_spec#*:}"; _c1="${_rest%%:*}"; _rest="${_rest#*:}"; _c2="${_rest%%:*}"; _kind="${_rest#*:}"
+    [ -r "$_f" ] || continue
+    _bak="$_f.pre_ui6_fix1_gpu_units"; [ -e "$_bak" ] || cp -p "$_f" "$_bak" 2>/dev/null || cp "$_f" "$_bak" 2>/dev/null || return 1
+    _tmp="$_f.ui6_fix1tmp.$$"
+    awk -F, -v OFS=, -v c1="$_c1" -v c2="$_c2" -v kind="$_kind" '
+      function ng(v){ if(v~/^[0-9]+$/){ if(v>=100000000 && v%1000000==0)return int(v/1000000); if(v>=100000 && v%1000==0)return int(v/1000) } return v }
+      NR==1{print;next}
+      {
+        if(kind=="plain"){$c1=ng($c1); if(c2>0)$c2=ng($c2)}
+        else if(kind=="range"){split($c1,a,"-"); if(length(a)==2)$c1=ng(a[1])"-"ng(a[2])}
+        print
+      }' "$_f" >"$_tmp" || { rm -f "$_tmp"; return 1; }
+    chmod 600 "$_tmp" 2>/dev/null
+    mv -f "$_tmp" "$_f" || { rm -f "$_tmp"; return 1; }
+    _changed=$((_changed+1))
+  done
+  # UI6_FIX1 context schema: append user_mode to legacy accountability ledgers. Historical
+  # rows are retained as UNKNOWN and never enter a current-mode accountability lookup.
+  for _lf in "$DECISION_LEDGER" "$ACCOUNTABILITY_REVIEWS"; do
+    [ -r "$_lf" ] || continue
+    _lh="$(head -n 1 "$_lf" 2>/dev/null)"
+    case "$_lh" in *,user_mode) continue;; esac
+    _lb="$_lf.pre_ui6_fix1_user_mode"; [ -e "$_lb" ] || cp -p "$_lf" "$_lb" 2>/dev/null || cp "$_lf" "$_lb" 2>/dev/null || return 1
+    _lt="$_lf.ui6_fix1mode.$$"
+    awk -F, -v OFS=, 'NR==1{print $0,"user_mode";next}{print $0,"UNKNOWN"}' "$_lf" >"$_lt" || { rm -f "$_lt"; return 1; }
+    chmod 600 "$_lt" 2>/dev/null; mv -f "$_lt" "$_lf" || { rm -f "$_lt"; return 1; }
+  done
+  _mt="$P/.ui6_fix1_gpu_migration_marker.$$"
+  printf "MIGRATION='GPU_CANONICAL_MHZ_V1'\nCONTEXT_SCHEMA='USER_MODE_V1'\nMIGRATED_FILES='%s'\nMIGRATED_AT='%s'\n" "$_changed" "$(date +%s)" >"$_mt" 2>/dev/null && chmod 600 "$_mt" 2>/dev/null && mv -f "$_mt" "$_mark"
+}
+# v12.6.0 transaction-aware, idempotent bounded CSV commit.
+# policy_at (column 1) is the transaction key: retry replaces the same policy row
+# instead of duplicating learning after a crash. Existing file is never modified in-place.
+load_live_capability(){
+  [ -r "$LIVE_CAPABILITY" ] || return 1
+  _schema=$(sed -n "s/^CAP_SCHEMA='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  [ "$_schema" = "2" ] || return 1
+  _opp_canon=$(sed -n "s/^CAP_OPP_CANONICAL='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _gov_canon=$(sed -n "s/^CAP_GOVERNOR_CANONICAL='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  [ "$_opp_canon" = "YES" ] && [ "$_gov_canon" = "YES" ] || return 1
+  _trust=$(sed -n "s/^CAP_TRUST='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _src_l=$(sed -n "s/^CAP_SOURCE_LITTLE='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _src_b=$(sed -n "s/^CAP_SOURCE_BIG='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _src_g=$(sed -n "s/^CAP_SOURCE_GPU='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  [ "$_trust" = "LIVE_EXACT_OPP_VERIFIED" ] || return 1
+  case "$_src_l:$_src_b:$_src_g" in
+    LIVE_EXACT_OPP_*:LIVE_EXACT_OPP_*:LIVE_EXACT_OPP_*) : ;;
+    *) return 1 ;;
+  esac
+  _sig=$(sed -n "s/^CAP_CONTENT_SIG='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _epoch=$(sed -n "s/^CAP_CONTENT_EPOCH='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _updated=$(sed -n "s/^CAP_UPDATED_AT='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _prov_identity=$(sed -n "s/^CAP_IDENTITY_INCLUDES_OPP_PROVENANCE='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _gen_reuse=$(sed -n "s/^CAP_GENERATION_REUSE_VALIDATED='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _gen_bound=$(sed -n "s/^CAP_GENERATION_CONTEXT_BOUND='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _gen_schema=$(sed -n "s/^CAP_GENERATION_ID_SCHEMA='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _gen_ts_bound=$(sed -n "s/^CAP_GENERATION_TIMESTAMP_BOUND='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _gen_max_age=$(sed -n "s/^CAP_GENERATION_MAX_AGE_S='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _gen_age=$(sed -n "s/^CAP_GENERATION_AGE_S='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _gen_age_derivation=$(sed -n "s/^CAP_GENERATION_AGE_DERIVATION='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  [ "$_prov_identity" = YES ] && [ "$_gen_reuse" = YES ] && [ "$_gen_bound" = YES ] && [ "$_gen_schema" = LENPREFIX_V1 ] && [ "$_gen_ts_bound" = YES ] || return 1
+  [ "$_gen_max_age" = 120 ] || return 1
+  [ "$_gen_age_derivation" = UPDATED_AT_MINUS_EPOCH ] || return 1
+  case "$_gen_age" in ''|*[!0-9]*) return 1;; esac
+  [ "$_gen_age" -le "$_gen_max_age" ] 2>/dev/null || return 1
+  case "$_epoch:$_updated" in *[!0-9:]*|*::*|:*) return 1;; esac
+  [ "$_epoch" -le "$_updated" ] 2>/dev/null || return 1
+  [ "$_gen_age" -eq "$((_updated-_epoch))" ] 2>/dev/null || return 1
+  [ -n "$_sig" ] && [ -n "$_epoch" ] || return 1
+  _ct="$_updated"
+  _now=$(date +%s)
+  case "$_ct:$_now" in *[!0-9:]*|*::*|:*) return 1;; esac
+  [ "$_ct" -le "$_now" ] 2>/dev/null || return 1
+  [ $((_now-_ct)) -le 120 ] || return 1
+  _cb=$(sed -n "s/^CAP_BOOT_ID='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _cs=$(sed -n "s/^CAP_SESSION_ID='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _cg=$(sed -n "s/^CAP_GENERATION_ID='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  [ -n "$_cg" ] || return 1
+  _boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+  _sess=$(cat "$P/session_id" 2>/dev/null)
+  [ -n "$_cb" ] && [ "$_cb" = "$_boot" ] || return 1
+  [ -n "$_cs" ] && [ "$_cs" = "$_sess" ] || return 1
+  # r78: independently reconstruct the exact length-prefixed generation identity.
+  # Context-bound markers alone are not sufficient evidence.
+  _expected_gen="B${#_boot}:${_boot};S${#_sess}:${_sess};T${_epoch}"
+  [ "$_cg" = "$_expected_gen" ] || return 1
+  HW_LITTLE_MIN=$(sed -n "s/^HW_LITTLE_MIN='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_LITTLE_MAX=$(sed -n "s/^HW_LITTLE_MAX='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_BIG_MIN=$(sed -n "s/^HW_BIG_MIN='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_BIG_MAX=$(sed -n "s/^HW_BIG_MAX='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_GPU_MIN=$(sed -n "s/^HW_GPU_MIN='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_GPU_MAX=$(sed -n "s/^HW_GPU_MAX='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_LITTLE_OPPS=$(sed -n "s/^LITTLE_OPP_KHZ='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_BIG_OPPS=$(sed -n "s/^BIG_OPP_KHZ='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_GPU_OPPS=$(sed -n "s/^GPU_OPP_MHZ='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_LITTLE_GOVS=$(sed -n "s/^LITTLE_GOVERNORS='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_BIG_GOVS=$(sed -n "s/^BIG_GOVERNORS='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_GPU_GOVS=$(sed -n "s/^GPU_GOVERNORS='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_LITTLE_GOV_SRC=$(sed -n "s/^GOV_SOURCE_LITTLE='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_BIG_GOV_SRC=$(sed -n "s/^GOV_SOURCE_BIG='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_GPU_GOV_SRC=$(sed -n "s/^GOV_SOURCE_GPU='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  HW_GOV_TRUST=$(sed -n "s/^GOV_TRUST='\([^']*\)'.*/\1/p" "$LIVE_CAPABILITY" | head -1)
+  _pred_gov_list(){
+    _seen=""
+    [ -n "$1" ] || return 0
+    for _gx in $1; do
+      case "$_gx" in *[!A-Za-z0-9_.+-]*) return 1;; esac
+      case " $_seen " in *" $_gx "*) return 1;; esac
+      _seen="$_seen $_gx"
+    done
+    return 0
+  }
+  _pred_gov_list "$HW_LITTLE_GOVS" || return 1
+  _pred_gov_list "$HW_BIG_GOVS" || return 1
+  _pred_gov_list "$HW_GPU_GOVS" || return 1
+  [ -n "$HW_LITTLE_OPPS" ] && [ -n "$HW_BIG_OPPS" ] && [ -n "$HW_GPU_OPPS" ] || return 1
+  _pred_num_list(){
+    _pv=0
+    for _px in $1; do
+      case "$_px" in ''|*[!0-9]*) return 1;; esac
+      [ "$_px" -gt "$_pv" ] || return 1
+      _pv="$_px"
+    done
+    return 0
+  }
+  _pred_num_list "$HW_LITTLE_OPPS" || return 1
+  _pred_num_list "$HW_BIG_OPPS" || return 1
+  _pred_num_list "$HW_GPU_OPPS" || return 1
+  return 0
+}
+
+publish_strategy_formula(){
+  # Transparency-only contract for Control Center. Never execute from this file.
+  _sf_tmp="$STRATEGY_FORMULA.tmp.$$"
+  umask 077
+  {
+    _formula_tx="${POLICY_AT:-$(date +%s)}:${SESSION_ID:-0}:${GAME_ID:-UNKNOWN}:${USER_MODE:-AUTO}"
+    printf "FORMULA_SCHEMA='2'\n"
+    printf "FORMULA_TX_ID='%s'\n" "$_formula_tx"
+    printf "SOURCE='GEMINI'\n"
+    printf "STATUS='PROPOSED'\n"
+    printf "MODE='%s'\n" "${USER_MODE:-AUTO}"
+    printf "GAME='%s'\n" "${GAME_ID:-UNKNOWN}"
+    printf "WINDOW='%s'\n" "${CURRENT_WINDOW_MODE:-UNKNOWN}"
+    printf "PROFILE='%s'\n" "${PROFILE:-${ACTION:-NA}}"
+    printf "CPU_LITTLE_MIN='%s'\n" "${LITTLE_MIN:-NA}"
+    printf "CPU_LITTLE_MAX='%s'\n" "${LITTLE_MAX:-NA}"
+    printf "CPU_BIG_MIN='%s'\n" "${BIG_MIN:-NA}"
+    printf "CPU_BIG_MAX='%s'\n" "${BIG_MAX:-NA}"
+    printf "GPU_MIN='%s'\n" "${GPU_MIN:-NA}"
+    printf "GPU_MAX='%s'\n" "${GPU_MAX:-NA}"
+    printf "CPU_GOVERNOR='%s'\n" "${CPU_GOVERNOR:-NA}"
+    printf "CPU_GOVERNOR_PRESENT='%s'\n" "$([ -n "${CPU_GOVERNOR:-}" ] && echo YES || echo NO)"
+    printf "GPU_GOVERNOR='%s'\n" "${GPU_GOVERNOR:-NA}"
+    printf "GPU_GOVERNOR_PRESENT='%s'\n" "$([ -n "${GPU_GOVERNOR:-}" ] && echo YES || echo NO)"
+    printf "POWER_STRATEGY='%s'\n" "${POWER_STRATEGY:-${BATTERY_POLICY:-NA}}"
+    printf "POWER_STRATEGY_PRESENT='%s'\n" "$([ -n "${POWER_STRATEGY:-${BATTERY_POLICY:-}}" ] && echo YES || echo NO)"
+    printf "BURST_LEASE_SEC='%s'\n" "${LEASE_SEC:-${DURATION_SEC:-NA}}"
+    case "${USER_MODE:-AUTO}" in
+      DINGIN) _ceil=37;; NYAMAN) _ceil=40;; HANGAT) _ceil=43;; PANAS) _ceil=45;; *) _ceil=NA;;
+    esac
+    printf "COMFORT_CEILING_C='%s'\n" "$_ceil"
+    printf "CONFIDENCE='%s'\n" "${CONFIDENCE:-NA}"
+    printf "REASON='%s'\n" "$(printf '%s' "${REASON:-${RATIONALE:-NA}}" | tr '\r\n' '  ' | sed "s/'/_/g")"
+    printf "PREDICTED_SKIN='%s'\n" "${SKIN_FORECAST_2M:-NA}"
+    printf "PREDICTED_FPS='%s'\n" "${FPS_FORECAST_2M:-NA}"
+    printf "SESSION_ID='%s'\n" "${SESSION_ID:-0}"
+    printf "POLICY_AT='%s'\n" "${POLICY_AT:-0}"
+    printf "FORMULA_TTL_SEC='120'\n"
+    _formula_complete=YES
+    for _v in PROFILE LITTLE_MIN LITTLE_MAX BIG_MIN BIG_MAX GPU_MIN GPU_MAX; do
+      eval "_vv=\${$_v:-}"
+      [ -n "$_vv" ] || _formula_complete=NO
+    done
+    printf "FORMULA_COMPLETE='%s'\n" "$_formula_complete"
+    _formula_bounds=YES
+    _num(){ case "$1" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
+    for _v in LITTLE_MIN LITTLE_MAX BIG_MIN BIG_MAX GPU_MIN GPU_MAX; do
+      eval "_vv=\${$_v:-}"
+      _num "$_vv" || _formula_bounds=NO
+    done
+    if [ "$_formula_bounds" = YES ]; then
+      [ "$LITTLE_MIN" -le "$LITTLE_MAX" ] || _formula_bounds=NO
+      [ "$BIG_MIN" -le "$BIG_MAX" ] || _formula_bounds=NO
+      [ "$GPU_MIN" -le "$GPU_MAX" ] || _formula_bounds=NO
+    fi
+    printf "FORMULA_BOUNDS_VALID='%s'\n" "$_formula_bounds"
+    _cap_bounds=YES
+    _within(){
+      _x="$1"; _lo="$2"; _hi="$3"
+      _num "$_x" && _num "$_lo" && _num "$_hi" && [ "$_x" -ge "$_lo" ] && [ "$_x" -le "$_hi" ]
+    }
+    # Capability variables are populated by DJAEGER hardware discovery/contract.
+    # Missing capability evidence is fail-closed, never guessed.
+    _within "${LITTLE_MIN:-}" "${HW_LITTLE_MIN:-}" "${HW_LITTLE_MAX:-}" || _cap_bounds=NO
+    _within "${LITTLE_MAX:-}" "${HW_LITTLE_MIN:-}" "${HW_LITTLE_MAX:-}" || _cap_bounds=NO
+    _within "${BIG_MIN:-}" "${HW_BIG_MIN:-}" "${HW_BIG_MAX:-}" || _cap_bounds=NO
+    _within "${BIG_MAX:-}" "${HW_BIG_MIN:-}" "${HW_BIG_MAX:-}" || _cap_bounds=NO
+    _within "${GPU_MIN:-}" "${HW_GPU_MIN:-}" "${HW_GPU_MAX:-}" || _cap_bounds=NO
+    _within "${GPU_MAX:-}" "${HW_GPU_MIN:-}" "${HW_GPU_MAX:-}" || _cap_bounds=NO
+    printf "FORMULA_LIVE_CAPABILITY_VALID='%s'\n" "$_cap_bounds"
+    _opp_exact=YES
+    _opp_has(){ case " $1 " in *" $2 "*) return 0;; *) return 1;; esac; }
+    _opp_has "${HW_LITTLE_OPPS:-}" "${LITTLE_MIN:-}" || _opp_exact=NO
+    _opp_has "${HW_LITTLE_OPPS:-}" "${LITTLE_MAX:-}" || _opp_exact=NO
+    _opp_has "${HW_BIG_OPPS:-}" "${BIG_MIN:-}" || _opp_exact=NO
+    _opp_has "${HW_BIG_OPPS:-}" "${BIG_MAX:-}" || _opp_exact=NO
+    _opp_has "${HW_GPU_OPPS:-}" "${GPU_MIN:-}" || _opp_exact=NO
+    _opp_has "${HW_GPU_OPPS:-}" "${GPU_MAX:-}" || _opp_exact=NO
+    printf "FORMULA_EXACT_OPP_VALID='%s'\n" "$_opp_exact"
+    _gov_valid=YES
+    if [ -n "${CPU_GOVERNOR:-}" ]; then
+      [ "${HW_LITTLE_GOV_SRC:-}" = LIVE_SYSFS ] && [ "${HW_BIG_GOV_SRC:-}" = LIVE_SYSFS ] || _gov_valid=NO
+      _opp_has "${HW_LITTLE_GOVS:-}" "$CPU_GOVERNOR" || _gov_valid=NO
+      _opp_has "${HW_BIG_GOVS:-}" "$CPU_GOVERNOR" || _gov_valid=NO
+    fi
+    if [ -n "${GPU_GOVERNOR:-}" ]; then
+      [ "${HW_GPU_GOV_SRC:-}" = LIVE_SYSFS ] || _gov_valid=NO
+      _opp_has "${HW_GPU_GOVS:-}" "$GPU_GOVERNOR" || _gov_valid=NO
+    fi
+    printf "FORMULA_GOVERNOR_CAPABILITY_VALID='%s'\n" "$_gov_valid"
+    printf "GOVERNOR_CAPABILITY_TRUST='%s'\n" "${HW_GOV_TRUST:-UNKNOWN}"
+    printf "GOVERNOR_SOURCE_LITTLE='%s'\n" "${HW_LITTLE_GOV_SRC:-UNKNOWN}"
+    printf "GOVERNOR_SOURCE_BIG='%s'\n" "${HW_BIG_GOV_SRC:-UNKNOWN}"
+    printf "GOVERNOR_SOURCE_GPU='%s'\n" "${HW_GPU_GOV_SRC:-UNKNOWN}"
+    printf "CAP_LITTLE='%s..%s'\n" "${HW_LITTLE_MIN:-UNKNOWN}" "${HW_LITTLE_MAX:-UNKNOWN}"
+    printf "CAP_BIG='%s..%s'\n" "${HW_BIG_MIN:-UNKNOWN}" "${HW_BIG_MAX:-UNKNOWN}"
+    printf "CAP_GPU='%s..%s'\n" "${HW_GPU_MIN:-UNKNOWN}" "${HW_GPU_MAX:-UNKNOWN}"
+    printf "CAPABILITY_BOOT_ID='%s'\n" "${_cb:-UNKNOWN}"
+    printf "CAPABILITY_SESSION_ID='%s'\n" "${_cs:-UNKNOWN}"
+    printf "CAPABILITY_CONTEXT_VERIFIED='%s'\n" "$([ -n "${_cb:-}" ] && [ -n "${_cs:-}" ] && echo YES || echo NO)"
+    printf "CAPABILITY_GENERATION_ID='%s'\n" "${_cg:-UNKNOWN}"
+    printf "CAPABILITY_CONTENT_SIG='%s'\n" "${_sig:-UNKNOWN}"
+    printf "CAPABILITY_CONTENT_EPOCH='%s'\n" "${_epoch:-UNKNOWN}"
+    printf "CAPABILITY_TRUST='%s'\n" "${_trust:-UNKNOWN}"
+    printf "CAPABILITY_SOURCE_LITTLE='%s'\n" "${_src_l:-UNKNOWN}"
+    printf "CAPABILITY_SOURCE_BIG='%s'\n" "${_src_b:-UNKNOWN}"
+    printf "CAPABILITY_SOURCE_GPU='%s'\n" "${_src_g:-UNKNOWN}"
+    printf "CAPABILITY_OPP_CANONICAL='%s'\n" "${_opp_canon:-NO}"
+    printf "CAPABILITY_GOVERNOR_CANONICAL='%s'\n" "${_gov_canon:-NO}"
+    printf "FORMULA_OWNER_MODE='%s'\n" "${USER_MODE:-AUTO}"
+    printf "FORMULA_PROFILE='%s'\n" "${PROFILE:-UNKNOWN}"
+    printf "FORMULA_GAME='%s'\n" "${GAME:-UNKNOWN}"
+    printf "FORMULA_OBSERVATION_AT='%s'\n" "${NOW:-0}"
+    _obs_fps="${FPS:-NA}"
+    _obs_fps_source=UNVERIFIED_RUNTIME_INPUT
+    [ "$_obs_fps" = NA ] && _obs_fps_source=UNAVAILABLE
+    case "$_obs_fps" in
+      ''|*[!0-9.]*) _obs_fps=NA ;;
+      *)
+        case "$_obs_fps" in
+          *.*.*) _obs_fps=NA ;;
+          .*) _obs_fps=NA ;;
+          *.) _obs_fps=NA ;;
+          *)
+            _fps_int="${_obs_fps%%.*}"
+            case "$_fps_int" in ''|*[!0-9]*) _obs_fps=NA ;; *)
+              if [ "$_fps_int" -gt 1000 ] 2>/dev/null; then
+                _obs_fps=NA
+              elif [ "$_fps_int" -eq 1000 ] 2>/dev/null; then
+                case "$_obs_fps" in 1000|1000.0|1000.00|1000.000) ;; *) _obs_fps=NA;; esac
+              fi
+            esac
+          ;;
+        esac
+      ;;
+    esac
+    _obs_identity="${NOW:-0}|${GAME:-UNKNOWN}|${USER_MODE:-AUTO}|${PROFILE:-UNKNOWN}|FPS=${_obs_fps}"
+    printf "FORMULA_OBSERVATION_FPS='%s'\n" "$_obs_fps"
+    printf "FORMULA_OBSERVATION_FPS_SOURCE='%s'\n" "$_obs_fps_source"
+    printf "FORMULA_OBSERVATION_FPS_PROVENANCE_SCHEMA='1'\n"
+    printf "FORMULA_OBSERVATION_FPS_PRODUCER='UNRESOLVED'\n"
+    printf "FORMULA_OBSERVATION_FPS_VERIFICATION='NOT_LIVE_VERIFIED'\n"
+    printf "FORMULA_OBSERVATION_ID='%s'\n" "$_obs_identity"
+    printf "FORMULA_REQUIRED='PROFILE,CPU_LITTLE_MIN,CPU_LITTLE_MAX,CPU_BIG_MIN,CPU_BIG_MAX,GPU_MIN,GPU_MAX'\n"
+    printf "CAPABILITY_AUTHORITY='DJAEGER_TYPED_HARDWARE_CONTRACT'\n"
+    printf "ARBITRARY_SYSFS_ALLOWED='NO'\n"
+    printf "CREATED_AT='%s'\n" "$(date +%s)"
+  } >"$_sf_tmp" || { rm -f "$_sf_tmp"; return 1; }
+  chmod 600 "$_sf_tmp" 2>/dev/null
+  mv -f "$_sf_tmp" "$STRATEGY_FORMULA"
+}
+
+csv_upsert_policy(){
+  F="$1"; LIM="$2"; HDR="$3"; ROW="$4"; KEY="$5"; T="$F.txn.$$"
+  {
+    printf '%s\n' "$HDR"
+    if [ -r "$F" ]; then awk -F, -v k="$KEY" 'NR>1 && $1!=k{print}' "$F"; fi
+    printf '%s\n' "$ROW"
+  } >"$T.all" || { rm -f "$T" "$T.all"; return 1; }
+  { head -n 1 "$T.all"; awk 'NR>1{print}' "$T.all" | tail -n "$((LIM-1))"; } >"$T" || { rm -f "$T" "$T.all"; return 1; }
+  rm -f "$T.all"; chmod 600 "$T" 2>/dev/null
+  mv -f "$T" "$F" || { rm -f "$T"; return 1; }
+}
+
+validate_csv_shape(){
+  F="$1"; NFEXP="$2"; [ -e "$F" ] || return 0
+  awk -F, -v n="$NFEXP" 'NF!=n{exit 1}' "$F" 2>/dev/null && return 0
+  Q="$F.corrupt.$(date +%s)"; mv -f "$F" "$Q" 2>/dev/null; chmod 600 "$Q" 2>/dev/null
+  plog "PERSISTENCE_QUARANTINE file=$F reason=CSV_SHAPE"
+  return 1
+}
+RAW="$P/gemini_last_response.json"
+STATE="$P/predictor_state"
+FEEDBACK="$P/predictive_feedback"
+MEMORY="$P/outcome_memory.csv"
+MEMLAST="$P/outcome_last_at"
+CTXMEM="$P/context_memory.csv"
+SESSION_START="$P/session_start"
+SESSION_GAME="$P/session_game"
+SCENE_STATE="$P/scene_context"
+WINDOW_CTX="$P/window_context"
+WINDOW_EPOCH_FILE="$P/window_context_epoch"
+LOCK="$P/predictor.pid"
+LOCKDIR="$P/predictor.lock"
+LEARNED="$P/learned_experience.csv"
+DYNLEARN="$P/learned_dynamic.csv"
+SHADOW="$P/shadow_plan"
+PLANHIST="$P/plan_history.csv"
+EFFMEM="$P/efficiency_memory.csv"
+HTTPERR="$P/gemini_last_error.json"
+HTTPSTATE="$P/gemini_http_state"
+HWFILE="$M/hardware_contract.conf"
+HWLEARN="$P/hardware_learning.csv"
+FORESIGHT_CAL="$P/foresight_calibration.csv"
+RESOURCE_CAL="$P/resource_calibration.csv"
+DEVICE_MODEL="$P/device_knowledge_model"
+SERVER_STATE="$P/gemini_server_state"
+SERVER_MAX_CHAIN=6
+SERVER_MAX_AGE=21600
+OWNER_OBJECTIVE="$P/owner_objective.conf"
+OWNER_FEEDBACK="$P/owner_feedback.csv"
+AUTO_COMFORT="$P/autonomous_comfort_model.csv"
+OWNER_FEEDBACK_REF="$M/owner_feedback_reference.conf"
+DECISION_LEDGER="$P/decision_ledger.csv"
+GEMINI_CHAT_KNOWLEDGE="$P/gemini_knowledge.tsv"
+EVOLUTION_MEMORY="$P/gemini_evolution_memory.tsv"
+ROOT_AUTHORITY_POLICY="$P/root_authority_policy"
+STRATEGY_FORMULA="$P/gemini_strategy_formula.env"
+LIVE_CAPABILITY="$P/live_capability.env"
+RESOURCE_EXECUTION_FEEDBACK="$P/resource_execution_feedback"
+RESOURCE_EXECUTION_HISTORY="$P/resource_execution_history.tsv"
+EXEC_ATTR_LOG_STATE="$P/execution_attribution_log_state"
+AGENT_COMPACT="$P/agent_gemini_compact_context.env"
+AGENT_TRUTH="$P/agent_hardware_truth.env"
+GAME_COMFORT_CONTRACT="$M/system/etc/djaeger/game-comfort-contract.conf"
+GAME_COMFORT_POLICY="$M/system/bin/djaeger-game-comfort-policy"
+PROFILE_MAP="$M/system/bin/djaeger-profile-map"
+CLOCK_KNOWLEDGE="$M/system/bin/djaeger-clock-knowledge"
+KERNEL_CAPABILITY_BIN="$M/system/bin/djaeger-kernel-capability"
+KERNEL_CAPABILITY_FILE="$P/kernel_capabilities.tsv"
+KERNEL_CAPABILITY_SUMMARY="$P/kernel_capability_summary"
+ACCOUNTABILITY_REVIEWS="$P/accountability_reviews.csv"
+ADAPTIVE_ENVELOPE="$P/adaptive_operating_envelope"
+USER_MODE_FILE="$P/user_mode"
+REASONING_TRACE="$P/reasoning_trace"
+RESYNC_STATE="$P/gemini_resync_state"
+# r83 Persistent Knowledge + human-readable Thoughts. Narrative is explanatory only;
+# it is never parsed as an actuator command.
+THOUGHTS_FILE="$P/djaeger_thoughts.env"
+KNOWLEDGE_DIR="$P/knowledge"
+KNOWLEDGE_LEDGER="$KNOWLEDGE_DIR/experience_ledger.tsv"
+MEMORY_STATUS="$P/local_memory_status.env"
+MEMORY_MAX_BYTES=$((256*1024*1024))
+mkdir -p "$KNOWLEDGE_DIR" 2>/dev/null; chmod 700 "$KNOWLEDGE_DIR" 2>/dev/null
+mkdir -p "$P"; chmod 700 "$P" 2>/dev/null
+# HCC1: seed/migrate the persistent owner objective without overwriting a newer runtime contract.
+if [ -r "$M/owner_objective.conf" ]; then
+  _bv="$(awk -F= '$1=="OWNER_GOAL_VERSION"{print $2+0;exit}' "$M/owner_objective.conf" 2>/dev/null)"; _rv="$(awk -F= '$1=="OWNER_GOAL_VERSION"{print $2+0;exit}' "$OWNER_OBJECTIVE" 2>/dev/null)"
+  [ -n "$_bv" ] || _bv=0; [ -n "$_rv" ] || _rv=0
+  if [ ! -r "$OWNER_OBJECTIVE" ] || [ "$_rv" -lt "$_bv" ] 2>/dev/null; then
+    cp "$M/owner_objective.conf" "$OWNER_OBJECTIVE.tmp.$$" 2>/dev/null && chmod 600 "$OWNER_OBJECTIVE.tmp.$$" 2>/dev/null && mv -f "$OWNER_OBJECTIVE.tmp.$$" "$OWNER_OBJECTIVE"
+  fi
+fi
+json_escape(){
+  # JSON permits no raw C0 control bytes. Preserve UTF-8, drop uncommon C0
+  # controls, and encode TAB/CR/LF plus quote/backslash deterministically.
+  # The tr ranges intentionally exclude TAB (011), LF (012) and CR (015),
+  # which are encoded below instead of removed.
+  printf '%s' "$1" \
+    | tr -d '\000-\010\013\014\016-\037' \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
+    | awk 'BEGIN{ORS="";tab=sprintf("%c",9);cr=sprintf("%c",13)}{gsub(tab,"\\t");gsub(cr,"\\r");if(NR>1)printf "\\n";printf "%s",$0}'
+}
+esc(){ json_escape "$1"; }
+plog(){ echo "$(date '+%F %T') PREDICTOR $*" >>"$M/controller.log"; }
+
+invalidate(){
+  rm -f "$POL.tmp" 2>/dev/null
+}
+
+# v12.9.1: one authoritative distiller for persistent device knowledge. It is
+# called both before Gemini reasoning and immediately after a mature hardware
+# outcome is committed, so the model cannot lag one predictor cycle behind.
+refresh_device_knowledge(){
+  _dk_wm="$1"; _dk_game="$2"; _dk_now="$(date +%s)"
+  DEVICECTX="INSUFFICIENT_DEVICE_EVIDENCE"
+  if [ -r "$HWLEARN" ]; then
+    DEVICECTX="$(awk -F, -v wm="$_dk_wm" -v game="$_dk_game" -v um="${USER_MODE:-AUTO}" -v now="$_dk_now" '
+      NR>1&&$17==wm&&$18==game&&$19==um&&(now-$1)>=0&&(now-$1)<=1209600 {
+        n++; cls[$16]++; k="L"$4"-"$5"_B"$6"-"$7"_G"$8"-"$9; bn[k]++;
+        if($13~/^-?[0-9.]+$/){bf[k]+=$13; fn[k]++}
+        if($14~/^-?[0-9.]+$/){bs[k]+=$14; sn[k]++}
+        if($12~/^-?[0-9.]+$/){bp[k]+=$12; pn[k]++}
+      }
+      END {
+        printf "samples=%d success_classes[efficient=%d performance=%d thermal=%d balanced=%d reject=%d]",n+0,cls["EFFICIENT"]+0,cls["PERFORMANCE"]+0,cls["THERMAL"]+0,cls["BALANCED"]+0,cls["REJECT"]+0;
+        shown=0; for(k in bn) if(shown<5){printf ";budget=%s n=%d",k,bn[k]; if(fn[k])printf " fps_delta=%.1f",bf[k]/fn[k]; if(sn[k])printf " skin_delta=%.1f",bs[k]/sn[k]; if(pn[k])printf " power_delta_pct=%.1f",bp[k]/pn[k]; shown++}
+      }' "$HWLEARN" 2>/dev/null | cut -c1-2200)"
+    [ -n "$DEVICECTX" ] || DEVICECTX="INSUFFICIENT_DEVICE_EVIDENCE"
+  if [ -n "$EXECUTIONCTX" ]; then
+    DEVICECTX="$DEVICECTX;PREVIOUS_EXECUTION_FEEDBACK=$EXECUTIONCTX"
+  fi
+  fi
+  if [ -r "$FORESIGHT_CAL" ]; then
+    _DKCAL="$(tail -n 30 "$FORESIGHT_CAL" 2>/dev/null | awk -F, -v wm="$_dk_wm" -v game="$_dk_game" '$9==wm&&$10==game&&$2~/^[0-9.]+$/&&$3~/^[0-9.]+$/{n++;se+=$2;fe+=$3}END{if(n)printf ";forecast_n=%d skin_mae=%.2fC fps_mae=%.2f",n,se/n,fe/n}')"
+    [ -n "$_DKCAL" ] && DEVICECTX="$DEVICECTX$_DKCAL"
+  fi
+  _DMT="$DEVICE_MODEL.tmp.$$"
+  printf 'updated_at=%s\ngame=%s\nwindow_mode=%s\nknowledge=%s\n' "$_dk_now" "$_dk_game" "$_dk_wm" "$DEVICECTX" >"$_DMT" 2>/dev/null && chmod 600 "$_DMT" 2>/dev/null && mv -f "$_DMT" "$DEVICE_MODEL" 2>/dev/null
+}
+
+
+thought_publish(){
+  _src="$1"; _status="$2"; _conf="$3"; shift 3; _txt="$*"
+  _txt="$(printf '%s' "$_txt" | tr '\r\n\t' '   ' | sed 's/[[:space:]][[:space:]]*/ /g' | cut -c1-600)"
+  [ -n "$_txt" ] || return 0
+  _tmp="$THOUGHTS_FILE.tmp.$$"; umask 077
+  printf "SOURCE='%s'\nSTATUS='%s'\nAT='%s'\nCONFIDENCE='%s'\nTEXT='%s'\n" "$_src" "$_status" "$(date +%s)" "${_conf:-0}" "$(printf '%s' "$_txt" | sed "s/'/’/g")" >"$_tmp" && mv -f "$_tmp" "$THOUGHTS_FILE"
+  chmod 600 "$THOUGHTS_FILE" 2>/dev/null
+}
+knowledge_append(){
+  _txt="$(printf '%s' "$1" | tr '\t\r\n' '   ' | cut -c1-600)"
+  [ -n "$_txt" ] || return 0
+  [ -f "$KNOWLEDGE_LEDGER" ] || printf 'epoch\tgame\twindow\tmode\tscene\tprofile\tconfidence\tsource\tknowledge\n' >"$KNOWLEDGE_LEDGER"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\tGEMINI\t%s\n' "$(date +%s)" "${GAME_ID:-UNKNOWN}" "${CURRENT_WINDOW_MODE:-INACTIVE}" "${USER_MODE:-AUTO}" "${SCENE_ID:-UNKNOWN}" "${REC:-NA}" "${CONF:-0}" "$_txt" >>"$KNOWLEDGE_LEDGER"
+  chmod 600 "$KNOWLEDGE_LEDGER" 2>/dev/null
+  # Dense bounded memory: duplicate-ish knowledge is allowed to accumulate evidence,
+  # but the ledger itself is capped. Mature outcome CSVs remain the authoritative learner.
+  _sz=$(wc -c <"$KNOWLEDGE_LEDGER" 2>/dev/null | tr -d ' '); case "$_sz" in ''|*[!0-9]*) _sz=0;; esac
+  if [ "$_sz" -gt $((64*1024*1024)) ]; then
+    { head -n 1 "$KNOWLEDGE_LEDGER"; tail -n 50000 "$KNOWLEDGE_LEDGER"; } >"$KNOWLEDGE_LEDGER.tmp.$$" 2>/dev/null && mv -f "$KNOWLEDGE_LEDGER.tmp.$$" "$KNOWLEDGE_LEDGER"
+  fi
+}
+data_rows(){
+  _rf="$1"; [ -f "$_rf" ] || { printf '0'; return; }
+  _rn=$(wc -l <"$_rf" 2>/dev/null | tr -d '[:space:]')
+  case "$_rn" in ''|*[!0-9]*) _rn=0;; esac
+  [ "$_rn" -gt 0 ] 2>/dev/null && _rn=$((_rn-1))
+  printf '%s' "$_rn"
+}
+memory_status_publish(){
+  _bytes=$(du -sk "$KNOWLEDGE_DIR" "$HWLEARN" "$LEARNED" "$DYNLEARN" "$EFFMEM" "$EVOLUTION_MEMORY" 2>/dev/null | awk '{s+=$1}END{printf "%d",s*1024}')
+  _rows=$(data_rows "$KNOWLEDGE_LEDGER"); _hw=$(data_rows "$HWLEARN")
+  _tmp="$MEMORY_STATUS.tmp.$$"
+  printf "MAX_BYTES='%s'\nUSED_BYTES='%s'\nLEDGER_ROWS='%s'\nHARDWARE_OUTCOME_ROWS='%s'\nPOLICY='BOUNDED_DENSE_KNOWLEDGE'\n" "$MEMORY_MAX_BYTES" "${_bytes:-0}" "${_rows:-0}" "${_hw:-0}" >"$_tmp" && mv -f "$_tmp" "$MEMORY_STATUS"
+  chmod 600 "$MEMORY_STATUS" 2>/dev/null
+}
+
+gemini_rate_cooldown_file(){ printf '%s' "$P/gemini_key_cooldowns"; }
+gemini_rate_mark_current(){
+  _vault="$P/gemini_keys.vault"; [ -r "$_vault" ] || return 1
+  _now=$(date +%s); _until=$((_now + 900)); _slot=0; _n=0
+  while IFS= read -r _k; do [ -n "$_k" ] || continue; _n=$((_n+1)); [ "$_k" = "$GEMINI_API_KEY" ] && { _slot=$_n; break; }; done <"$_vault"
+  [ "$_slot" -gt 0 ] || return 1
+  _cf="$(gemini_rate_cooldown_file)"; _tmp="$_cf.tmp.$$"; umask 077
+  awk -F'|' -v s="$_slot" '$1!=s' "$_cf" 2>/dev/null >"$_tmp" || :
+  printf '%s|%s|429\n' "$_slot" "$_until" >>"$_tmp"
+  chmod 600 "$_tmp" 2>/dev/null; mv -f "$_tmp" "$_cf"
+  plog "GEMINI_KEY_COOLDOWN SLOT=$_slot REASON=429 UNTIL=$_until SECRET_MASKED=1"
+  return 0
+}
+gemini_rate_cooldown_until(){
+  _grcu_want="$1"; _grcu_cf="$(gemini_rate_cooldown_file)"; _grcu_found=0
+  [ -r "$_grcu_cf" ] || { printf '0'; return 0; }
+  while IFS='|' read -r _grcu_s _grcu_u _grcu_reason; do
+    [ "${_grcu_s:-}" = "$_grcu_want" ] || continue
+    case "${_grcu_u:-}" in ''|*[!0-9]*) _grcu_u=0;; esac
+    _grcu_found="$_grcu_u"
+  done <"$_grcu_cf"
+  printf '%s' "${_grcu_found:-0}"
+}
+gemini_rate_activate(){
+  _gra_key="$1"; _gra_slot="$2"; _gra_reason="$3"
+  [ -n "$_gra_key" ] || return 1
+  _gra_tmp="$CFG.tmp.$$"
+  if [ -r "$CFG" ]; then
+    awk -v k="$_gra_key" 'BEGIN{done=0} /^GEMINI_API_KEY=/{print "GEMINI_API_KEY=\047" k "\047";done=1;next} {print} END{if(!done)print "GEMINI_API_KEY=\047" k "\047"}' "$CFG" >"$_gra_tmp" || { rm -f "$_gra_tmp"; return 1; }
+  else
+    printf "GEMINI_API_KEY='%s'\n" "$_gra_key" >"$_gra_tmp" || return 1
+  fi
+  chmod 600 "$_gra_tmp" 2>/dev/null && mv -f "$_gra_tmp" "$CFG" || { rm -f "$_gra_tmp"; return 1; }
+  GEMINI_API_KEY="$_gra_key"; rm -f "$SERVER_STATE" 2>/dev/null
+  plog "GEMINI_KEY_PREFLIGHT ACTIVE_SLOT=$_gra_slot REASON=$_gra_reason MODE=AUTO SECRET_MASKED=1"
+  return 0
+}
+gemini_rate_preflight(){
+  GEMINI_COOLDOWN_WAIT=0
+  _grpf_vault="$P/gemini_keys.vault"; [ -r "$_grpf_vault" ] || return 0
+  _grpf_now=$(date +%s); _grpf_n=0; _grpf_current_slot=0; _grpf_current_until=0
+  _grpf_ready=""; _grpf_ready_slot=0; _grpf_earliest=0
+  while IFS= read -r _grpf_k; do
+    [ -n "$_grpf_k" ] || continue
+    _grpf_n=$((_grpf_n+1)); _grpf_until="$(gemini_rate_cooldown_until "$_grpf_n")"
+    case "${_grpf_until:-}" in ''|*[!0-9]*) _grpf_until=0;; esac
+    if [ "$_grpf_k" = "$GEMINI_API_KEY" ]; then _grpf_current_slot=$_grpf_n; _grpf_current_until=$_grpf_until; fi
+    if [ "$_grpf_until" -le "$_grpf_now" ] 2>/dev/null && [ -z "$_grpf_ready" ]; then _grpf_ready="$_grpf_k"; _grpf_ready_slot=$_grpf_n; fi
+    if [ "$_grpf_until" -gt "$_grpf_now" ] 2>/dev/null; then
+      if [ "$_grpf_earliest" -eq 0 ] 2>/dev/null || [ "$_grpf_until" -lt "$_grpf_earliest" ] 2>/dev/null; then _grpf_earliest=$_grpf_until; fi
+    fi
+  done <"$_grpf_vault"
+  # A configured key outside the managed vault keeps its existing manual semantics.
+  [ "$_grpf_current_slot" -gt 0 ] 2>/dev/null || return 0
+  # Current managed key is ready: no rotation and no delay.
+  [ "$_grpf_current_until" -le "$_grpf_now" ] 2>/dev/null && return 0
+  # Current key is cooling but another managed slot is ready: activate it before curl.
+  if [ -n "$_grpf_ready" ]; then
+    gemini_rate_activate "$_grpf_ready" "$_grpf_ready_slot" CURRENT_SLOT_COOLDOWN || return 1
+    return 0
+  fi
+  # Every managed slot is cooling. Strict hold: do not reach any Gemini curl.
+  if [ "$_grpf_earliest" -gt "$_grpf_now" ] 2>/dev/null; then
+    GEMINI_COOLDOWN_WAIT=$((_grpf_earliest-_grpf_now)); [ "$GEMINI_COOLDOWN_WAIT" -lt 1 ] && GEMINI_COOLDOWN_WAIT=1
+    printf "HTTP_CODE='COOLDOWN_HOLD'\nCOOLDOWN_UNTIL='%s'\nAT='%s'\nPROVIDER='GEMINI'\nMODEL='%s'\n" "$_grpf_earliest" "$_grpf_now" "${MODEL:-gemini-3.6-flash}" >"$HTTPSTATE"
+    plog "GEMINI_KEY_COOLDOWN_HOLD ALL_SLOTS=1 UNTIL=$_grpf_earliest WAIT=${GEMINI_COOLDOWN_WAIT}s FALLBACK=HERMES_H2 NO_REQUEST=1"
+    return 1
+  fi
+  return 0
+}
+
+gemini_rate_failover(){
+  _vault="$P/gemini_keys.vault"; [ -r "$_vault" ] || return 1
+  _cf="$(gemini_rate_cooldown_file)"; _now=$(date +%s); _current="$GEMINI_API_KEY"; _next=""; _nextslot=0; _n=0
+  while IFS= read -r _k; do
+    [ -n "$_k" ] || continue; _n=$((_n+1)); [ "$_k" = "$_current" ] && continue
+    _until=$(awk -F'|' -v s="$_n" '$1==s{u=$2}END{print u+0}' "$_cf" 2>/dev/null)
+    [ "${_until:-0}" -gt "$_now" ] && continue
+    _next="$_k"; _nextslot=$_n; break
+  done <"$_vault"
+  [ -n "$_next" ] || { plog "GEMINI_KEY_ROTATION EXHAUSTED=1 FALLBACK=HERMES_H2"; return 1; }
+  _tmp="$CFG.tmp.$$"
+  awk -v k="$_next" 'BEGIN{done=0} /^GEMINI_API_KEY=/{print "GEMINI_API_KEY=\047" k "\047";done=1;next} {print} END{if(!done)print "GEMINI_API_KEY=\047" k "\047"}' "$CFG" >"$_tmp" || { rm -f "$_tmp"; return 1; }
+  chmod 600 "$_tmp" 2>/dev/null && mv -f "$_tmp" "$CFG" || { rm -f "$_tmp"; return 1; }
+  GEMINI_API_KEY="$_next"; rm -f "$SERVER_STATE" 2>/dev/null
+  plog "GEMINI_KEY_ROTATION ACTIVE_SLOT=$_nextslot REASON=429 MODE=AUTO SECRET_MASKED=1"
+  unset _next _current _k
+  return 0
+}
+
+gemini_auth_failover(){
+  _vault="$P/gemini_keys.vault"; [ -r "$_vault" ] || return 1
+  _current="$GEMINI_API_KEY"; _next=""; _fallback=""; _seen=0; _n=0; _now=$(date +%s)
+  # r92: auth failover obeys the same managed-slot cooldown contract as 429 rotation.
+  # Prefer the first READY slot after the current key, then wrap to the first READY
+  # slot before it. A cooling slot is never selected for an auth retry.
+  while IFS= read -r _k; do
+    [ -n "$_k" ] || continue; _n=$((_n+1))
+    if [ "$_k" = "$_current" ]; then _seen=1; continue; fi
+    _until="$(gemini_rate_cooldown_until "$_n")"; case "${_until:-}" in ''|*[!0-9]*) _until=0;; esac
+    [ "$_until" -gt "$_now" ] 2>/dev/null && continue
+    if [ "$_seen" -eq 1 ]; then _next="$_k"; break; fi
+    [ -n "$_fallback" ] || _fallback="$_k"
+  done <"$_vault"
+  [ -n "$_next" ] || _next="$_fallback"
+  [ -n "$_next" ] || { plog "GEMINI_AUTH_FAILOVER NO_READY_SLOT=1 FALLBACK=HERMES_H2 NO_REQUEST=1"; return 1; }
+  _tmp="$CFG.tmp.$$"
+  if [ -r "$CFG" ]; then
+    awk -v k="$_next" 'BEGIN{done=0} /^GEMINI_API_KEY=/{print "GEMINI_API_KEY=\047" k "\047";done=1;next} {print} END{if(!done)print "GEMINI_API_KEY=\047" k "\047"}' "$CFG" >"$_tmp" || { rm -f "$_tmp"; return 1; }
+  else
+    printf "GEMINI_API_KEY='%s'\n" "$_next" >"$_tmp" || return 1
+  fi
+  chmod 600 "$_tmp" 2>/dev/null && mv -f "$_tmp" "$CFG" || { rm -f "$_tmp"; return 1; }
+  GEMINI_API_KEY="$_next"; unset _next _current _k
+  plog "GEMINI_KEY_FAILOVER REASON=AUTH_INVALID BACKUP_SELECTED=1 SECRET_MASKED=1"
+  return 0
+}
+
+analyze(){
+  OUTCOME_ONLY="${1:-0}"
+  [ -r "$CFG" ] || return 10
+  [ -r "$TEL" ] || return 11
+  . "$CFG" 2>/dev/null
+  [ -n "$GEMINI_API_KEY" ] || return 12
+  # v12.9.48 final-boundary model pin for Interactions API.
+  MODEL='gemini-3.6-flash'
+  EXECUTIONCTX="NO_PREVIOUS_EXECUTION_FEEDBACK"
+  if [ -r "$RESOURCE_EXECUTION_FEEDBACK" ]; then
+    EXECUTIONCTX="$(sed -n '1,36p' "$RESOURCE_EXECUTION_FEEDBACK" 2>/dev/null | tr '\n' ';' | cut -c1-2200)"
+    [ -n "$EXECUTIONCTX" ] || EXECUTIONCTX="NO_PREVIOUS_EXECUTION_FEEDBACK"
+  fi
+  # Migrate only DJAEGER's known retired/temporary defaults. Preserve an explicit
+  # user-selected different model.
+  case "$MODEL" in gemini3.6flash|gemini-2.5-flash) MODEL=gemini-3.6-flash;; gemini3.7flash) MODEL=gemini-3.7-flash;; gemini3.5flash) MODEL=gemini-3.5-flash;; gemini3.5flashlite|gemini-3.5-flash-lite) MODEL=gemini-3.5-flash-lite;; esac
+
+  # v12.2.5 read the authoritative window context before selecting telemetry.
+  CURRENT_WINDOW_MODE="INACTIVE"; CURRENT_WINDOW_EPOCH=0
+  if [ -r "$WINDOW_CTX" ]; then
+    CURRENT_WINDOW_MODE="$(sed -n "s/^WINDOW_MODE='\([^']*\)'.*/\1/p" "$WINDOW_CTX" 2>/dev/null | head -1)"
+    CURRENT_WINDOW_EPOCH="$(sed -n "s/^WINDOW_EPOCH='\([0-9][0-9]*\)'.*/\1/p" "$WINDOW_CTX" 2>/dev/null | head -1)"
+  fi
+  [ -n "$CURRENT_WINDOW_MODE" ] || CURRENT_WINDOW_MODE="INACTIVE"
+  case "$CURRENT_WINDOW_EPOCH" in ''|*[!0-9]*) CURRENT_WINDOW_EPOCH=0;; esac
+
+  # v12.3.0 schema firewall: pre-game-scoped learning is not trusted for autonomous reuse.
+  for _mf in "$LEARNED" "$DYNLEARN" "$EFFMEM" "$HWLEARN"; do
+    [ -r "$_mf" ] || continue
+    _hdr="$(head -n 1 "$_mf" 2>/dev/null)"
+    case "$_hdr" in *,game_id|*,game_id,user_mode) :;; *) mv -f "$_mf" "$_mf.legacy_pre_v1230" 2>/dev/null; plog "LEARNING_QUARANTINE file=${_mf##*/} reason=missing_game_id";; esac
+  done
+
+  # v12.3.0 bind all learned knowledge to the active game before any memory query.
+  GAME_ID="$(cat "$SESSION_GAME" 2>/dev/null)"; [ -n "$GAME_ID" ] || GAME_ID=UNKNOWN
+  # UI6_FIX1: bind the owner mode before every game/window/mode-scoped memory query.
+  USER_MODE="$(cat "$USER_MODE_FILE" 2>/dev/null | tr '[:lower:]' '[:upper:]' | tr -d '\r\n ')"
+  case "$USER_MODE" in SEDANG|MEDIUM|COMFORTABLE) USER_MODE=NYAMAN;; COOL) USER_MODE=DINGIN;; WARM) USER_MODE=HANGAT;; HOT) USER_MODE=PANAS;; AUTO|DINGIN|NYAMAN|HANGAT|PANAS) :;; *) USER_MODE=AUTO;; esac
+
+  # Hardware Knowledge is shared context. AI Agent is the sole hardware executor/truth source;
+  # Gemini is strategic authority and Hermes H2 is the deputy local brain.
+  HWCTX="UNAVAILABLE"
+  if [ -r "$HWFILE" ]; then
+    unset HW_PLATFORM CPU_LITTLE_CORES CPU_BIG_CORES CPU_LITTLE_ARCH CPU_BIG_ARCH CPU_LITTLE_CAPACITY CPU_BIG_CAPACITY CPU_DRIVER LITTLE_OPP_KHZ BIG_OPP_KHZ GPU_OPP_MHZ GPU_GOVERNOR DISPLAY_REFRESH_HZ THERMAL_SKIN_SENSOR POWER_CURRENT_UNIT_POLICY NATIVE_THERMAL_AUTHORITY NETWORK_CONTROL_ALLOWED ARBITRARY_SYSFS_ALLOWED
+    . "$HWFILE" 2>/dev/null
+    HWCTX="platform=${HW_PLATFORM:-UNKNOWN};cpu=${CPU_LITTLE_CORES:-?}x${CPU_LITTLE_ARCH:-little}+${CPU_BIG_CORES:-?}x${CPU_BIG_ARCH:-big};capacity=${CPU_LITTLE_CAPACITY:-?}/${CPU_BIG_CAPACITY:-?};cpu_driver=${CPU_DRIVER:-UNKNOWN};little_opp_khz=${LITTLE_OPP_KHZ:-UNKNOWN};big_opp_khz=${BIG_OPP_KHZ:-UNKNOWN};gpu_opp_mhz=${GPU_OPP_MHZ:-UNKNOWN};gpu_governor=${GPU_GOVERNOR:-UNKNOWN};display_hz=${DISPLAY_REFRESH_HZ:-UNKNOWN};skin_sensor=${THERMAL_SKIN_SENSOR:-UNKNOWN};power_current_policy=${POWER_CURRENT_UNIT_POLICY:-UNKNOWN};native_thermal_authority=${NATIVE_THERMAL_AUTHORITY:-1};network_control_allowed=${NETWORK_CONTROL_ALLOWED:-0};arbitrary_sysfs_allowed=${ARBITRARY_SYSFS_ALLOWED:-0}"
+  fi
+
+  # v12.9.31 Dynamic Kernel Capability Authority.
+  # Live sysfs capability overrides stale/static OPP assumptions for executable choices.
+  KERNELCAPCTX="UNAVAILABLE"
+  MANGOO_NATIVE_CTX="UNAVAILABLE"
+  CROSS_SUBSYSTEM_CTX="UNAVAILABLE"
+  CAUSAL_KERNEL_CTX="UNAVAILABLE"
+  POLICY_CONTINUITY_CTX="UNAVAILABLE"
+  SCHEDULER_INTELLIGENCE_CTX="UNAVAILABLE"
+  _mn=/data/adb/djaeger_ai/mangoo_native_capabilities.tsv
+  if [ -r "$_mn" ]; then MANGOO_NATIVE_CTX="$(awk -F '\t' '$3=="RW"&&$4=="ACTUATOR"{printf "%s=%s;",$2,$5}' "$_mn" 2>/dev/null | cut -c1-6000)"; [ -n "$MANGOO_NATIVE_CTX" ] || MANGOO_NATIVE_CTX="UNAVAILABLE"; fi
+  _si="${0%/*}/system/bin/djaeger-scheduler-intelligence"
+  [ -x "$_si" ] || _si="/system/bin/djaeger-scheduler-intelligence"
+  if [ -x "$_si" ]; then sh "$_si" discover >/dev/null 2>&1; SCHEDULER_INTELLIGENCE_CTX="$(sh "$_si" context 2>/dev/null | cut -c1-5000)"; [ -n "$SCHEDULER_INTELLIGENCE_CTX" ] || SCHEDULER_INTELLIGENCE_CTX="UNAVAILABLE"; fi
+  _ci="${0%/*}/system/bin/djaeger-cross-intelligence"
+  [ -x "$_ci" ] || _ci="/system/bin/djaeger-cross-intelligence"
+  if [ -x "$_ci" ]; then CROSS_SUBSYSTEM_CTX="$(sh "$_ci" collect 2>/dev/null | tr '\n' ' ' | cut -c1-5000)"; [ -n "$CROSS_SUBSYSTEM_CTX" ] || CROSS_SUBSYSTEM_CTX="UNAVAILABLE"; fi
+  _cai="${0%/*}/system/bin/djaeger-causal-intelligence"
+  [ -x "$_cai" ] || _cai="/system/bin/djaeger-causal-intelligence"
+  if [ -x "$_cai" ]; then CAUSAL_KERNEL_CTX="$(sh "$_cai" collect 2>/dev/null | tr '\n' ' ' | cut -c1-5000)"; [ -n "$CAUSAL_KERNEL_CTX" ] || CAUSAL_KERNEL_CTX="UNAVAILABLE"; fi
+  _pci="${0%/*}/system/bin/djaeger-policy-continuity"
+  [ -x "$_pci" ] || _pci="/system/bin/djaeger-policy-continuity"
+  if [ -x "$_pci" ]; then POLICY_CONTINUITY_CTX="$(sh "$_pci" collect 2>/dev/null | tr '\n' ' ' | cut -c1-3200)"; [ -n "$POLICY_CONTINUITY_CTX" ] || POLICY_CONTINUITY_CTX="UNAVAILABLE"; fi
+  if [ -x "$KERNEL_CAPABILITY_BIN" ]; then
+    sh "$KERNEL_CAPABILITY_BIN" discover >/dev/null 2>&1
+    if [ -r "$KERNEL_CAPABILITY_FILE" ]; then
+      KERNELCAPCTX="$(awk -F '\t' '
+        $1=="CPU"{printf "%s{min=%s,max=%s,freqs=[%s],gov=[%s]};",$2,$3,$4,$5,$6}
+        $1=="GPU"{printf "GPU-%s{min_hz=%s,max_hz=%s,freqs_hz=[%s],gov=[%s]};",$2,$3,$4,$5,$6}
+      ' "$KERNEL_CAPABILITY_FILE" 2>/dev/null | cut -c1-10000)"
+      [ -n "$KERNELCAPCTX" ] || KERNELCAPCTX="UNAVAILABLE"
+    fi
+  fi
+
+  # SHAREDINT1: build one canonical DJAEGER intelligence context for both
+  # Gemini and Hermes H2. This expands Gemini evidence; it does NOT constrain
+  # server-side reasoning to Hermes heuristics and does not grant cloud hardware writes.
+  SHARED_INTELLIGENCE_CTX="UNAVAILABLE"
+  SHARED_INTELLIGENCE_BIN="$M/system/bin/djaeger-shared-intelligence"
+  if [ -x "$SHARED_INTELLIGENCE_BIN" ]; then
+    DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$SHARED_INTELLIGENCE_BIN" build >/dev/null 2>&1 || true
+    if [ -r "$P/shared_intelligence.context" ]; then
+      SHARED_INTELLIGENCE_CTX="$(cat "$P/shared_intelligence.context" 2>/dev/null)"
+      [ -n "$SHARED_INTELLIGENCE_CTX" ] || SHARED_INTELLIGENCE_CTX="UNAVAILABLE"
+    fi
+  fi
+
+  # v12.2.7 Hardware Experience Model: compact Pareto-oriented knowledge derived
+  # only from mature, context-valid dynamic outcomes. Physical capability remains immutable.
+  HWLEARNCTX="NONE"
+  if [ -r "$HWLEARN" ]; then
+    HWLEARNCTX="$(awk -F, -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" -v now="$(date +%s)" 'NR>1&&$17==wm&&$18==game&&$19==um&&(now-$1)>=0&&(now-$1)<=1209600{n++;if($16=="EFFICIENT")e++;if($16=="PERFORMANCE")r++;if($16=="THERMAL")t++;if($16=="REJECT")x++;if($12~/^-?[0-9.]+$/)pd+=$12;if($13~/^-?[0-9.]+$/)fd+=$13;if($14~/^-?[0-9.]+$/)sd+=$14}END{if(n)printf "validated=%d efficient=%d performance=%d thermal=%d rejected=%d avg_power_delta_pct=%.1f avg_fps_delta=%.1f avg_skin_delta=%.1f",n,e,r,t,x,pd/n,fd/n,sd/n}' "$HWLEARN" 2>/dev/null)"
+  fi
+  [ -n "$HWLEARNCTX" ] || HWLEARNCTX=NONE
+
+  # v12.2.8 Hardware Response Model: observational sensitivity from mature,
+  # context-isolated hardware experiences. This is advisory evidence only;
+  # it never writes hardware and never overrides Local OPP validation.
+  HWRESPCTX="NONE"
+  if [ -r "$HWLEARN" ]; then
+    HWRESPCTX="$(awk -F, -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" -v now="$(date +%s)" '''
+      NR>1 && $17==wm && $18==game && $19==um && (now-$1)>=0 && (now-$1)>=0&&(now-$1)<=1209600 && $16!="REJECT" && $13~/^-?[0-9.]+$/ && $14~/^-?[0-9.]+$/ {
+        k="L"$4"-"$5"_B"$6"-"$7"_G"$8"-"$9; n[k]++; fps[k]+=$13; skin[k]+=$14;
+        if($12~/^-?[0-9.]+$/){pow[k]+=$12;pn[k]++}
+      }
+      END{
+        c=0; for(k in n) if(n[k]>=2){
+          printf "%s n=%d avg_fps_delta=%.1f avg_skin_delta=%.1f",k,n[k],fps[k]/n[k],skin[k]/n[k];
+          if(pn[k])printf " avg_power_delta_pct=%.1f",pow[k]/pn[k]; printf ";"; c++
+        }
+        if(!c)printf "INSUFFICIENT_REPEATED_RESPONSE_DATA"
+      }''' "$HWLEARN" 2>/dev/null | cut -c1-1800)"
+    [ -n "$HWRESPCTX" ] || HWRESPCTX=NONE
+  fi
+
+  # v12.7.0 Device Hardware Knowledge Model. Gemini receives a compact statement
+  # of how much device-specific evidence exists, so general model knowledge can
+  # fill gaps without being mistaken for measured device behavior.
+  HWKNOWCTX="samples=0 repeated_budgets=0 knowledge_confidence=LOW forecast_calibration=NONE"
+  if [ -r "$HWLEARN" ]; then
+    HWKNOWCTX="$(awk -F, -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" -v now="$(date +%s)" '
+      NR>1&&$17==wm&&$18==game&&$19==um&&(now-$1)>=0&&(now-$1)<=1209600&&$16!="REJECT" {
+        n++; k=$4"-"$5"/"$6"-"$7"/"$8"-"$9; c[k]++
+      }
+      END{r=0;for(k in c)if(c[k]>=2)r++; conf=(n>=12&&r>=3?"HIGH":(n>=4?"MEDIUM":"LOW"));
+          printf "samples=%d repeated_budgets=%d knowledge_confidence=%s",n,r,conf}' "$HWLEARN" 2>/dev/null)"
+    [ -n "$HWKNOWCTX" ] || HWKNOWCTX="samples=0 repeated_budgets=0 knowledge_confidence=LOW"
+  fi
+  if [ -r "$FORESIGHT_CAL" ]; then
+    CALCTX="$(tail -n 20 "$FORESIGHT_CAL" 2>/dev/null | awk -F, 'NR>0&&$2~/^[0-9.]+$/&&$3~/^[0-9.]+$/{n++;se+=$2;fe+=$3}END{if(n)printf " recent_forecasts=%d avg_skin_abs_error=%.2fC avg_fps_abs_error=%.2f",n,se/n,fe/n}')"
+    [ -n "$CALCTX" ] && HWKNOWCTX="$HWKNOWCTX;$CALCTX"
+  fi
+  if [ -r "$RESOURCE_CAL" ]; then
+    RCALCTX="$(tail -n 30 "$RESOURCE_CAL" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" 'NR>1&&$16==wm&&$17==game&&$18==um{n++;if($2~/^[0-9.]+$/){pn++;pe+=$2}if($3~/^[01]$/){pc++;ph+=$3}if($4~/^[0-9.]+$/){p95n++;p95e+=$4}if($5~/^[0-9.]+$/){p99n++;p99e+=$5}if($6~/^[01]$/){c95++;h95+=$6}if($7~/^[01]$/){c99++;h99+=$7}}END{if(n){printf " resource_cal_n=%d",n;if(pn)printf " power_mae_mw=%.0f",pe/pn;if(pc)printf " power_interval_hit=%.0f%%",100*ph/pc;if(p95n)printf " p95_mae_ms=%.2f",p95e/p95n;if(p99n)printf " p99_mae_ms=%.2f",p99e/p99n;if(c95)printf " p95_interval_hit=%.0f%%",100*h95/c95;if(c99)printf " p99_interval_hit=%.0f%%",100*h99/c99}}' )"
+    [ -n "$RCALCTX" ] && HWKNOWCTX="$HWKNOWCTX;$RCALCTX"
+  fi
+
+  # v12.9.20 OPP Sensitivity Model: derive same-game, same-scene one-axis
+  # response evidence from mature hardware outcomes. This lets Gemini estimate
+  # marginal FPS/thermal/power value instead of treating whole envelopes as opaque.
+  OPPSENSCTX="INSUFFICIENT_ONE_AXIS_EVIDENCE"
+  if [ -r "$HWLEARN" ]; then
+    OPPSENSCTX="$(tail -n 100 "$HWLEARN" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" '
+      NR==1{next}
+      $17==wm&&$18==game&&$19==um&&$13~/^-?[0-9.]+$/&&$14~/^-?[0-9.]+$/&&$12~/^-?[0-9.]+$/ {
+        if(have && $2==pscene){
+          d=0; axis=""; from=""; to="";
+          if($4!=p4){d++;axis="Lmin";from=p4;to=$4} if($5!=p5){d++;axis="Lmax";from=p5;to=$5}
+          if($6!=p6){d++;axis="Bmin";from=p6;to=$6} if($7!=p7){d++;axis="Bmax";from=p7;to=$7}
+          if($8!=p8){d++;axis="Gmin";from=p8;to=$8} if($9!=p9){d++;axis="Gmax";from=p9;to=$9}
+          if(d==1){k=axis":"from">"to; n[k]++; df[k]+=($13-p13); ds[k]+=($14-p14); dp[k]+=($12-p12)}
+        }
+        have=1; pscene=$2;p4=$4;p5=$5;p6=$6;p7=$7;p8=$8;p9=$9;p12=$12;p13=$13;p14=$14
+      }
+      END{c=0;for(k in n){printf "%s n=%d marginal_fps=%+.2f marginal_skin=%+.2fC marginal_power=%+.1f%%;",k,n[k],df[k]/n[k],ds[k]/n[k],dp[k]/n[k];c++} if(!c)printf "INSUFFICIENT_ONE_AXIS_EVIDENCE"}' | cut -c1-1800)"
+  fi
+
+  # v12.9.1 refresh before Gemini reasoning.
+  refresh_device_knowledge "$CURRENT_WINDOW_MODE" "$GAME_ID"
+  # About 4-5 minutes of recent local history; enough for trend analysis while reducing Free Tier input.
+  NETWORKCTX="UNAVAILABLE"
+  if [ -r "$P/network_state" ]; then
+    _net_at=$(sed -n "s/^UPDATED_AT='\([0-9][0-9]*\)'.*/\1/p" "$P/network_state" | head -1)
+    _net_active=$(sed -n "s/^SESSION_ACTIVE='\([^']*\)'.*/\1/p" "$P/network_state" | head -1)
+    _net_sid=$(sed -n "s/^SESSION_ID='\([^']*\)'.*/\1/p" "$P/network_state" | head -1)
+    _cur_sid=$(cat "$P/session_id" 2>/dev/null)
+    _net_now=$(date +%s); _net_age=999999
+    case "$_net_at" in ''|*[!0-9]*) :;; *) _net_age=$((_net_now-_net_at));; esac
+    # Fail closed: Gemini receives network context only when it belongs to the
+    # current active session and is fresh enough for causal diagnosis.
+    if [ "$_net_active" = 1 ] && [ -n "$_cur_sid" ] && [ "$_net_sid" = "$_cur_sid" ] && [ "$_net_age" -ge 0 ] 2>/dev/null && [ "$_net_age" -le 30 ] 2>/dev/null; then
+      NETWORKCTX="$(tr '\n' ';' <"$P/network_state" 2>/dev/null | cut -c1-1200)"
+      [ -n "$NETWORKCTX" ] || NETWORKCTX="UNAVAILABLE"
+    fi
+  fi
+  # REBUILD3 token policy: Gemini sees the Agent's compact authoritative truth,
+  # not a raw per-second telemetry dump. The cloud cadence is event/delta-driven below.
+  D=""; _actx_age=999999
+  if [ -r "$AGENT_COMPACT" ]; then
+    _actx_at="$(sed -n "s/^AT='\([0-9][0-9]*\)'.*/\1/p" "$AGENT_COMPACT" 2>/dev/null | head -1)"
+    case "$_actx_at" in ''|*[!0-9]*) :;; *) _actx_age=$(($(date +%s)-_actx_at));; esac
+    if [ "$_actx_age" -ge 0 ] 2>/dev/null && [ "$_actx_age" -le 30 ] 2>/dev/null; then
+      D="$(tr '\n' ';' <"$AGENT_COMPACT" 2>/dev/null | cut -c1-3000)"
+    fi
+  fi
+  if [ -z "$D" ]; then
+    D="FALLBACK_AGGREGATE:$(tail -n 16 "$TEL" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v we="$CURRENT_WINDOW_EPOCH" '$1~/^[0-9]+$/ && $23==wm && $24==we{n++;skin+=$4;fps+=$11;p95+=$13;p99+=$14;jank+=$12;last=$0}END{if(n)printf "n=%d;skin=%.1f;fps=%.1f;p95=%.1f;p99=%.1f;jank=%.1f;last=%s",n,skin/n,fps/n,p95/n,p99/n,jank/n,last}' | cut -c1-1800)"
+  fi
+  [ -n "$D" ] || return 13
+
+
+  # v10.5 Context Learning: infer a privacy-preserving workload/scene fingerprint
+  # from telemetry only. It does NOT inspect game files, map names, network, APK,
+  # memory, or process internals. Similar maps/workloads can naturally converge
+  # on the same fingerprint and become recognizable over repeated sessions.
+  CTX="$(tail -n 60 "$TEL" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v we="$CURRENT_WINDOW_EPOCH" '$1~/^[0-9]+$/ && $23==wm && $24==we {
+    n++; if(n==1){first_skin=$4; first_fps=$11}
+      last_skin=$4; last_fps=$11
+      if($2~/^[0-9.]+$/){cpu+=$2;cn++} if($3~/^[0-9.]+$/){gpu+=$3;gn++}
+      if($4~/^[0-9.]+$/){skin+=$4;sn++} if($11~/^[0-9.]+$/){fps+=$11;fn++}
+      if($13~/^[0-9.]+$/){p95+=$13;p95n++} if($14~/^[0-9.]+$/){p99+=$14;p99n++}
+    }
+    END{
+      af=(fn?fps/fn:0); as=(sn?skin/sn:0); ac=(cn?cpu/cn:0); ag=(gn?gpu/gn:0); a95=(p95n?p95/p95n:0); a99=(p99n?p99/p99n:0)
+      ds=(last_skin~/^[0-9.]+$/ && first_skin~/^[0-9.]+$/ ? last_skin-first_skin:0)
+      if(af>=55) fb="F3"; else if(af>=42) fb="F2"; else fb="F1"
+      if(a99>=50) jb="J3"; else if(a95>=33) jb="J2"; else jb="J1"
+      if(as>=43) hb="H3"; else if(as>=41) hb="H2"; else hb="H1"
+      if(ds>=1) mb="UP"; else if(ds<=-1) mb="DOWN"; else mb="FLAT"
+      printf "%s_%s_%s_%s %.1f %.1f %.1f %.1f %.1f %.1f %.1f",hb,fb,jb,mb,as,af,ac,ag,a95,a99,ds
+    }')"
+  SCENE_ID="$(printf '%s' "$CTX"|awk '{print $1}')"
+  AVG_SKIN="$(printf '%s' "$CTX"|awk '{print $2}')"; AVG_FPS="$(printf '%s' "$CTX"|awk '{print $3}')"
+  AVG_CPU="$(printf '%s' "$CTX"|awk '{print $4}')"; AVG_GPU="$(printf '%s' "$CTX"|awk '{print $5}')"
+  AVG_P95="$(printf '%s' "$CTX"|awk '{print $6}')"; AVG_P99="$(printf '%s' "$CTX"|awk '{print $7}')"; SKIN_MOM="$(printf '%s' "$CTX"|awk '{print $8}')"
+  HOUR="$(date +%H | sed 's/^0//')"; [ -n "$HOUR" ] || HOUR=0
+  if [ "$HOUR" -ge 5 ] && [ "$HOUR" -lt 11 ]; then TIME_BUCKET=MORNING
+  elif [ "$HOUR" -ge 11 ] && [ "$HOUR" -lt 17 ]; then TIME_BUCKET=DAY
+  elif [ "$HOUR" -ge 17 ] && [ "$HOUR" -lt 22 ]; then TIME_BUCKET=EVENING
+  else TIME_BUCKET=NIGHT; fi
+  SS="$(cat "$SESSION_START" 2>/dev/null)"; NOWCTX="$(date +%s)"
+  case "$SS" in ''|*[!0-9]*) SESSION_AGE=0;; *) SESSION_AGE=$((NOWCTX-SS)); [ "$SESSION_AGE" -lt 0 ] && SESSION_AGE=0;; esac
+  GAME_ID="$(cat "$SESSION_GAME" 2>/dev/null)"; [ -n "$GAME_ID" ] || GAME_ID=UNKNOWN
+  printf "SCENE_ID='%s'\nTIME_BUCKET='%s'\nSESSION_AGE='%s'\nGAME_ID='%s'\nAVG_SKIN='%s'\nAVG_FPS='%s'\nAVG_P95='%s'\nAVG_P99='%s'\nSKIN_MOMENTUM='%s'\nUPDATED_AT='%s'\n" "$SCENE_ID" "$TIME_BUCKET" "$SESSION_AGE" "$GAME_ID" "$AVG_SKIN" "$AVG_FPS" "$AVG_P95" "$AVG_P99" "$SKIN_MOM" "$NOWCTX" >"$SCENE_STATE.tmp" && { chmod 600 "$SCENE_STATE.tmp"; mv -f "$SCENE_STATE.tmp" "$SCENE_STATE"; }
+
+  # v12.2.5 context-isolated evaluation. The controller increments this epoch
+  # whenever FOREGROUND/MULTIWINDOW context changes. A plan may only teach Local
+  # AI if the context epoch and mode are unchanged for its observation window.
+
+  # v10.2 feedback: compare the previous 2-minute forecast with recent observed
+  # telemetry. This is advisory context only and never writes hardware.
+  FB="NONE"
+  if [ -r "$POL" ]; then
+    unset SKIN_FORECAST_2M FPS_FORECAST_2M FORESIGHT_FPS_LOW FORESIGHT_FPS_HIGH FORESIGHT_SKIN_LOW_C FORESIGHT_SKIN_HIGH_C FORESIGHT_POWER_LOW_MW FORESIGHT_POWER_HIGH_MW FORESIGHT_P95_LOW_MS FORESIGHT_P95_HIGH_MS FORESIGHT_P99_LOW_MS FORESIGHT_P99_HIGH_MS FORESIGHT_CONFIDENCE POLICY_AT POLICY_SCENE_ID POLICY_TIME_BUCKET POLICY_SESSION_AGE POLICY_CONTROL_MODE POLICY_LITTLE_MIN POLICY_LITTLE_MAX POLICY_BIG_MIN POLICY_BIG_MAX POLICY_GPU_MIN POLICY_GPU_MAX POLICY_WINDOW_MODE POLICY_WINDOW_EPOCH REVIEW_SECONDS POLICY_ACTION POLICY_PROFILE POLICY_BASE_SKIN POLICY_BASE_FPS POLICY_BASE_P95 POLICY_BASE_P99 POLICY_BASE_POWER_MW POLICY_OPERATING_INTENT
+    # v12.6.0: predictor also treats predictive_policy strictly as DATA.
+    # Never source/eval a policy file, including for outcome learning.
+    pget(){ awk -v k="$1" 'index($0,k"=\047")==1 && substr($0,length($0),1)=="\047" {v=substr($0,length(k)+3,length($0)-length(k)-3); print v; exit}' "$POL" 2>/dev/null; }
+    for _k in SKIN_FORECAST_2M FPS_FORECAST_2M FORESIGHT_FPS_LOW FORESIGHT_FPS_HIGH FORESIGHT_SKIN_LOW_C FORESIGHT_SKIN_HIGH_C FORESIGHT_POWER_LOW_MW FORESIGHT_POWER_HIGH_MW FORESIGHT_P95_LOW_MS FORESIGHT_P95_HIGH_MS FORESIGHT_P99_LOW_MS FORESIGHT_P99_HIGH_MS FORESIGHT_CONFIDENCE POLICY_AT POLICY_SCENE_ID POLICY_TIME_BUCKET POLICY_SESSION_AGE POLICY_CONTROL_MODE POLICY_LITTLE_MIN POLICY_LITTLE_MAX POLICY_BIG_MIN POLICY_BIG_MAX POLICY_GPU_MIN POLICY_GPU_MAX POLICY_WINDOW_MODE POLICY_WINDOW_EPOCH REVIEW_SECONDS POLICY_ACTION POLICY_PROFILE POLICY_BASE_SKIN POLICY_BASE_FPS POLICY_BASE_P95 POLICY_BASE_P99 POLICY_BASE_POWER_MW POLICY_OPERATING_INTENT; do
+      _v="$(pget "$_k")"
+      case "$_k" in
+        SKIN_FORECAST_2M) SKIN_FORECAST_2M="$_v";; FPS_FORECAST_2M) FPS_FORECAST_2M="$_v";; FORESIGHT_FPS_LOW) FORESIGHT_FPS_LOW="$_v";; FORESIGHT_FPS_HIGH) FORESIGHT_FPS_HIGH="$_v";; FORESIGHT_SKIN_LOW_C) FORESIGHT_SKIN_LOW_C="$_v";; FORESIGHT_SKIN_HIGH_C) FORESIGHT_SKIN_HIGH_C="$_v";; FORESIGHT_POWER_LOW_MW) FORESIGHT_POWER_LOW_MW="$_v";; FORESIGHT_POWER_HIGH_MW) FORESIGHT_POWER_HIGH_MW="$_v";; FORESIGHT_P95_LOW_MS) FORESIGHT_P95_LOW_MS="$_v";; FORESIGHT_P95_HIGH_MS) FORESIGHT_P95_HIGH_MS="$_v";; FORESIGHT_P99_LOW_MS) FORESIGHT_P99_LOW_MS="$_v";; FORESIGHT_P99_HIGH_MS) FORESIGHT_P99_HIGH_MS="$_v";; FORESIGHT_CONFIDENCE) FORESIGHT_CONFIDENCE="$_v";; POLICY_AT) POLICY_AT="$_v";; POLICY_SCENE_ID) POLICY_SCENE_ID="$_v";; POLICY_TIME_BUCKET) POLICY_TIME_BUCKET="$_v";; POLICY_SESSION_AGE) POLICY_SESSION_AGE="$_v";; POLICY_CONTROL_MODE) POLICY_CONTROL_MODE="$_v";; POLICY_LITTLE_MIN) POLICY_LITTLE_MIN="$_v";; POLICY_LITTLE_MAX) POLICY_LITTLE_MAX="$_v";; POLICY_BIG_MIN) POLICY_BIG_MIN="$_v";; POLICY_BIG_MAX) POLICY_BIG_MAX="$_v";; POLICY_GPU_MIN) POLICY_GPU_MIN="$_v";; POLICY_GPU_MAX) POLICY_GPU_MAX="$_v";; POLICY_WINDOW_MODE) POLICY_WINDOW_MODE="$_v";; POLICY_WINDOW_EPOCH) POLICY_WINDOW_EPOCH="$_v";; REVIEW_SECONDS) REVIEW_SECONDS="$_v";; POLICY_ACTION) POLICY_ACTION="$_v";; POLICY_PROFILE) POLICY_PROFILE="$_v";; POLICY_BASE_SKIN) POLICY_BASE_SKIN="$_v";; POLICY_BASE_FPS) POLICY_BASE_FPS="$_v";; POLICY_BASE_P95) POLICY_BASE_P95="$_v";; POLICY_BASE_P99) POLICY_BASE_P99="$_v";; POLICY_BASE_POWER_MW) POLICY_BASE_POWER_MW="$_v";; POLICY_OPERATING_INTENT) POLICY_OPERATING_INTENT="$_v";;
+      esac
+    done
+    case "${POLICY_AT:-}" in ''|*[!0-9]*) plog "POLICY_QUARANTINE reason=INVALID_POLICY_AT NO_DISTILL=1"; CONTEXT_VALID=0;; *) CONTEXT_VALID=1;; esac
+    [ "${POLICY_WINDOW_MODE:-UNKNOWN}" = "$CURRENT_WINDOW_MODE" ] || CONTEXT_VALID=0
+    case "${POLICY_WINDOW_EPOCH:-}" in ''|*[!0-9]*) CONTEXT_VALID=0;; *) [ "$POLICY_WINDOW_EPOCH" = "$CURRENT_WINDOW_EPOCH" ] || CONTEXT_VALID=0;; esac
+    NOW_EVAL="$(date +%s)"; REVIEW_GATE="${REVIEW_SECONDS:-60}"
+    case "$REVIEW_GATE" in ''|*[!0-9]*) REVIEW_GATE=60;; esac
+    [ "$REVIEW_GATE" -lt 30 ] && REVIEW_GATE=30; [ "$REVIEW_GATE" -gt 150 ] && REVIEW_GATE=150
+    POLICY_AGE=$((NOW_EVAL-${POLICY_AT:-0})); [ "$POLICY_AGE" -lt 0 ] && POLICY_AGE=0
+    # v12.2.5 exact review-window contract: a 30-150s Gemini review request
+    # is evaluated only inside that requested interval, never over the entire
+    # 180s predictor sleep. Require telemetry coverage near the interval end so
+    # three early samples cannot falsely mature an outcome after a later gap.
+    REVIEW_END=$((${POLICY_AT:-0}+REVIEW_GATE)); COVERAGE_FLOOR=$((REVIEW_END-15))
+    OBS_META="$(tail -n 80 "$TEL" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v we="$CURRENT_WINDOW_EPOCH" -v pa="${POLICY_AT:-0}" -v pe="$REVIEW_END" '$1>=pa && $1<=pe && $23==wm && $24==we && $4~/^[0-9.]+$/ && $11~/^[0-9.]+$/{n++;last=$1}END{print n+0, last+0}')"
+    OBS_COUNT="$(printf '%s' "$OBS_META"|awk '{print $1}')"; OBS_LAST="$(printf '%s' "$OBS_META"|awk '{print $2}')"
+    OUTCOME_COVERED=0; [ "${OBS_LAST:-0}" -ge "$COVERAGE_FLOOR" ] && OUTCOME_COVERED=1
+    OUTCOME_MATURE=0; [ "$POLICY_AGE" -ge "$REVIEW_GATE" ] && [ "$OBS_COUNT" -ge 3 ] && [ "$OUTCOME_COVERED" -eq 1 ] && OUTCOME_MATURE=1
+    # r20 Execution Attribution Integrity: an EXECUTE proposal may teach Gemini/Hermes learning
+    # only when the post-write verifier explicitly names this exact decision/policy id and confirms requested-vs-actual kernel read-back equality.
+    # A mature telemetry window alone is not proof that the proposed transaction ran.
+    EXEC_ATTRIBUTION=OBSERVATION_ONLY; EXEC_VERIFY_AT=0; EXEC_FEEDBACK_POLICY_AT=NONE; EXEC_FEEDBACK_STATUS=NONE
+    EFFECTIVE_LMIN="${POLICY_LITTLE_MIN:-NA}"; EFFECTIVE_LMAX="${POLICY_LITTLE_MAX:-NA}"
+    EFFECTIVE_BMIN="${POLICY_BIG_MIN:-NA}"; EFFECTIVE_BMAX="${POLICY_BIG_MAX:-NA}"
+    EFFECTIVE_GMIN="${POLICY_GPU_MIN:-NA}"; EFFECTIVE_GMAX="${POLICY_GPU_MAX:-NA}"
+    # ATTR1 execution attribution: prefer immutable decision-keyed V2 history.
+    # The single resource_execution_feedback file remains the latest snapshot only.
+    _el=''; _eb=''; _eg=''; _history_hit=0
+    if [ -r "$RESOURCE_EXECUTION_HISTORY" ]; then
+      _ehr="$(tail -n 400 "$RESOURCE_EXECUTION_HISTORY" 2>/dev/null | awk -F '\t' -v p="${POLICY_AT:-NONE}" '$1=="V2"&&$3==p{r=$0}END{print r}')"
+      if [ -n "$_ehr" ]; then
+        EXEC_VERIFY_AT="$(printf '%s\n' "$_ehr"|awk -F '\t' '{print $2}')"
+        EXEC_FEEDBACK_POLICY_AT="$(printf '%s\n' "$_ehr"|awk -F '\t' '{print $3}')"
+        EXEC_FEEDBACK_STATUS="$(printf '%s\n' "$_ehr"|awk -F '\t' '{print $4}')"
+        _el="$(printf '%s\n' "$_ehr"|awk -F '\t' '{print $5}')"
+        _eb="$(printf '%s\n' "$_ehr"|awk -F '\t' '{print $6}')"
+        _eg="$(printf '%s\n' "$_ehr"|awk -F '\t' '{print $7}')"
+        _history_hit=1
+      fi
+    fi
+    if [ "$_history_hit" -eq 0 ] && [ -r "$RESOURCE_EXECUTION_FEEDBACK" ]; then
+      eget(){ awk -v k="$1" 'index($0,k"=\047")==1&&substr($0,length($0),1)=="\047"{print substr($0,length(k)+3,length($0)-length(k)-3);exit}' "$RESOURCE_EXECUTION_FEEDBACK" 2>/dev/null; }
+      _cur_policy="$(eget POLICY_AT)"
+      if [ "$_cur_policy" = "${POLICY_AT:-NONE}" ]; then
+        EXEC_FEEDBACK_POLICY_AT="$_cur_policy"; EXEC_FEEDBACK_STATUS="$(eget EXECUTION_STATUS)"; EXEC_VERIFY_AT="$(eget VERIFY_AT)"
+        _el="$(eget ACTUAL_LITTLE)"; _eb="$(eget ACTUAL_BIG)"; _eg="$(eget ACTUAL_GPU)"
+      else
+        EXEC_FEEDBACK_POLICY_AT="${_cur_policy:-NONE}"
+      fi
+    fi
+    case "$EXEC_VERIFY_AT" in ''|*[!0-9]*) EXEC_VERIFY_AT=0;; esac
+    case "$_el" in *-*) EFFECTIVE_LMIN="${_el%%-*}"; EFFECTIVE_LMAX="${_el#*-}";; esac
+    case "$_eb" in *-*) EFFECTIVE_BMIN="${_eb%%-*}"; EFFECTIVE_BMAX="${_eb#*-}";; esac
+    case "$_eg" in *-*)
+      _egmin="${_eg%%-*}"; _egmax="${_eg#*-}"
+      _egmin_mhz="$(gpu_unit_to_mhz "$_egmin")"; _egrc1=$?; _egmax_mhz="$(gpu_unit_to_mhz "$_egmax")"; _egrc2=$?
+      if [ "$_egrc1" -eq 0 ] && [ "$_egrc2" -eq 0 ]; then EFFECTIVE_GMIN="$_egmin_mhz"; EFFECTIVE_GMAX="$_egmax_mhz"; else plog "GPU_READBACK_UNIT_REJECT actual=$_eg FALLBACK_TO_POLICY=1"; fi;; esac
+    if [ "${POLICY_ACTION:-NA}" = EXECUTE ]; then
+      EXEC_ATTRIBUTION=UNVERIFIED
+      if [ "$EXEC_FEEDBACK_POLICY_AT" = "${POLICY_AT:-NONE}" ] && { [ "$EXEC_FEEDBACK_STATUS" = VERIFIED_MATCH ] || [ "$EXEC_FEEDBACK_STATUS" = VERIFIED_CLAMPED ]; } && [ "$EXEC_VERIFY_AT" -ge "${POLICY_AT:-0}" ] 2>/dev/null; then
+        EXEC_ATTRIBUTION=VERIFIED
+      else
+        OUTCOME_MATURE=0
+        _unattr_id="${POLICY_AT:-NONE}"; _last_unattr="$(cat "$EXEC_ATTR_LOG_STATE" 2>/dev/null)"
+        if [ "$_last_unattr" != "$_unattr_id" ]; then
+          plog "OUTCOME_EXECUTION_UNATTRIBUTED decision_id=${POLICY_AT:-NONE} feedback_policy=$EXEC_FEEDBACK_POLICY_AT feedback_status=$EXEC_FEEDBACK_STATUS verify_at=$EXEC_VERIFY_AT history_hit=$_history_hit NO_DISTILL=1 NO_HARDWARE_LEARNING=1"
+          printf '%s\n' "$_unattr_id" >"$EXEC_ATTR_LOG_STATE.tmp.$$" 2>/dev/null && chmod 600 "$EXEC_ATTR_LOG_STATE.tmp.$$" 2>/dev/null && mv -f "$EXEC_ATTR_LOG_STATE.tmp.$$" "$EXEC_ATTR_LOG_STATE"
+        fi
+      fi
+    fi
+    _eatmp="$P/execution_attribution_state.tmp.$$"
+    printf "UPDATED_AT='%s'\nDECISION_ID='%s'\nPOLICY_ACTION='%s'\nATTRIBUTION='%s'\nFEEDBACK_POLICY_AT='%s'\nFEEDBACK_STATUS='%s'\nVERIFY_AT='%s'\n" "$(date +%s)" "${POLICY_AT:-NONE}" "${POLICY_ACTION:-NA}" "$EXEC_ATTRIBUTION" "$EXEC_FEEDBACK_POLICY_AT" "$EXEC_FEEDBACK_STATUS" "$EXEC_VERIFY_AT" >"$_eatmp" 2>/dev/null && chmod 600 "$_eatmp" 2>/dev/null && mv -f "$_eatmp" "$P/execution_attribution_state"
+    # v12.6.0: aggregate only rows that satisfy the SAME validity contract used
+    # by OBS_META. The v12.4.1 awk block missed its closing action brace, causing
+    # awk to fail and OS/OF to become empty strings even while maturity passed.
+    OBS="$(tail -n 80 "$TEL" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v we="$CURRENT_WINDOW_EPOCH" -v pa="${POLICY_AT:-0}" -v pe="$REVIEW_END" '$1>=pa && $1<=pe && $23==wm && $24==we && $4~/^[0-9.]+$/ && $11~/^[0-9.]+$/ {ss+=$4;sn++;fs+=$11;fn++;if($13~/^[0-9.]+$/){p95+=$13;n95++}if($14~/^[0-9.]+$/){p99+=$14;n99++}} END{printf "%s %s %s %s", (sn?sprintf("%.1f",ss/sn):"NA"), (fn?sprintf("%.1f",fs/fn):"NA"), (n95?sprintf("%.2f",p95/n95):"NA"), (n99?sprintf("%.2f",p99/n99):"NA")}')"
+    OS="$(printf '%s' "$OBS"|awk '{print $1}')"; OF="$(printf '%s' "$OBS"|awk '{print $2}')"; OP95="$(printf '%s' "$OBS"|awk '{print $3}')"; OP99="$(printf '%s' "$OBS"|awk '{print $4}')"; OP="$(tail -n 80 "$TEL" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v we="$CURRENT_WINDOW_EPOCH" -v pa="${POLICY_AT:-0}" -v pe="$REVIEW_END" '$1>=pa && $1<=pe && $23==wm && $24==we && $19~/^[0-9]+$/ && $20=="VALID"{s+=$19;n++}END{if(n)printf "%.0f",s/n;else print "NA"}')"
+    # v12.6.0 fail-closed observation integrity gate. Empty/NA/non-numeric
+    # observations can NEVER become SUCCESS/FAILED, deltas, or learned evidence.
+    OBS_VALID=1
+    case "$OS" in ''|NA|*[!0-9.]*) OBS_VALID=0;; esac
+    case "$OF" in ''|NA|*[!0-9.]*) OBS_VALID=0;; esac
+    [ "$OBS_VALID" -eq 1 ] || OUTCOME_MATURE=0
+    SE="NA"; FE="NA"
+    case "${SKIN_FORECAST_2M:-}" in ''|NA|*[!0-9]*) ;; *) [ "$OS" != NA ] && SE="$(awk "BEGIN{printf \"%.1f\",$OS-${SKIN_FORECAST_2M}}")";; esac
+    case "${FPS_FORECAST_2M:-}" in ''|NA|*[!0-9]*) ;; *) [ "$OF" != NA ] && FE="$(awk "BEGIN{printf \"%.1f\",$OF-${FPS_FORECAST_2M}}")";; esac
+    FB="previous_skin_forecast=${SKIN_FORECAST_2M:-NA}, observed_recent_skin=$OS, skin_error_actual_minus_forecast=$SE; previous_fps_forecast=${FPS_FORECAST_2M:-NA}, observed_recent_fps=$OF, fps_error_actual_minus_forecast=$FE. Calibrate the next forecast using this error; do not chase a single noisy sample."
+    [ "$CONTEXT_VALID" -eq 0 ] && FB="previous forecast outcome invalidated because window context changed; do not calibrate from that mixed-context observation."
+    printf "OBS_SKIN='%s'\nOBS_FPS='%s'\nSKIN_ERROR='%s'\nFPS_ERROR='%s'\nFEEDBACK_AT='%s'\n" "$OS" "$OF" "$SE" "$FE" "$(date +%s)" >"$FEEDBACK.tmp" 2>/dev/null && { chmod 600 "$FEEDBACK.tmp" 2>/dev/null; mv -f "$FEEDBACK.tmp" "$FEEDBACK"; }
+
+    # v10.4 Outcome Memory: one compact outcome per completed forecast.
+    LAST_EVAL="$(cat "$MEMLAST" 2>/dev/null)"
+    if [ -n "${POLICY_AT:-}" ] && [ "$LAST_EVAL" != "$POLICY_AT" ] && [ "$CONTEXT_VALID" -eq 0 ]; then
+      printf "%s\n" "$POLICY_AT" >"$MEMLAST.tmp.$$" && chmod 600 "$MEMLAST.tmp.$$" 2>/dev/null && mv -f "$MEMLAST.tmp.$$" "$MEMLAST"
+      plog "OUTCOME_INVALIDATED_CONTEXT policy_mode=${POLICY_WINDOW_MODE:-UNKNOWN} current_mode=$CURRENT_WINDOW_MODE policy_epoch=${POLICY_WINDOW_EPOCH:-NA} current_epoch=$CURRENT_WINDOW_EPOCH NO_DISTILL=1"
+    fi
+    if [ -n "${POLICY_AT:-}" ] && [ "$LAST_EVAL" != "$POLICY_AT" ] && [ "$CONTEXT_VALID" -eq 1 ] && [ "$POLICY_AGE" -ge "$REVIEW_GATE" ] && [ "$OBS_VALID" -eq 0 ]; then
+      plog "OUTCOME_INVALID_OBSERVATION obs_skin=${OS:-EMPTY} obs_fps=${OF:-EMPTY} samples=$OBS_COUNT NO_DISTILL=1 NO_HARDWARE_LEARNING=1"
+    fi
+    if [ -n "${POLICY_AT:-}" ] && [ "$LAST_EVAL" != "$POLICY_AT" ] && [ "$CONTEXT_VALID" -eq 1 ] && [ "$OUTCOME_MATURE" -eq 0 ]; then
+      plog "OUTCOME_PENDING policy_age=${POLICY_AGE}s review_gate=${REVIEW_GATE}s samples=$OBS_COUNT min_samples=3 coverage=${OUTCOME_COVERED} obs_valid=$OBS_VALID last_sample=${OBS_LAST:-0} coverage_floor=$COVERAGE_FLOOR NO_DISTILL=1"
+    fi
+    if [ -n "${POLICY_AT:-}" ] && [ "$LAST_EVAL" != "$POLICY_AT" ] && [ "$CONTEXT_VALID" -eq 1 ] && [ "$OUTCOME_MATURE" -eq 1 ]; then
+      ROW="$POLICY_AT,${POLICY_ACTION:-NA},${POLICY_PROFILE:-NA},${SKIN_FORECAST_2M:-NA},${FPS_FORECAST_2M:-NA},$OS,$OF,$SE,$FE,${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${GAME_ID:-UNKNOWN},${POLICY_USER_MODE:-AUTO}"
+      csv_upsert_policy "$MEMORY" 25 "policy_at,action,profile,skin_fc,fps_fc,obs_skin,obs_fps,skin_err,fps_err,window_mode,game_id,user_mode" "$ROW" "$POLICY_AT" || { plog "PERSISTENCE_FAIL memory=$MEMORY NO_DISTILL=1"; return; }
+      chmod 600 "$MEMORY" 2>/dev/null
+      plog "OUTCOME action=${POLICY_ACTION:-NA} profile=${POLICY_PROFILE:-NA} skin_fc=${SKIN_FORECAST_2M:-NA} skin_obs=$OS skin_err=$SE fps_fc=${FPS_FORECAST_2M:-NA} fps_obs=$OF fps_err=$FE"
+      # v12.7.0 calibration memory: prediction error is measured only after the
+      # same mature/context-valid observation gate as all other learning.
+      _sa=NA; _fa=NA; case "$SE" in ''|NA|*[!0-9.-]*) :;; *) _sa="$(awk -v x="$SE" 'BEGIN{if(x<0)x=-x;printf "%.2f",x}')";; esac
+      case "$FE" in ''|NA|*[!0-9.-]*) :;; *) _fa="$(awk -v x="$FE" 'BEGIN{if(x<0)x=-x;printf "%.2f",x}')";; esac
+      if [ "$_sa" != NA ] && [ "$_fa" != NA ]; then
+        csv_upsert_policy "$FORESIGHT_CAL" 80 "policy_at,skin_abs_error,fps_abs_error,fps_low,fps_high,skin_low,skin_high,foresight_confidence,window_mode,game_id" "$POLICY_AT,$_sa,$_fa,${FORESIGHT_FPS_LOW:-NA},${FORESIGHT_FPS_HIGH:-NA},${FORESIGHT_SKIN_LOW_C:-NA},${FORESIGHT_SKIN_HIGH_C:-NA},${FORESIGHT_CONFIDENCE:-NA},${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${GAME_ID:-UNKNOWN}" "$POLICY_AT" || plog "PERSISTENCE_FAIL memory=$FORESIGHT_CAL"
+      fi
+      # v12.9.19 Resource Calibration: calibrate power and frame-tail forecasts
+      # only from the same mature, context-valid observation window.
+      _pmae=NA; _phit=NA; _p95mae=NA; _p99mae=NA; _p95hit=NA; _p99hit=NA
+      if [ "$OP" != NA ] && [ "${FORESIGHT_POWER_LOW_MW:-NA}" != NA ] && [ "${FORESIGHT_POWER_HIGH_MW:-NA}" != NA ]; then
+        _pmid=$(( (FORESIGHT_POWER_LOW_MW + FORESIGHT_POWER_HIGH_MW) / 2 )); _pmae="$(awk -v a="$OP" -v b="$_pmid" 'BEGIN{x=a-b;if(x<0)x=-x;printf "%.0f",x}')"; _phit="$(awk -v x="$OP" -v lo="$FORESIGHT_POWER_LOW_MW" -v hi="$FORESIGHT_POWER_HIGH_MW" 'BEGIN{print (x>=lo&&x<=hi)?1:0}')"
+      fi
+      if [ "$OP95" != NA ] && [ "${FORESIGHT_P95_LOW_MS:-NA}" != NA ] && [ "${FORESIGHT_P95_HIGH_MS:-NA}" != NA ]; then
+        _m="$(awk -v a="$FORESIGHT_P95_LOW_MS" -v b="$FORESIGHT_P95_HIGH_MS" 'BEGIN{printf "%.3f",(a+b)/2}')"; _p95mae="$(awk -v a="$OP95" -v b="$_m" 'BEGIN{x=a-b;if(x<0)x=-x;printf "%.2f",x}')"; _p95hit="$(awk -v x="$OP95" -v lo="$FORESIGHT_P95_LOW_MS" -v hi="$FORESIGHT_P95_HIGH_MS" 'BEGIN{print (x>=lo&&x<=hi)?1:0}')"
+      fi
+      if [ "$OP99" != NA ] && [ "${FORESIGHT_P99_LOW_MS:-NA}" != NA ] && [ "${FORESIGHT_P99_HIGH_MS:-NA}" != NA ]; then
+        _m="$(awk -v a="$FORESIGHT_P99_LOW_MS" -v b="$FORESIGHT_P99_HIGH_MS" 'BEGIN{printf "%.3f",(a+b)/2}')"; _p99mae="$(awk -v a="$OP99" -v b="$_m" 'BEGIN{x=a-b;if(x<0)x=-x;printf "%.2f",x}')"; _p99hit="$(awk -v x="$OP99" -v lo="$FORESIGHT_P99_LOW_MS" -v hi="$FORESIGHT_P99_HIGH_MS" 'BEGIN{print (x>=lo&&x<=hi)?1:0}')"      fi
+      _rcrow="$POLICY_AT,$_pmae,$_phit,$_p95mae,$_p99mae,$_p95hit,$_p99hit,${FORESIGHT_POWER_LOW_MW:-NA},${FORESIGHT_POWER_HIGH_MW:-NA},${FORESIGHT_P95_LOW_MS:-NA},${FORESIGHT_P95_HIGH_MS:-NA},${FORESIGHT_P99_LOW_MS:-NA},${FORESIGHT_P99_HIGH_MS:-NA},${FORESIGHT_CONFIDENCE:-NA},${POLICY_OPERATING_INTENT:-BALANCED},${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${GAME_ID:-UNKNOWN}"
+      csv_upsert_policy "$RESOURCE_CAL" 120 "policy_at,power_abs_error_mw,power_interval_hit,p95_abs_error_ms,p99_abs_error_ms,p95_interval_hit,p99_interval_hit,power_low_mw,power_high_mw,p95_low_ms,p95_high_ms,p99_low_ms,p99_high_ms,foresight_confidence,operating_intent,window_mode,game_id" "$_rcrow" "$POLICY_AT" || plog "PERSISTENCE_FAIL memory=$RESOURCE_CAL"
+      plog "RESOURCE_CAL power_mae=$_pmae power_hit=$_phit p95_mae=$_p95mae p99_mae=$_p99mae p95_hit=$_p95hit p99_hit=$_p99hit"
+      CTXROW="$POLICY_AT,${POLICY_TIME_BUCKET:-$TIME_BUCKET},${POLICY_SCENE_ID:-$SCENE_ID},${POLICY_SESSION_AGE:-$SESSION_AGE},${POLICY_ACTION:-NA},${POLICY_PROFILE:-NA},${SKIN_FORECAST_2M:-NA},${FPS_FORECAST_2M:-NA},$OS,$OF,$SE,$FE,${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${GAME_ID:-UNKNOWN},${POLICY_USER_MODE:-AUTO}"
+      csv_upsert_policy "$CTXMEM" 60 "policy_at,time_bucket,scene_id,session_age,action,profile,skin_fc,fps_fc,obs_skin,obs_fps,skin_err,fps_err,window_mode,game_id,user_mode" "$CTXROW" "$POLICY_AT" || { plog "PERSISTENCE_FAIL memory=$CTXMEM NO_DISTILL=1"; return; }
+      # v11 Knowledge Distillation: only Gemini decisions that were actually
+      # executed and observed become Hermes local experience. This is data, never code.
+      BASES="${POLICY_BASE_SKIN:-NA}"; BASEF="${POLICY_BASE_FPS:-NA}"; OUTCOME=MIXED; SD=NA; FD=NA
+      case "$BASES" in ''|NA|*[!0-9.]*) :;; *) [ "$OS" != NA ] && SD="$(awk "BEGIN{printf \"%.1f\",$OS-$BASES}")";; esac
+      case "$BASEF" in ''|NA|*[!0-9.]*) :;; *) [ "$OF" != NA ] && FD="$(awk "BEGIN{printf \"%.1f\",$OF-$BASEF}")";; esac
+      BP="${POLICY_BASE_POWER_MW:-NA}"; PD=NA
+      case "$BP:$OP" in *[!0-9.:]*|NA:*|*:NA) :;; *) [ "$BP" != 0 ] && PD="$(awk "BEGIN{printf \"%.1f\",(($OP-$BP)*100)/$BP}")";; esac
+      # v12.9.20 frame-tail consequence: average FPS cannot hide severe P95/P99 regression.
+      P95D=NA; P99D=NA
+      case "${POLICY_BASE_P95:-NA}:$OP95" in *[!0-9.:]*|NA:*|*:NA) :;; *) P95D="$(awk -v a="$OP95" -v b="$POLICY_BASE_P95" 'BEGIN{printf "%.2f",a-b}')";; esac
+      case "${POLICY_BASE_P99:-NA}:$OP99" in *[!0-9.:]*|NA:*|*:NA) :;; *) P99D="$(awk -v a="$OP99" -v b="$POLICY_BASE_P99" 'BEGIN{printf "%.2f",a-b}')";; esac
+      # v12.9.18 Coupled Outcome Evaluator: judge the executed intent from measured
+      # frame, thermal and (when valid) power consequences. Anchor profile names
+      # no longer decide success/failure. This prevents a good efficient plan from
+      # being marked FAILED merely because its anchor was SOFT_COOL.
+      if [ "$SD" != NA ] && [ "$FD" != NA ]; then
+        _oi="${POLICY_OPERATING_INTENT:-BALANCED}"
+        case "$_oi" in
+          FRAME_RECOVERY)
+            awk "BEGIN{exit !(($FD>=2)&&($SD<=2.5))}" && OUTCOME=SUCCESS || { awk "BEGIN{exit !(($FD<-5)||($SD>3))}" && OUTCOME=FAILED || OUTCOME=MIXED; };;
+          THERMAL_HOLD)
+            awk "BEGIN{exit !(($SD<=0.5)&&($FD>=-3))}" && OUTCOME=SUCCESS || { awk "BEGIN{exit !(($SD>2)||($FD<-7))}" && OUTCOME=FAILED || OUTCOME=MIXED; };;
+          EFFICIENCY)
+            if [ "$PD" != NA ]; then
+              awk "BEGIN{exit !(($PD<=-3)&&($FD>=-2)&&($SD<=1.5))}" && OUTCOME=SUCCESS || { awk "BEGIN{exit !(($PD>12)||($FD<-5)||($SD>2.5))}" && OUTCOME=FAILED || OUTCOME=MIXED; }
+            else awk "BEGIN{exit !(($FD>=-2)&&($SD<=1))}" && OUTCOME=MIXED || OUTCOME=FAILED; fi;;
+          SUSTAINED_PERFORMANCE)
+            awk "BEGIN{exit !(($FD>=-2)&&($SD<=1.2))}" && OUTCOME=SUCCESS || { awk "BEGIN{exit !(($FD<-6)||($SD>2.5))}" && OUTCOME=FAILED || OUTCOME=MIXED; };;
+          *)
+            awk "BEGIN{exit !(($FD>=-2)&&($SD<=1.2))}" && OUTCOME=SUCCESS || { awk "BEGIN{exit !(($FD<-6)||($SD>2.5))}" && OUTCOME=FAILED || OUTCOME=MIXED; };;
+        esac
+        # Severe tail-latency regression is a hard quality veto even when average FPS looks acceptable.
+        if [ "$P99D" != NA ] && awk -v d="$P99D" -v x="$OP99" 'BEGIN{exit !((d>15)||(x>=50&&d>5))}'; then OUTCOME=FAILED; fi
+        if [ "$P95D" != NA ] && awk -v d="$P95D" 'BEGIN{exit !(d>10)}'; then OUTCOME=FAILED; fi
+      fi
+      plog "FRAME_TAIL_OUTCOME p95_delta=$P95D p99_delta=$P99D outcome=$OUTCOME"
+      LROW="$POLICY_AT,${POLICY_SCENE_ID:-$SCENE_ID},${POLICY_TIME_BUCKET:-$TIME_BUCKET},${POLICY_PROFILE:-STABLE},$OUTCOME,$BASES,$BASEF,$OS,$OF,$SD,$FD,GEMINI,${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${GAME_ID:-UNKNOWN},${POLICY_USER_MODE:-AUTO}"
+      csv_upsert_policy "$LEARNED" 120 "policy_at,scene_id,time_bucket,profile,outcome,base_skin,base_fps,obs_skin,obs_fps,skin_delta,fps_delta,source,window_mode,game_id,user_mode" "$LROW" "$POLICY_AT" || { plog "PERSISTENCE_FAIL memory=$LEARNED NO_DISTILL=1"; return; }
+      plog "DISTILL scene=${POLICY_SCENE_ID:-$SCENE_ID} profile=${POLICY_PROFILE:-STABLE} outcome=$OUTCOME skin_delta=$SD fps_delta=$FD source=GEMINI window_mode=${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE}"
+      if [ "${POLICY_CONTROL_MODE:-PROFILE}" = "DYNAMIC" ] || [ "${POLICY_CONTROL_MODE:-PROFILE}" = "ENVELOPE" ]; then
+        DROW="$POLICY_AT,${POLICY_SCENE_ID:-$SCENE_ID},${POLICY_TIME_BUCKET:-$TIME_BUCKET},$OUTCOME,$EFFECTIVE_LMIN,$EFFECTIVE_LMAX,$EFFECTIVE_BMIN,$EFFECTIVE_BMAX,$EFFECTIVE_GMIN,$EFFECTIVE_GMAX,$BASES,$BASEF,$OS,$OF,$SD,$FD,GEMINI,${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${GAME_ID:-UNKNOWN},${POLICY_USER_MODE:-AUTO}"
+        csv_upsert_policy "$DYNLEARN" 120 "policy_at,scene_id,time_bucket,outcome,little_min,little_max,big_min,big_max,gpu_min,gpu_max,base_skin,base_fps,obs_skin,obs_fps,skin_delta,fps_delta,source,window_mode,game_id,user_mode" "$DROW" "$POLICY_AT" || { plog "PERSISTENCE_FAIL memory=$DYNLEARN NO_DISTILL=1"; return; }
+        plog "DISTILL_DYNAMIC scene=${POLICY_SCENE_ID:-$SCENE_ID} outcome=$OUTCOME L=$EFFECTIVE_LMIN-$EFFECTIVE_LMAX B=$EFFECTIVE_BMIN-$EFFECTIVE_BMAX G=$EFFECTIVE_GMIN-$EFFECTIVE_GMAX execution_status=$EXEC_FEEDBACK_STATUS"
+        EROW="$POLICY_AT,${POLICY_SCENE_ID:-$SCENE_ID},$OUTCOME,$EFFECTIVE_LMIN,$EFFECTIVE_LMAX,$EFFECTIVE_BMIN,$EFFECTIVE_BMAX,$EFFECTIVE_GMIN,$EFFECTIVE_GMAX,$BP,$OP,$PD,$FD,$SD,GEMINI,${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${GAME_ID:-UNKNOWN},${POLICY_USER_MODE:-AUTO}"
+        csv_upsert_policy "$EFFMEM" 120 "policy_at,scene_id,outcome,little_min,little_max,big_min,big_max,gpu_min,gpu_max,base_power_mw,obs_power_mw,power_delta_pct,fps_delta,skin_delta,source,window_mode,game_id,user_mode" "$EROW" "$POLICY_AT" || { plog "PERSISTENCE_FAIL memory=$EFFMEM NO_DISTILL=1"; return; }
+        HCLASS=REJECT; HSCORE=0
+        if [ "$FD" != NA ] && [ "$SD" != NA ]; then
+          if [ "$PD" != NA ]; then
+            HSCORE="$(awk "BEGIN{s=50+($FD*4)-($SD*5)-($PD*1.5);if(s<0)s=0;if(s>100)s=100;printf \"%.1f\",s}")"
+            if awk "BEGIN{exit !(($FD>=-3)&&($PD<=-3)&&($SD<=1))}"; then HCLASS=EFFICIENT
+            elif awk "BEGIN{exit !(($FD>=2)&&($SD<=2))}"; then HCLASS=PERFORMANCE
+            elif awk "BEGIN{exit !(($SD<=-1)&&($FD>=-8))}"; then HCLASS=THERMAL
+            elif [ "$OUTCOME" != FAILED ]; then HCLASS=BALANCED; fi
+          elif [ "$OUTCOME" != FAILED ]; then HSCORE="$(awk "BEGIN{s=50+($FD*4)-($SD*5);if(s<0)s=0;if(s>100)s=100;printf \"%.1f\",s}")"; HCLASS=BALANCED; fi
+        fi
+        HROW="$POLICY_AT,${POLICY_SCENE_ID:-$SCENE_ID},$OUTCOME,$EFFECTIVE_LMIN,$EFFECTIVE_LMAX,$EFFECTIVE_BMIN,$EFFECTIVE_BMAX,$EFFECTIVE_GMIN,$EFFECTIVE_GMAX,$BP,$OP,$PD,$FD,$SD,$HSCORE,$HCLASS,${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${GAME_ID:-UNKNOWN},${POLICY_USER_MODE:-AUTO}"
+        csv_upsert_policy "$HWLEARN" 160 "policy_at,scene_id,outcome,little_min,little_max,big_min,big_max,gpu_min,gpu_max,base_power_mw,obs_power_mw,power_delta_pct,fps_delta,skin_delta,hardware_score,class,window_mode,game_id,user_mode" "$HROW" "$POLICY_AT" || { plog "PERSISTENCE_FAIL memory=$HWLEARN NO_DISTILL=1"; return; }
+        plog "HARDWARE_LEARN class=$HCLASS score=$HSCORE power_delta=$PD fps_delta=$FD skin_delta=$SD mode=${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE}"
+        # GOLDEN1 is additive only: source learned stores remain untouched.
+        if [ -x "$M/system/bin/djaeger-golden-memory" ]; then
+          sh "$M/system/bin/djaeger-golden-memory" capture >/dev/null 2>&1 || plog "GOLDEN_CAPTURE_WARN policy_at=$POLICY_AT"
+        fi
+        # v12.9.16 Adaptive Operating Envelope - Decision Accountability: every mature Gemini decision receives a durable consequence record.
+        _dh="${POLICY_DECISION_HYPOTHESIS:-NA}"; _dh="$(printf '%s' "$_dh" | tr ',\n\r' '   ' | cut -c1-180)"
+        _dlrow="$POLICY_AT,${GAME_ID:-UNKNOWN},${POLICY_SCENE_ID:-$SCENE_ID},${POLICY_PROFILE:-STABLE},$EFFECTIVE_LMIN-$EFFECTIVE_LMAX,$EFFECTIVE_BMIN-$EFFECTIVE_BMAX,$EFFECTIVE_GMIN-$EFFECTIVE_GMAX,$_dh,${SKIN_FORECAST_2M:-NA},${FPS_FORECAST_2M:-NA},$OUTCOME,$OS,$OF,$SD,$FD,$PD,$HCLASS,${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE},${POLICY_USER_MODE:-AUTO}"
+        _dlrow="$(printf '%s' "$_dlrow" | tr -d '\n\r')"
+        csv_upsert_policy "$DECISION_LEDGER" 160 "decision_id,game,scene,profile,little_budget,big_budget,gpu_budget,hypothesis,pred_skin,pred_fps,outcome,actual_skin,actual_fps,skin_delta,fps_delta,power_delta_pct,hardware_class,window_mode,user_mode" "$_dlrow" "$POLICY_AT" || plog "PERSISTENCE_FAIL memory=$DECISION_LEDGER"
+        plog "ACCOUNTABILITY_CONSEQUENCE decision_id=$POLICY_AT outcome=$OUTCOME actual_skin=$OS actual_fps=$OF fps_delta=$FD skin_delta=$SD power_delta=$PD class=$HCLASS"
+        refresh_device_knowledge "${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE}" "${GAME_ID:-UNKNOWN}"
+        plog "DEVICE_KNOWLEDGE_REFRESHED game=${GAME_ID:-UNKNOWN} mode=${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE} after_policy=$POLICY_AT"
+      fi
+      # r78: publish the mature measured consequence as inert, transaction-bound data.
+      # Controller may expose it only when policy/session/game/mode still match.
+      _otmp="$P/strategy_outcome.env.tmp.$$"
+      {
+        printf "POLICY_AT='%s'\n" "$POLICY_AT"
+        printf "SESSION_ID='%s'\n" "$(cat "$P/session_id" 2>/dev/null)"
+        printf "GAME='%s'\n" "${GAME_ID:-UNKNOWN}"
+        printf "USER_MODE='%s'\n" "${POLICY_USER_MODE:-AUTO}"
+        printf "WINDOW_MODE='%s'\n" "${POLICY_WINDOW_MODE:-$CURRENT_WINDOW_MODE}"
+        printf "OUTCOME='%s'\n" "$OUTCOME"
+        printf "ACTUAL_SKIN_C='%s'\n" "$OS"
+        printf "ACTUAL_FPS='%s'\n" "$OF"
+        printf "SKIN_DELTA_C='%s'\n" "$SD"
+        printf "FPS_DELTA='%s'\n" "$FD"
+        printf "POWER_DELTA_PCT='%s'\n" "$PD"
+        printf "UPDATED_AT='%s'\n" "$(date +%s)"
+      } >"$_otmp" 2>/dev/null && chmod 600 "$_otmp" 2>/dev/null && mv -f "$_otmp" "$P/strategy_outcome.env" || { rm -f "$_otmp"; plog "PERSISTENCE_FAIL strategy_outcome=1"; return; }
+      # Commit the evaluated marker LAST. A crash before this point causes an
+      # idempotent retry instead of silently declaring partially distilled data complete.
+      printf "%s\n" "$POLICY_AT" >"$MEMLAST.tmp.$$" && chmod 600 "$MEMLAST.tmp.$$" 2>/dev/null && mv -f "$MEMLAST.tmp.$$" "$MEMLAST" || { rm -f "$MEMLAST.tmp.$$"; plog "PERSISTENCE_FAIL marker=$MEMLAST"; return; }
+    fi
+  fi
+
+  [ "$OUTCOME_ONLY" = "1" ] && return 0
+
+  # r91 strict quota cooldown: a managed key still in cooldown must never reach curl.
+  # If another slot is ready, switch before transport; if all slots are cooling,
+  # fail closed to Hermes H2 until the earliest cooldown expiry.
+  gemini_rate_preflight || return 29
+
+  LEARNCTX="NONE"
+  [ -r "$LEARNED" ] && LEARNCTX="$(awk -F, -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" 'NR>1&&$13==wm&&$14==game&&$15==um{print}' "$LEARNED" | tail -n 12 | tr '\n' ';' | cut -c1-2400)"
+  [ -n "$LEARNCTX" ] || LEARNCTX=NONE
+  MEMCTX="NONE"
+  [ -r "$MEMORY" ] && MEMCTX="$(awk -F, -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" 'NR>1&&$10==wm&&$11==game&&$12==um{print}' "$MEMORY" | tail -n 8 | tr '\n' ';' | cut -c1-1800)"
+  [ -n "$MEMCTX" ] || MEMCTX=NONE
+
+  # v12.9.16 Adaptive Operating Envelope - Decision Accountability Loop: compact same-game causal memory.
+  # This is evidence only; it never executes commands or bypasses OPP validation.
+  CAUSALCTX="NO_SAME_GAME_HARDWARE_OUTCOMES"; REJECT_STREAK=0; LAST_BUDGET="NONE"
+  if [ -r "$HWLEARN" ]; then
+    CAUSALCTX="$(awk -F, -v game="$GAME_ID" -v wm="$CURRENT_WINDOW_MODE" -v um="${USER_MODE:-AUTO}" 'NR>1&&$17==wm&&$18==game&&$19==um{print}' "$HWLEARN" | tail -n 8 | tr '\n' ';' | cut -c1-2400)"
+    [ -n "$CAUSALCTX" ] || CAUSALCTX="NO_SAME_GAME_HARDWARE_OUTCOMES"
+    REJECT_STREAK="$(awk -F, -v game="$GAME_ID" -v wm="$CURRENT_WINDOW_MODE" -v um="${USER_MODE:-AUTO}" 'NR>1&&$17==wm&&$18==game&&$19==um{a[++n]=$16} END{for(i=n;i>=1;i--){if(a[i]=="REJECT")r++;else break} print r+0}' "$HWLEARN")"
+    LAST_BUDGET="$(awk -F, -v game="$GAME_ID" -v wm="$CURRENT_WINDOW_MODE" -v um="${USER_MODE:-AUTO}" 'NR>1&&$17==wm&&$18==game&&$19==um{v="L="$4"-"$5" B="$6"-"$7" G="$8"-"$9" class="$16" fps_delta="$13" skin_delta="$14" power_delta_pct="$12} END{if(v!="")print v}' "$HWLEARN")"
+    [ -n "$LAST_BUDGET" ] || LAST_BUDGET=NONE
+  fi
+
+  # v12.9.16 durable accountability context survives Gemini chain resets/failover.
+  ACCOUNTCTX="NO_PRIOR_ACCOUNTABILITY_CONSEQUENCE"; LAST_DECISION_ID="NONE"; LAST_DECISION_OUTCOME="NONE"; LAST_DECISION_BUDGET="NONE"
+  if [ -r "$DECISION_LEDGER" ]; then
+    ACCOUNTCTX="$(awk -F, -v OFS=, -v game="$GAME_ID" -v wm="$CURRENT_WINDOW_MODE" -v um="${USER_MODE:-AUTO}" 'function ng(v){if(v~/^[0-9]+$/){if(v>=100000000&&v%1000000==0)return int(v/1000000);if(v>=100000&&v%1000==0)return int(v/1000)}return v} NR>1&&$2==game&&$18==wm&&$19==um{split($7,g,"-");if(length(g)==2)$7=ng(g[1])"-"ng(g[2]);print}' "$DECISION_LEDGER" | tail -n 6 | tr '\n' ';' | cut -c1-2600)"
+    [ -n "$ACCOUNTCTX" ] || ACCOUNTCTX="NO_PRIOR_ACCOUNTABILITY_CONSEQUENCE"
+    LAST_DECISION_ID="$(awk -F, -v game="$GAME_ID" -v wm="$CURRENT_WINDOW_MODE" -v um="${USER_MODE:-AUTO}" 'NR>1&&$2==game&&$18==wm&&$19==um{id=$1} END{if(id!="")print id}' "$DECISION_LEDGER")"
+    LAST_DECISION_OUTCOME="$(awk -F, -v game="$GAME_ID" -v wm="$CURRENT_WINDOW_MODE" -v um="${USER_MODE:-AUTO}" 'NR>1&&$2==game&&$18==wm&&$19==um{o=$11} END{if(o!="")print o}' "$DECISION_LEDGER")"
+    LAST_DECISION_BUDGET="$(awk -F, -v game="$GAME_ID" -v wm="$CURRENT_WINDOW_MODE" -v um="${USER_MODE:-AUTO}" 'NR>1&&$2==game&&$18==wm&&$19==um{b="L="$5" B="$6" G="$7} END{if(b!="")print b}' "$DECISION_LEDGER")"
+    [ -n "$LAST_DECISION_ID" ] || LAST_DECISION_ID=NONE; [ -n "$LAST_DECISION_OUTCOME" ] || LAST_DECISION_OUTCOME=NONE; [ -n "$LAST_DECISION_BUDGET" ] || LAST_DECISION_BUDGET=NONE
+    [ "$LAST_DECISION_BUDGET" = NONE ] || LAST_DECISION_BUDGET="$(normalize_account_budget "$LAST_DECISION_BUDGET")"
+  fi
+
+  # Retrieve only experience relevant to the current fingerprint first, then
+  # same time bucket. Observation count acts as confidence: one event is weak;
+  # repeated outcomes deserve more weight. Old rows are bounded to prevent
+  # unbounded memory growth and stale history dominating current telemetry.
+  RELCTX="NONE"; RELN=0; TIMEN=0
+  if [ -r "$CTXMEM" ]; then
+    RELN="$(awk -F, -v s="$SCENE_ID" -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" 'NR>1&&$3==s&&$13==wm&&$14==game&&$15==um{n++}END{print n+0}' "$CTXMEM")"
+    TIMEN="$(awk -F, -v t="$TIME_BUCKET" -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" 'NR>1&&$2==t&&$13==wm&&$14==game&&$15==um{n++}END{print n+0}' "$CTXMEM")"
+    RELCTX="$(awk -F, -v s="$SCENE_ID" -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" 'NR>1&&$3==s&&$13==wm&&$14==game&&$15==um{print}' "$CTXMEM" | tail -n 8 | tr '\n' ';' | cut -c1-2000)"
+    [ -n "$RELCTX" ] || RELCTX="$(awk -F, -v t="$TIME_BUCKET" -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" 'NR>1&&$2==t&&$13==wm&&$14==game&&$15==um{print}' "$CTXMEM" | tail -n 5 | tr '\n' ';' | cut -c1-1400)"
+    [ -n "$RELCTX" ] || RELCTX=NONE
+  fi
+  if [ "$RELN" -ge 8 ]; then EXPERIENCE_CONF=HIGH
+  elif [ "$RELN" -ge 3 ]; then EXPERIENCE_CONF=MEDIUM
+  else EXPERIENCE_CONF=LOW; fi
+
+  # v10.6 Similarity Learning: exact fingerprints remain strongest, but nearby
+  # workload states can contribute weighted experience. H/F/J bins are ordinal;
+  # thermal momentum is directional. This generalizes experience without ever
+  # pretending that a fingerprint is a real game map name.
+  SIMCTX="NONE"; SIMN=0; SIMHIGH=0; SIMAVG=0; STRATEGYCTX="NONE"
+  if [ -r "$CTXMEM" ] && [ -n "$SCENE_ID" ]; then
+    SIMTMP="$P/similar_context.tmp"
+    awk -F, -v cur="$SCENE_ID" -v tb="$TIME_BUCKET" -v wm="$CURRENT_WINDOW_MODE" -v game="$GAME_ID" -v um="${USER_MODE:-AUTO}" '
+      function abs(x){return x<0?-x:x}
+      function part(s,n, a){split(s,a,"_"); return a[n]}
+      function num(x){sub(/^[A-Z]/,"",x); return x+0}
+      NR>1 && $13==wm && $14==game && $15==um {
+        ch=part(cur,1); cf=part(cur,2); cj=part(cur,3); cm=part(cur,4)
+        rh=part($3,1); rf=part($3,2); rj=part($3,3); rm=part($3,4)
+        dh=abs(num(ch)-num(rh)); df=abs(num(cf)-num(rf)); dj=abs(num(cj)-num(rj))
+        sh=(dh==0?25:(dh==1?15:4)); sf=(df==0?30:(df==1?18:4)); sj=(dj==0?25:(dj==1?15:4))
+        if(cm==rm) sm=20; else if(cm=="FLAT"||rm=="FLAT") sm=12; else sm=4
+        score=sh+sf+sj+sm; if($2==tb) score+=3; if(score>100)score=100
+        if(score>=60) printf "%03d|%s\n",score,$0
+      }' "$CTXMEM" | sort -t'|' -k1,1nr | head -n 10 >"$SIMTMP"
+    SIMN="$(wc -l <"$SIMTMP" 2>/dev/null | tr -d ' ')"; case "$SIMN" in ''|*[!0-9]*) SIMN=0;; esac
+    if [ "$SIMN" -gt 0 ]; then
+      SIMHIGH="$(head -1 "$SIMTMP"|cut -d'|' -f1|sed 's/^0*//')"; [ -n "$SIMHIGH" ] || SIMHIGH=0
+      SIMAVG="$(awk -F'|' '{s+=$1;n++}END{if(n)printf "%.0f",s/n;else print 0}' "$SIMTMP")"
+      SIMCTX="$(cat "$SIMTMP" | tr '\n' ';' | cut -c1-2600)"
+      # Strategy Memory summarizes outcomes among similar workloads. It is
+      # evidence for Gemini, not an autonomous command or self-modifying rule.
+      STRATEGYCTX="$(awk -F'[|,]' '
+        {a=$6; p=$7; key=a"/"p; n[key]++; if($11~/^-?[0-9.]+$/){skin[key]+=$11;sn[key]++} if($12~/^-?[0-9.]+$/){fps[key]+=$12;fn[key]++}}
+        END{for(k in n)printf "%s samples=%d avg_actual_skin=%.1f avg_actual_fps=%.1f;",k,n[k],(sn[k]?skin[k]/sn[k]:0),(fn[k]?fps[k]/fn[k]:0)}' "$SIMTMP" | cut -c1-1200)"
+      [ -n "$STRATEGYCTX" ] || STRATEGYCTX=NONE
+    fi
+    rm -f "$SIMTMP" 2>/dev/null
+  fi
+
+  # v12.1 Power Efficiency Intelligence: use real battery power when exposed by the kernel.
+  # Power is an observed whole-device proxy, not claimed CPU/GPU wattage. Charging samples are evidence-poor.
+  # v12.9 Thermal Trajectory Intelligence: recent same-context direction.
+  TRAJCTX="INSUFFICIENT_TRAJECTORY_DATA"
+  if [ -r "$TEL" ]; then
+    TRAJCTX="$(tail -n 80 "$TEL" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v we="$CURRENT_WINDOW_EPOCH" '$1~/^[0-9]+$/ && $23==wm && $24==we && $2~/^[0-9.]+$/ && $3~/^[0-9.]+$/ && $4~/^[0-9.]+$/ {if(n==0){t0=$1;c0=$2;g0=$3;s0=$4;p0=($19~/^[0-9]+$/&&$20=="VALID"?$19:-1)} n++;t1=$1;c1=$2;g1=$3;s1=$4;if($19~/^[0-9]+$/&&$20=="VALID")p1=$19} END{dt=t1-t0;if(n>=3&&dt>0){sm=(s1-s0)*60/dt;cm=(c1-c0)*60/dt;gm=(g1-g0)*60/dt;t42=(sm>0&&s1<42?(42-s1)/sm*60:-1);t43=(sm>0&&s1<43?(43-s1)/sm*60:-1);debt=((c1-s1)>=15||(g1-s1)>=15?"HIGH":((c1-s1)>=8||(g1-s1)>=8?"MEDIUM":"LOW"));printf "samples=%d window_seconds=%d skin_now=%.1f skin_slope_c_per_min=%.2f cpu_slope_c_per_min=%.2f gpu_slope_c_per_min=%.2f thermal_debt=%s time_to_42_s=%.0f time_to_43_s=%.0f",n,dt,s1,sm,cm,gm,debt,t42,t43;if(p0>=0&&p1>=0)printf " power_delta_mw=%d",p1-p0}}')"
+    [ -n "$TRAJCTX" ] || TRAJCTX="INSUFFICIENT_TRAJECTORY_DATA"
+  fi
+  EFFCTX="NONE"
+  if [ -r "$TEL" ]; then
+    EFFCTX="$(tail -n 60 "$TEL" | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v we="$CURRENT_WINDOW_EPOCH" '$23==wm && $24==we && $19~/^[0-9]+$/ && $20=="VALID"{n++;p+=$19;if(n==1)first=$19;last=$19} END{if(n)printf "valid_samples=%d avg_device_power_mw=%.0f first_mw=%s last_mw=%s",n,p/n,first,last;else printf "NO_VALIDATED_DISCHARGE_POWER"}')"
+  fi
+  WINDOW_MODE="$CURRENT_WINDOW_MODE"
+  USER_MODE="$(cat "$USER_MODE_FILE" 2>/dev/null | tr '[:lower:]' '[:upper:]' | tr -d '\r\n ')"
+  case "$USER_MODE" in SEDANG|MEDIUM|COMFORTABLE) USER_MODE=NYAMAN;; COOL) USER_MODE=DINGIN;; WARM) USER_MODE=HANGAT;; HOT) USER_MODE=PANAS;; esac
+case "$USER_MODE" in
+    AUTO) USER_MODE_CTX="AUTO: formulate the best coupled FPS/frame-pacing, temperature and power envelope autonomously from evidence.";;
+    DINGIN) USER_MODE_CTX="DINGIN: owner-mandated skin-temperature target 35-37C. Treat 37C as the owner comfort ceiling for this mode, not a temperature to heat toward; any cooler temperature is preferred when meaningful frame quality is preserved. Strongly prefer low sustained power/thermal debt, but this is NOT a frequency ceiling: the complete live safe CPU/GPU capability remains available, including temporary maximum OPP bursts when frame recovery justifies them; decay after recovery.";;
+    NYAMAN|SEDANG) USER_MODE="NYAMAN"; USER_MODE_CTX="NYAMAN: owner-mandated skin-temperature target 38-40C. Treat 40C as the owner comfort ceiling for this mode, not a temperature to heat toward; any cooler temperature is preferred when frame stability and responsiveness are preserved. It is NOT a CPU/GPU frequency ceiling; the complete live safe hardware capability remains available, including temporary maximum OPP bursts when evidence justifies them.";;
+    HANGAT) USER_MODE_CTX="HANGAT: owner comfort range 41-43C with 43C as the comfort ceiling, never a heat target. Cooler is preferred when meaningful frame quality is preserved. This mode does NOT narrow the live CPU/GPU range; all safe OPPs remain available when justified by measurable gameplay benefit.";;
+    PANAS) USER_MODE_CTX="PANAS: owner comfort range 44-45C with 45C as the comfort ceiling, never a heat target, and the strongest performance preference inside typed live-kernel capability. Cooler is preferred when comparable gameplay quality is achievable. The same complete safe hardware range is available as every other mode; mode changes ranking/duration/aggressiveness, not min/max capability.";;
+    *) USER_MODE="AUTO"; USER_MODE_CTX="AUTO: formulate the best coupled resource envelope autonomously from evidence.";;
+  esac
+  OWNERCTX="PRIMARY=stable_frame_pacing; SECONDARY=sustainable_performance; THERMAL=avoid_unnecessary_heat_without_material_FPS_loss; EFFICIENCY=minimum_effective_power; DEVELOPMENT=improve_strategy_from_measured_outcomes"
+  if [ -r "$OWNER_OBJECTIVE" ]; then
+    _OC="$(tr '\n' ';' <"$OWNER_OBJECTIVE" 2>/dev/null | cut -c1-1800)"
+    [ -n "$_OC" ] && OWNERCTX="$_OC"
+  fi
+  OWNERFBCTX="NO_OWNER_FEEDBACK_YET"
+  if [ -r "$OWNER_FEEDBACK" ]; then
+    OWNERFBCTX="$(tail -n 30 "$OWNER_FEEDBACK" 2>/dev/null | awk -F, -v game="$GAME_ID" 'NR>1&&$3==game{a[++n]=$0} END{start=n-7;if(start<1)start=1;for(i=start;i<=n;i++)printf "%s%s",(i>start?" | ":""),a[i]}' | cut -c1-2400)"
+    [ -n "$OWNERFBCTX" ] || OWNERFBCTX="NO_OWNER_FEEDBACK_FOR_THIS_GAME"
+  fi
+  OWNERFBREF="COMFORTABLE=user-confirmed skin37-40C cpu44-55C gpu44-53C battery34-36C fps54.8-56.2 power~2.38-2.50W; preference evidence only"
+  if [ -r "$OWNER_FEEDBACK_REF" ]; then
+    _OFR="$(tr '\n' ';' <"$OWNER_FEEDBACK_REF" 2>/dev/null | cut -c1-2200)"; [ -n "$_OFR" ] && OWNERFBREF="$_OFR"
+  fi
+  AUTOCOMFORTCTX="NO_AUTONOMOUS_COMFORT_HISTORY_YET"
+  if [ -r "$AUTO_COMFORT" ]; then
+    AUTOCOMFORTCTX="$(tail -n 12 "$AUTO_COMFORT" 2>/dev/null | tr '\n' '|' | cut -c1-2200)"
+  fi
+  # v12.9.27 Cross-layer Evolution Bridge.
+  # Conversational Gemini knowledge may contain useful hypotheses, but it can also
+  # contain arbitrary user text. It is therefore IDEATION ONLY: never an execution
+  # command, never stronger than measured device outcomes, and never a reason to
+  # bypass typed OPP validation or native thermal protection.
+  CHATIDEAS="NO_CONVERSATIONAL_IDEAS"
+  if [ -r "$GEMINI_CHAT_KNOWLEDGE" ]; then
+    CHATIDEAS="$(tail -n 12 "$GEMINI_CHAT_KNOWLEDGE" 2>/dev/null | cut -c1-6000 | tr '\n' ';')"
+    [ -n "$CHATIDEAS" ] || CHATIDEAS="NO_CONVERSATIONAL_IDEAS"
+  fi
+  EVOLCTX="NO_VALIDATED_EVOLUTION_MEMORY"
+  if [ -r "$EVOLUTION_MEMORY" ]; then
+    EVOLCTX="$(tail -n 16 "$EVOLUTION_MEMORY" 2>/dev/null | cut -c1-6000 | tr '\n' ';')"
+    [ -n "$EVOLCTX" ] || EVOLCTX="NO_VALIDATED_EVOLUTION_MEMORY"
+  fi
+  PROFILEMAPCTX="UNAVAILABLE"
+  [ -x "$PROFILE_MAP" ] && PROFILEMAPCTX="$(DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$PROFILE_MAP" context "${PROFILE:-STABLE}" 2>/dev/null | cut -c1-4200)"
+  [ -n "$PROFILEMAPCTX" ] || PROFILEMAPCTX="UNAVAILABLE"
+  GAMECOMFORTCTX="UNAVAILABLE"
+  if [ -x "$GAME_COMFORT_POLICY" ]; then
+    GAMECOMFORTCTX="$(DJAEGER_MODDIR="$M" sh "$GAME_COMFORT_POLICY" context "$GAME_ID" 2>/dev/null | cut -c1-1800)"
+    [ -n "$GAMECOMFORTCTX" ] || GAMECOMFORTCTX="UNAVAILABLE"
+  fi
+  CLOCKKNOWCTX="UNAVAILABLE"
+  if [ -x "$CLOCK_KNOWLEDGE" ]; then
+    CLOCKKNOWCTX="$(DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$CLOCK_KNOWLEDGE" context "$GAME_ID" "${PROFILE:-STABLE}" "${USER_MODE:-AUTO}" "${CURRENT_WINDOW_MODE:-FOREGROUND}" 2>/dev/null | cut -c1-2600)"
+    [ -n "$CLOCKKNOWCTX" ] || CLOCKKNOWCTX="UNAVAILABLE"
+  fi
+  Q="DJAEGER REBUILD3 SHAREDINT1 CONTROL CONTRACT. AUTHORITY: Gemini is the PRIMARY CLOUD BRAIN and highest strategic decision authority whenever this request produces a valid policy. SHAREDINT1 exposes DJAEGER intelligence/features to Gemini as evidence and capability context; Hermes H2 features are NEVER a ceiling on Gemini server reasoning. Gemini may derive better hypotheses, models, relationships, and strategies from the supplied DJAEGER evidence. Hermes H2 is the DEPUTY LOCAL BRAIN: while Gemini is valid it learns in shadow and has no decision authority; only when Gemini is unavailable/invalid may Hermes decide locally. AI Agent is the sole FULL HARDWARE CONTROLLER, sensor/truth publisher, and autonomous executor. AI Agent has ZERO strategic decision authority, MUST obey the active brain, cannot choose Hermes over a valid Gemini policy, cannot alter strategic intent, and cannot invent an alternative strategy. If the kernel/driver cannot physically apply a command, Agent reports the true readback/failure; that is execution evidence, not disobedience. Native kernel/firmware emergency protection remains independent physical safety.
+
+TOKEN/TRUTH CONTRACT: AGENT_COMPACT_FACTS below is the authoritative immediate hardware summary from direct readback and is intentionally compact. DJAEGER_SHARED_INTELLIGENCE below is the expanded intelligence surface available to BOTH Gemini and Hermes H2; no Hermes feature or local model is a ceiling on Gemini server reasoning. Do not invent data that is absent from the supplied evidence. Use supplied memory/context only when relevant. Current facts outrank historical association; verified repeated device outcomes outrank one-off outcomes; inference must be labeled as inference. Never fabricate sensor values, power, capability, or successful execution.
+
+OWNER MODE=$USER_MODE. MODE_SEMANTICS=$USER_MODE_CTX. AUTO allows full autonomous formulation. DINGIN/NYAMAN/HANGAT/PANAS mean owner comfort ceilings 37/40/43/45C respectively, not heat targets. Cooler is acceptable and preferred when meaningful frame stability, P95/P99, jank and responsiveness remain comparable. Never spend power or raise clocks merely to enter a named temperature band. Human preference is cool-leaning with frame stability as a hard guard.
+
+PROFILE MAP SSOT: PROFILE_MAP_CONTEXT=$PROFILEMAPCTX. This is the authoritative numeric meaning of FREEZE, COOL, SOFT_COOL, STABLE, PERFORM, RESPONSE and SAFE. All min/max values are flexible guardrails, not forced clocks. Reason about the actual numbers and their thermal/performance implications, but output typed decisions only. GAME COMFORT CONTRACT: PROFILE_MAP_CONTEXT=$PROFILEMAPCTX.
+GAME_COMFORT_CONTEXT=$GAMECOMFORTCTX. This contract is shared with Hermes Local, Hermes Cloud, AI Agent and controller. Obey its profile envelopes when present. A high instantaneous GPU clock is NEVER evidence by itself that RESPONSE is needed. For GAME workloads, RESPONSE requires measurable frame-pacing deficit/jank or another explicit causal frame-performance need supported by supplied evidence. Do not propose an envelope outside a published game-specific cap.
+
+CLOCK KNOWLEDGE CONTRACT: CLOCK_KNOWLEDGE_CONTEXT=$CLOCKKNOWCTX. CLOCKMAP1 is shared with Hermes Local, Hermes Cloud, AI Agent and controller. Evidence priority is verified same-game/user/window runtime outcome > owner-confirmed comfort reference > profile contract > inference. Owner reference is a preference anchor, NEVER a forced clock floor, ceiling, or heat target. FREEZE is manual-only extreme cooling and AUTO must never select it; COOL is the strongest normal AUTO cooling rung and actively reduces CPU heat; SOFT_COOL is a lighter cooling transition; STABLE is balanced sustained headroom; PERFORM keeps STABLE CPU limits but opens sustained GPU headroom to 770 MHz; SAFE is protection, not an ordinary performance rung; RESPONSE is a frame-evidence micro-burst capped at 250 ms and may use GPU headroom to 840 MHz before returning to STABLE/PERFORM. Never repeat an exact mature BAD dynamic envelope without materially new evidence; prefer the bounded profile fallback.
+
+DECISION METHOD: OBSERVE current Agent facts and prior execution receipt; diagnose likely CPU/GPU/scheduler/thermal/power/network constraint; compare HOLD/current plus at least two materially different safe candidates internally; choose the smallest coherent reversible change that best improves sustainable frame stability, comfort and performance-per-watt. GENERATE MULTIPLE CAUSAL HYPOTHESES when evidence is ambiguous. Correlation is not causation. When confidence is low, prefer a small reversible experiment with high information value. Do not repeat a failed/rejected envelope without materially new evidence. Distinguish command application success from gameplay outcome success. Develop and refine your strategy over successive interactions using verified outcomes, and distinguish workload/scene variance from policy effect.
+
+EXECUTION CONTRACT: output only the structured response required by the response schema. ACTION=EXECUTE means Agent must execute your schema-valid typed policy exactly through Agent -> Root Authority -> typed backend -> hardware -> readback. No raw shell commands. CPU frequency fields are absolute kHz. GPU min/max fields are absolute MHz. min<=max. Prefer live exposed OPP/governor capability over static assumptions. recommended_profile is an anchor label only; ENVELOPE is preferred for precise online control. native_write_plan may contain only exact writable paths supplied in LIVE_MANGOO_WRITABLE_ACTUATORS, semicolon-separated path=value entries; Agent/Root Authority provides transaction snapshot/readback/rollback integrity. Do not treat that integrity layer as competing policy authority. Thermal/battery/sensor fields must stay inside the response schema and live capability. Network context is diagnostic only and never authorizes routing/DNS/firewall changes.
+
+ACCOUNTABILITY: previous decision id=$LAST_DECISION_ID outcome=$LAST_DECISION_OUTCOME budget=$LAST_DECISION_BUDGET. ACCOUNTABILITY_CONTEXT=$ACCOUNTCTX. If prior outcome FAILED, revise/abandon unless materially new evidence exists. If MIXED, lower confidence. If SUCCESS, treat as positive but still context-bound. OWNER FEEDBACK LEARNING: $OWNERFBCTX. OWNER_GOAL=$OWNERCTX. AUTO_COMFORT=$AUTOCOMFORTCTX.
+
+DJAEGER_SHARED_INTELLIGENCE=$SHARED_INTELLIGENCE_CTX.
+GAME_COMFORT_CONTEXT=$GAMECOMFORTCTX.
+AGENT_COMPACT_FACTS=$D.
+PREVIOUS_EXECUTION=$EXECUTIONCTX.
+THERMAL_TRAJECTORY=$TRAJCTX.
+CURRENT_CONTEXT=game:$GAME_ID;window:$WINDOW_MODE;time_bucket:$TIME_BUCKET;session_age:$SESSION_AGE;scene:$SCENE_ID;avg_skin:$AVG_SKIN;avg_fps:$AVG_FPS;avg_p95:$AVG_P95;avg_p99:$AVG_P99;skin_momentum:$SKIN_MOM.
+LIVE_KERNEL_CAPABILITIES=$KERNELCAPCTX.
+LIVE_MANGOO_WRITABLE_ACTUATORS=$MANGOO_NATIVE_CTX.
+SCHEDULER_INTELLIGENCE=$SCHEDULER_INTELLIGENCE_CTX.
+CROSS_SUBSYSTEM_INTELLIGENCE=$CROSS_SUBSYSTEM_CTX.
+CAUSAL_KERNEL_INTELLIGENCE=$CAUSAL_KERNEL_CTX.
+POLICY_CONTINUITY=$POLICY_CONTINUITY_CTX.
+STATIC_HARDWARE_FALLBACK=$HWCTX.
+DEVICE_KNOWLEDGE=$DEVICECTX.
+DEVICE_KNOWLEDGE_MATURITY=$HWKNOWCTX.
+HARDWARE_LEARNING=$HWLEARNCTX.
+HARDWARE_RESPONSE_MODEL=$HWRESPCTX.
+POWER_EFFICIENCY=$EFFCTX.
+PREVIOUS_FORECAST_FEEDBACK=$FB.
+RECENT_OUTCOME_MEMORY=$MEMCTX.
+DISTILLED_GEMINI_DEVICE_EXPERIENCE=$LEARNCTX.
+EXACT_CONTEXT_ROWS=$RELCTX; exact_n=$RELN; confidence=$EXPERIENCE_CONF.
+SIMILAR_CONTEXT_ROWS=$SIMCTX; similar_n=$SIMN; similarity_high=$SIMHIGH; similarity_avg=$SIMAVG.
+STRATEGY_MEMORY=$STRATEGYCTX.
+NETWORK_INTELLIGENCE=$NETWORKCTX.
+CAUSAL_MEMORY=$CAUSALCTX.
+OPP_SENSITIVITY=$OPPSENSCTX.
+EVOLUTION_MEMORY=$EVOLCTX.
+CHAT_KNOWLEDGE_IDEAS=$CHATIDEAS.
+OWNER_FEEDBACK_REFERENCE=$OWNERFBREF.
+REJECT_STREAK=$REJECT_STREAK; LAST_BUDGET=$LAST_BUDGET.
+
+EPISTEMIC OUTPUT: facts_summary contains only supplied facts; inference_summary labels hypotheses; unknowns_summary states missing material evidence; requested_observations asks only for useful additional observation. Keep diagnosis/evidence/alternatives concise. narrative must be 1-3 natural Indonesian sentences for Control Center, display-only, no secrets/commands/paths. Your policy is for automatic execution by AI Agent and is not merely advice."
+  RF='{"type":"text","mime_type":"application/json","schema":{"type":"object","properties":{"action":{"type":"string","enum":["EXECUTE","KEEP","AVOID_RESPONSE","MORE_RESPONSE","COOLER"]},"control_mode":{"type":"string","enum":["PROFILE","DYNAMIC","ENVELOPE"]},"operating_intent":{"type":"string","enum":["FRAME_RECOVERY","SUSTAINED_PERFORMANCE","THERMAL_HOLD","EFFICIENCY","BALANCED","EXPLORATION"]},"recommended_profile":{"type":"string","enum":["COOL","SOFT_COOL","STABLE","PERFORM","RESPONSE","SAFE"]},"little_min_khz":{"type":"integer","description":"Requested little-cluster minimum in absolute kHz. AI Agent maps to a supported hardware OPP before execution."},"little_max_khz":{"type":"integer","description":"Requested little-cluster maximum in absolute kHz. AI Agent maps conservatively to a supported hardware OPP."},"big_min_khz":{"type":"integer","description":"Requested big-cluster minimum in absolute kHz. AI Agent maps to a supported hardware OPP before execution."},"big_max_khz":{"type":"integer","description":"Requested big-cluster maximum in absolute kHz. AI Agent maps conservatively to a supported hardware OPP."},"gpu_min_mhz":{"type":"integer","description":"Requested GPU minimum in absolute MHz integer (example 490, NEVER 490000000). AI Agent maps to a supported hardware OPP before execution."},"gpu_max_mhz":{"type":"integer","description":"Requested GPU maximum in absolute MHz integer (example 650, NEVER 650000000). AI Agent maps conservatively to a supported hardware OPP."},"thermal_trend":{"type":"string","enum":["RISING_FAST","RISING_SLOW","STABLE","RECOVERING"]},"performance_trend":{"type":"string","enum":["IMPROVING","STABLE","DEGRADING"]},"thermal_risk":{"type":"string","enum":["LOW","MEDIUM","HIGH"]},"performance_risk":{"type":"string","enum":["LOW","MEDIUM","HIGH"]},"skin_forecast_2m":{"type":["integer","null"]},"fps_forecast_2m":{"type":["integer","null"]},"confidence":{"type":"integer","minimum":0,"maximum":100},"intervention_seconds":{"type":"integer","minimum":30,"maximum":150},"exit_skin_c":{"type":["integer","null"]},"expected_skin_delta_c":{"type":"number"},"expected_fps_delta":{"type":"number"},"review_seconds":{"type":"integer","minimum":30,"maximum":150},"efficiency_intent":{"type":"string","enum":["BALANCED","SAVE_POWER","PERFORMANCE_PER_WATT","FRAME_PRIORITY"]},"expected_power_delta_pct":{"type":"integer"},"fps_forecast_low":{"type":"number"},"fps_forecast_high":{"type":"number"},"skin_forecast_low_c":{"type":"number"},"skin_forecast_high_c":{"type":"number"},"power_forecast_low_mw":{"type":["integer","null"]},"power_forecast_high_mw":{"type":["integer","null"]},"p95_forecast_low_ms":{"type":"number"},"p95_forecast_high_ms":{"type":"number"},"p99_forecast_low_ms":{"type":"number"},"p99_forecast_high_ms":{"type":"number"},"jank_over_10_risk_pct":{"type":"integer","minimum":0,"maximum":100},"thermal_escalation_risk_pct":{"type":"integer","minimum":0,"maximum":100},"foresight_confidence":{"type":"integer","minimum":0,"maximum":100},"predicted_bottleneck":{"type":"string"},"foresight_basis":{"type":"string"},"diagnosis":{"type":"string"},"evidence_summary":{"type":"string"},"alternatives_summary":{"type":"string"},"contradiction_check":{"type":"string"},"uncertainty":{"type":"string"},"hypothesis_summary":{"type":"string"},"novel_strategy_reason":{"type":"string"},"device_model_update":{"type":"string"},"knowledge_gap":{"type":"string"},"exploration_value":{"type":"string","enum":["LOW","MEDIUM","HIGH"]},"inferred_owner_comfort":{"type":"string","enum":["VERY_COMFORTABLE","COMFORTABLE","LESS_COMFORTABLE","UNCOMFORTABLE"]},"comfort_confidence":{"type":"integer","minimum":0,"maximum":100},"comfort_basis":{"type":"string"},"decision_hypothesis":{"type":"string"},"rejected_alternatives":{"type":"string"},"repeat_reject_justification":{"type":"string"},"expected_learning":{"type":"string"},"accountability_verdict":{"type":"string","enum":["NO_PRIOR_OUTCOME","ACCEPT_SUCCESS","ACCEPT_FAILURE","DEFEND_WITH_NEW_EVIDENCE","REVISE","ABANDON"]},"accountability_previous_decision_id":{"type":"string"},"accountability_lesson":{"type":"string"},"accountability_correction":{"type":"string"},"authority_scope":{"type":"string","enum":["RESOURCE_ONLY","FULL_EXPERT"]},"thermal_mode":{"type":"string","enum":["NATIVE","RELAXED","PERFORMANCE","BYPASS"]},"cpu_governor":{"type":"string","description":"AUTO or an exact CPU governor from LIVE_KERNEL_CAPABILITIES. Do not invent governor names."},"gpu_governor":{"type":"string","description":"AUTO or an exact GPU governor from LIVE_KERNEL_CAPABILITIES. Do not invent governor names."},"battery_mode":{"type":"string","enum":["NATIVE","COOL","BALANCED","PERFORMANCE","CUSTOM"]},"charge_enable":{"type":"string","enum":["AUTO","ENABLE","DISABLE"]},"charge_current_ua":{"type":["integer","null"]},"input_current_ua":{"type":["integer","null"]},
+"sensor_mode":{"type":"string","enum":["NATIVE","FAST","BALANCED","SLOW","BYPASS"]},
+"thermal_polling_ms":{"type":["integer","null"]},
+"thermal_passive_ms":{"type":["integer","null"]},
+"thermal_trip_shift_mc":{"type":["integer","null"]},
+"cpu_boost":{"type":"string","enum":["AUTO","ON","OFF"]},
+"gpu_boost_level":{"type":["integer","null"]},
+"battery_voltage_uv":{"type":["integer","null"]},
+"charge_end_percent":{"type":["integer","null"]},
+"native_write_plan":{"type":"string","description":"Optional semicolon-separated exact live actuator path=value plan from LIVE_MANGOO_WRITABLE_ACTUATORS. No shell commands."},
+"facts_summary":{"type":"string"},"inference_summary":{"type":"string"},"unknowns_summary":{"type":"string"},"requested_observations":{"type":"string"},"narrative":{"type":"string","description":"1-3 natural Indonesian sentences, max ~80 tokens, explaining what you observe and why this strategy is appropriate. Human-readable only; never include shell commands or secrets."},"rationale":{"type":"string"}},"required":["action","control_mode","operating_intent","recommended_profile","little_min_khz","little_max_khz","big_min_khz","big_max_khz","gpu_min_mhz","gpu_max_mhz","thermal_trend","performance_trend","thermal_risk","performance_risk","skin_forecast_2m","fps_forecast_2m","confidence","intervention_seconds","exit_skin_c","expected_skin_delta_c","expected_fps_delta","review_seconds","efficiency_intent","expected_power_delta_pct","fps_forecast_low","fps_forecast_high","skin_forecast_low_c","skin_forecast_high_c","power_forecast_low_mw","power_forecast_high_mw","p95_forecast_low_ms","p95_forecast_high_ms","p99_forecast_low_ms","p99_forecast_high_ms","jank_over_10_risk_pct","thermal_escalation_risk_pct","foresight_confidence","predicted_bottleneck","foresight_basis","diagnosis","evidence_summary","alternatives_summary","contradiction_check","uncertainty","hypothesis_summary","novel_strategy_reason","device_model_update","knowledge_gap","exploration_value","inferred_owner_comfort","comfort_confidence","comfort_basis","decision_hypothesis","rejected_alternatives","repeat_reject_justification","expected_learning","accountability_verdict","accountability_previous_decision_id","accountability_lesson","accountability_correction","authority_scope","thermal_mode","cpu_governor","gpu_governor","battery_mode","charge_enable","charge_current_ua","input_current_ua","sensor_mode","thermal_polling_ms","thermal_passive_ms","thermal_trip_shift_mc","cpu_boost","gpu_boost_level","battery_voltage_uv","charge_end_percent","native_write_plan","facts_summary","inference_summary","unknowns_summary","requested_observations","narrative","rationale"]}}'
+  # v12.9.3 Gemini Server Reasoning Memory: keep a short, game-scoped stateful
+  # Interactions chain on Gemini's server. This lets Gemini reuse its own prior
+  # interaction context in addition to DJAEGER's persistent local Device Knowledge.
+  # The chain is deliberately bounded to limit stale-context/token growth. Local
+  # memory remains authoritative evidence storage; server state is reasoning context.
+  PREV_ID=""; SERVER_CHAIN=0; SERVER_AT=0; SERVER_GAME=""; SERVER_MODEL=""
+  if [ -r "$SERVER_STATE" ]; then
+    unset SERVER_INTERACTION_ID SERVER_GAME_ID SERVER_MODEL_ID SERVER_CHAIN_COUNT SERVER_UPDATED_AT
+    . "$SERVER_STATE" 2>/dev/null
+    PREV_ID="${SERVER_INTERACTION_ID:-}"; SERVER_GAME="${SERVER_GAME_ID:-}"; SERVER_MODEL="${SERVER_MODEL_ID:-}"
+    SERVER_CHAIN="${SERVER_CHAIN_COUNT:-0}"; SERVER_AT="${SERVER_UPDATED_AT:-0}"
+    case "$SERVER_CHAIN" in ''|*[!0-9]*) SERVER_CHAIN=0;; esac
+    case "$SERVER_AT" in ''|*[!0-9]*) SERVER_AT=0;; esac
+    SERVER_AGE=$(( $(date +%s) - SERVER_AT ))
+    if [ "$SERVER_GAME" != "$GAME_ID" ] || [ "$SERVER_MODEL" != "$MODEL" ] || [ "$SERVER_CHAIN" -ge "$SERVER_MAX_CHAIN" ] || [ "$SERVER_AGE" -lt 0 ] || [ "$SERVER_AGE" -gt "$SERVER_MAX_AGE" ]; then
+      PREV_ID=""; SERVER_CHAIN=0
+    fi
+  fi
+  if [ -n "$PREV_ID" ]; then
+    B="{\"model\":\"$MODEL\",\"store\":true,\"previous_interaction_id\":\"$(esc "$PREV_ID")\",\"input\":\"$(esc "$Q")\",\"response_format\":$RF}"
+    SERVER_MODE="STATEFUL"
+  else
+    B="{\"model\":\"$MODEL\",\"store\":true,\"input\":\"$(esc "$Q")\",\"response_format\":$RF}"
+    SERVER_MODE="NEW_CHAIN"
+  fi
+  # GEMINITRANSPORTFIX2: never pass the large structured body as a shell argv.
+  # Temp-file transport avoids Android exec/argv failures while preserving exact payload bytes.
+  gemini_interaction_post(){
+    _gc_timeout="$1"; _gc_out="$2"; _gc_body="$P/.gemini_interaction_body.$$"
+    umask 077
+    if ! printf '%s' "$B" >"$_gc_body" 2>/dev/null; then H=000; RC=97; rm -f "$_gc_body"; return 0; fi
+    H="$(curl -m "$_gc_timeout" -sS -o "$_gc_out" -w "%{http_code}" -X POST \
+      "https://generativelanguage.googleapis.com/v1beta/interactions" \
+      -H "Content-Type: application/json" -H "x-goog-api-key: $GEMINI_API_KEY" --data-binary @"$_gc_body")"
+    RC=$?
+    rm -f "$_gc_body" 2>/dev/null
+    return 0
+  }
+  gemini_interaction_post 25 "$RAW.tmp"
+  # If a stored server interaction expired or became unusable, retry once as a
+  # fresh chain. This must never strand the controller; Local fallback remains intact.
+  if [ "$RC" -eq 0 ] && [ "$H" = 400 ] && [ -n "$PREV_ID" ]; then
+    plog "GEMINI_SERVER_CONTEXT RESET reason=STATE_REJECTED game=$GAME_ID"
+    rm -f "$SERVER_STATE" 2>/dev/null
+    B="{\"model\":\"$MODEL\",\"store\":true,\"input\":\"$(esc "$Q")\",\"response_format\":$RF}"
+    gemini_interaction_post 25 "$RAW.tmp"; SERVER_MODE="RESET_CHAIN"; SERVER_CHAIN=0
+  fi
+  # A 429 is an explicit quota/rate-limit signal. Do not immediately spend a
+  # second request on another model: Hermes H2 remains available locally and the next
+  # normal strategic cycle may retry after the provider's quota window recovers.
+  # Curl/transport failures retain one bounded fallback attempt.
+  if [ "$RC" -ne 0 ]; then
+    PRIMARY_MODEL="$MODEL"; MODEL="gemini-3.5-flash-lite"
+    plog "GEMINI_FAILOVER FROM=$PRIMARY_MODEL TO=$MODEL REASON=CURL_$RC"
+    rm -f "$SERVER_STATE" 2>/dev/null
+    B="{\"model\":\"$MODEL\",\"store\":true,\"input\":\"$(esc "$Q")\",\"response_format\":$RF}"
+    gemini_interaction_post 20 "$RAW.tmp"; SERVER_MODE="FAILOVER_CHAIN"; SERVER_CHAIN=0
+    # r92-fix1: a provider 429 returned by the bounded transport-fallback retry
+    # must enter the same cooldown ledger as a primary 429. Without this, the
+    # next reasoning cycle could immediately reuse a quota-limited managed key.
+    if [ "$RC" -eq 0 ] && [ "$H" = 429 ]; then
+      gemini_rate_mark_current || :
+      plog "GEMINI_TRANSPORT_RETRY_RATE_LIMIT COOLDOWN_RECORDED=1 HOLD=HERMES_H2"
+    fi
+  elif [ "$H" = 429 ]; then
+    # r80: bounded automatic credential rotation. Each 429 key is cooled for
+    # 15 minutes. At most the remaining vault slots are tried in this cycle;
+    # exhaustion returns to Hermes H2 without a retry storm.
+    _rot=0
+    while [ "$H" = 429 ] && [ "$_rot" -lt 3 ]; do
+      gemini_rate_mark_current || break
+      gemini_rate_failover || break
+      _rot=$((_rot+1))
+      B="{\"model\":\"$MODEL\",\"store\":true,\"input\":\"$(esc "$Q")\",\"response_format\":$RF}"
+      gemini_interaction_post 25 "$RAW.tmp"; SERVER_MODE="RATE_ROTATION_CHAIN"; SERVER_CHAIN=0
+      [ "$RC" -eq 0 ] || break
+    done
+    if [ "$H" = 429 ]; then gemini_rate_mark_current; plog "GEMINI_RATE_LIMIT ROTATION_EXHAUSTED=1 HOLD=HERMES_H2"; fi
+  fi
+  if [ "$RC" -ne 0 ]; then
+    printf "HTTP_CODE='CURL_ERROR'\nCURL_RC='%s'\nAT='%s'\nPROVIDER='GEMINI'\nMODEL='%s'\n" "$RC" "$(date +%s)" "$MODEL" >"$HTTPSTATE"
+    rm -f "$RAW.tmp"; return 20
+  fi
+  if [ "$H" != 200 ]; then
+    # r80: 401/403 uses auth failover; 429 rotation was already bounded above.
+    if { [ "$H" = 401 ] || [ "$H" = 403 ]; } && gemini_auth_failover; then
+      rm -f "$SERVER_STATE" 2>/dev/null
+      # Defense in depth: re-check the selected managed credential immediately
+      # before the auth retry transport. If all alternatives are cooling, fail
+      # closed instead of spending a request.
+      gemini_rate_preflight || return 29
+      B="{\"model\":\"$MODEL\",\"store\":true,\"input\":\"$(esc "$Q")\",\"response_format\":$RF}"
+      gemini_interaction_post 25 "$RAW.tmp"; SERVER_MODE="AUTH_FAILOVER_CHAIN"; SERVER_CHAIN=0
+      [ "$RC" -eq 0 ] || { printf "HTTP_CODE='CURL_ERROR'\nCURL_RC='%s'\nAT='%s'\nPROVIDER='GEMINI'\nMODEL='%s'\n" "$RC" "$(date +%s)" "$MODEL" >"$HTTPSTATE"; rm -f "$RAW.tmp"; return 20; }
+      # r92-fix1: if the READY backup selected after 401/403 itself returns 429,
+      # record that backup in the cooldown ledger before failing closed to Hermes H2.
+      # The generic error path below still returns RC=29; no extra request is added.
+      if [ "$H" = 429 ]; then
+        gemini_rate_mark_current || :
+        plog "GEMINI_AUTH_RETRY_RATE_LIMIT COOLDOWN_RECORDED=1 HOLD=HERMES_H2 NO_EXTRA_REQUEST=1"
+      fi
+    fi
+    # Keep the API error body for diagnostics instead of deleting the only clue.
+    mv -f "$RAW.tmp" "$HTTPERR" 2>/dev/null; chmod 600 "$HTTPERR" 2>/dev/null
+    MSG=$(tr '\n' ' ' <"$HTTPERR" 2>/dev/null | sed 's/[[:space:]]\+/ /g' | cut -c1-220)
+    printf "HTTP_CODE='%s'\nAT='%s'\nPROVIDER='GEMINI'\nMODEL='%s'\n" "$H" "$(date +%s)" "$MODEL" >"$HTTPSTATE"; chmod 600 "$HTTPSTATE" 2>/dev/null
+    plog "HTTP_ERROR CODE=$H DETAIL=$MSG"
+    case "$H" in 400) return 24;; 401|403) return 23;; 404) return 25;; 429) return 29;; 5??) return 22;; *) return 21;; esac
+  fi
+  rm -f "$HTTPERR" 2>/dev/null
+  printf "HTTP_CODE='200'\nAT='%s'\nPROVIDER='GEMINI'\nMODEL='%s'\n" "$(date +%s)" "$MODEL" >"$HTTPSTATE"; chmod 600 "$HTTPSTATE" 2>/dev/null
+  mv -f "$RAW.tmp" "$RAW"; chmod 600 "$RAW" 2>/dev/null
+
+  # Interactions transport validation. A 200 response is not enough: require a
+  # completed Interaction for the requested model and an explicit model_output
+  # step before any strategy fields are accepted. Thought/signature steps are
+  # deliberately ignored as control data.
+  grep -q '"status"[[:space:]]*:[[:space:]]*"completed"' "$RAW" 2>/dev/null || { plog "PARSE_REJECT REASON=INTERACTION_NOT_COMPLETED"; return 31; }
+  grep -q '"object"[[:space:]]*:[[:space:]]*"interaction"' "$RAW" 2>/dev/null || { plog "PARSE_REJECT REASON=OBJECT_NOT_INTERACTION"; return 31; }
+  grep -q '"type"[[:space:]]*:[[:space:]]*"model_output"' "$RAW" 2>/dev/null || { plog "PARSE_REJECT REASON=MODEL_OUTPUT_MISSING"; return 31; }
+  RESP_MODEL="$(sh "$JSON" string model "$RAW" last 2>/dev/null)"
+  [ "$RESP_MODEL" = "$MODEL" ] || { plog "PARSE_REJECT REASON=MODEL_MISMATCH GOT=${RESP_MODEL:-NONE} EXPECTED=$MODEL"; return 31; }
+
+  # Persist only a completed, model-matching interaction ID. Never trust an ID
+  # from an error/incomplete response. The file contains no API key.
+  NEW_INTERACTION_ID="$(sh "$JSON" string id "$RAW" first 2>/dev/null)"
+  if [ -n "$NEW_INTERACTION_ID" ]; then
+    SERVER_CHAIN=$((SERVER_CHAIN + 1)); _SST="$SERVER_STATE.tmp.$$"
+    printf "SERVER_INTERACTION_ID='%s'\nSERVER_GAME_ID='%s'\nSERVER_MODEL_ID='%s'\nSERVER_CHAIN_COUNT='%s'\nSERVER_UPDATED_AT='%s'\n" \
+      "$NEW_INTERACTION_ID" "$GAME_ID" "$MODEL" "$SERVER_CHAIN" "$(date +%s)" >"$_SST" 2>/dev/null && \
+      chmod 600 "$_SST" 2>/dev/null && mv -f "$_SST" "$SERVER_STATE" 2>/dev/null
+    plog "GEMINI_SERVER_REASONING mode=$SERVER_MODE chain=$SERVER_CHAIN game=$GAME_ID model=$MODEL"
+  fi
+
+  # v12.9.50: decode only the model_output text through an escape-aware JSON
+  # scanner, then parse the structured JSON from that isolated text. No global
+  # unescape and no quote-fragile grep/sed extraction.
+  # r87: decoded Gemini model output belongs in DJAEGER's writable state dir.
+  # r86 accidentally referenced undefined $AI, expanding to /.gemini_model_output.<pid>
+  # on device. The failed redirect was hidden and later surfaced misleadingly as RC=30.
+  DECODED="$P/.gemini_model_output.$$"
+  if ! sh "$JSON" string text "$RAW" last >"$DECODED" 2>/dev/null; then
+    plog "PARSE_REJECT REASON=MODEL_OUTPUT_DECODE_FAILED"
+    rm -f "$DECODED" 2>/dev/null
+    return 31
+  fi
+  if [ ! -s "$DECODED" ]; then
+    plog "PARSE_REJECT REASON=MODEL_OUTPUT_DECODE_EMPTY"
+    rm -f "$DECODED" 2>/dev/null
+    return 31
+  fi
+  chmod 600 "$DECODED" 2>/dev/null
+  jstr(){ sh "$JSON" string "$1" "$DECODED" first 2>/dev/null; }
+  jnum(){ sh "$JSON" number "$1" "$DECODED" first 2>/dev/null; }
+  ACTION="$(jstr action)"
+  REC="$(jstr recommended_profile)"; CMODE="$(jstr control_mode)"; OINT="$(jstr operating_intent)"; LMIN="$(jnum little_min_khz)"; LMAX="$(jnum little_max_khz)"; BMIN="$(jnum big_min_khz)"; BMAX="$(jnum big_max_khz)"; GMIN="$(jnum gpu_min_mhz)"; GMAX="$(jnum gpu_max_mhz)"
+  TT="$(jstr thermal_trend)"; PT="$(jstr performance_trend)"; TR="$(jstr thermal_risk)"; PR="$(jstr performance_risk)"; SF="$(jnum skin_forecast_2m)"; FF="$(jnum fps_forecast_2m)"; CONF="$(jnum confidence)"; DUR="$(jnum intervention_seconds)"; EXIT_SKIN="$(jnum exit_skin_c)"
+  ICOMFORT="$(jstr inferred_owner_comfort)"; CCONF="$(jnum comfort_confidence)"; CBASIS="$(jstr comfort_basis | tr '\n' ' ' | cut -c1-180)"
+  ASCOPE="$(jstr authority_scope)"; TMODE="$(jstr thermal_mode)"; CGOV="$(jstr cpu_governor)"; GGOV="$(jstr gpu_governor)"; BMODE="$(jstr battery_mode)"; CENABLE="$(jstr charge_enable)"; CCURRENT="$(jnum charge_current_ua)"; ICURRENT="$(jnum input_current_ua)"; SMODE="$(jstr sensor_mode)"; TPOLL="$(jnum thermal_polling_ms)"; TPASS="$(jnum thermal_passive_ms)"; TSHIFT="$(jnum thermal_trip_shift_mc)"; CBOOST="$(jstr cpu_boost)"; GBOOST="$(jnum gpu_boost_level)"; BVOLT="$(jnum battery_voltage_uv)"; CEND="$(jnum charge_end_percent)"; NWRITE="$(jstr native_write_plan)"
+  NARRATIVE="$(jstr narrative | tr '\n\r\t' '   ' | sed 's/[[:space:]][[:space:]]*/ /g' | cut -c1-600)"
+  RAT="$(jstr rationale | tr '\n' ' ' | cut -c1-220)"
+  PARSE_MODE=STRUCTURED_JSON_SCANNER
+
+  case "$ICOMFORT" in VERY_COMFORTABLE|COMFORTABLE|LESS_COMFORTABLE|UNCOMFORTABLE)
+    case "$CCONF" in ''|*[!0-9]*) CCONF=0;; esac
+    [ "$CCONF" -gt 100 ] 2>/dev/null && CCONF=100
+    [ -f "$AUTO_COMFORT" ] || printf "at,game,comfort,confidence,avg_skin,avg_fps,avg_p95,avg_p99,skin_momentum,basis\n" >"$AUTO_COMFORT"
+    printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" "$(date +%s)" "$GAME_ID" "$ICOMFORT" "$CCONF" "${AVG_SKIN:-NA}" "${AVG_FPS:-NA}" "${AVG_P95:-NA}" "${AVG_P99:-NA}" "${SKIN_MOM:-NA}" "$(printf '%s' "$CBASIS" | tr ',\n' '  ' | cut -c1-180)" >>"$AUTO_COMFORT"
+    tail -n 81 "$AUTO_COMFORT" >"$AUTO_COMFORT.tmp.$$" 2>/dev/null && mv -f "$AUTO_COMFORT.tmp.$$" "$AUTO_COMFORT"
+    chmod 600 "$AUTO_COMFORT" 2>/dev/null
+    plog "AUTONOMOUS_COMFORT level=$ICOMFORT confidence=$CCONF skin=${AVG_SKIN:-NA} fps=${AVG_FPS:-NA} basis=${CBASIS:-NA}"
+    ;;
+  esac
+
+  # 2) Backward-compatible labeled text parser.
+  if [ -z "$ACTION" ]; then
+    ACTION="$(grep -o 'ACTION:[ ]*[A-Z_]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^ACTION:[ ]*//')"
+    REC="$(grep -o 'RECOMMENDED_PROFILE:[ ]*[A-Z_]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^RECOMMENDED_PROFILE:[ ]*//')"
+    TT="$(grep -o 'THERMAL_TREND:[ ]*[A-Z_]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^THERMAL_TREND:[ ]*//')"
+    PT="$(grep -o 'PERFORMANCE_TREND:[ ]*[A-Z_]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^PERFORMANCE_TREND:[ ]*//')"
+    TR="$(grep -o 'THERMAL_RISK:[ ]*[A-Z_]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^THERMAL_RISK:[ ]*//')"
+    PR="$(grep -o 'PERFORMANCE_RISK:[ ]*[A-Z_]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^PERFORMANCE_RISK:[ ]*//')"
+    SF="$(grep -o 'SKIN_FORECAST_2M:[ ]*[0-9][0-9]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^SKIN_FORECAST_2M:[ ]*//')"
+    FF="$(grep -o 'FPS_FORECAST_2M:[ ]*[0-9][0-9]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^FPS_FORECAST_2M:[ ]*//')"
+    CONF="$(grep -o 'CONFIDENCE:[ ]*[0-9][0-9]*' "$DECODED" 2>/dev/null | head -1 | sed 's/^CONFIDENCE:[ ]*//')"
+    RAT="$(tr -d '\r\n' <"$DECODED" | sed -n 's/.*RATIONALE:[ ]*\([^"}]*\).*/\1/p' | head -1 | cut -c1-220)"
+    PARSE_MODE=LABELED_TEXT
+  fi
+
+  # 3) Positional fallback for the exact 10-line contract. This handles the
+  #    response variant proven on-device: KEEP / STABLE / RECOVERING / ...
+  if [ -z "$ACTION" ]; then
+    TXT="$(cat "$DECODED" 2>/dev/null)"
+    L1="$(printf '%s\n' "$TXT"|sed -n '1p'|tr -d '\r')"
+    case "$L1" in KEEP|AVOID_RESPONSE|MORE_RESPONSE|COOLER)
+      ACTION="$L1"; REC="$(printf '%s\n' "$TXT"|sed -n '2p'|tr -d '\r')"; TT="$(printf '%s\n' "$TXT"|sed -n '3p'|tr -d '\r')"; PT="$(printf '%s\n' "$TXT"|sed -n '4p'|tr -d '\r')"; TR="$(printf '%s\n' "$TXT"|sed -n '5p'|tr -d '\r')"; PR="$(printf '%s\n' "$TXT"|sed -n '6p'|tr -d '\r')"; SF="$(printf '%s\n' "$TXT"|sed -n '7p'|tr -d '\r')"; FF="$(printf '%s\n' "$TXT"|sed -n '8p'|tr -d '\r')"; CONF="$(printf '%s\n' "$TXT"|sed -n '9p'|tr -d '\r')"; RAT="$(printf '%s\n' "$TXT"|sed -n '10p'|tr -d '\r'|cut -c1-220)"; PARSE_MODE=POSITIONAL_TEXT;;
+    esac
+  fi
+  [ -n "${CMODE:-}" ] || CMODE=PROFILE
+  # v12 optional plan-outcome fields from the same isolated structured JSON.
+  fnum(){ jnum "$1"; }
+  ESD="$(fnum expected_skin_delta_c)"; EFD="$(fnum expected_fps_delta)"; REVIEW="$(jnum review_seconds)"; EINT="$(jstr efficiency_intent)"; EPD="$(jnum expected_power_delta_pct)"
+  FPSLO="$(fnum fps_forecast_low)"; FPSHI="$(fnum fps_forecast_high)"; SKINLO="$(fnum skin_forecast_low_c)"; SKINHI="$(fnum skin_forecast_high_c)"
+  PWRLO="$(jnum power_forecast_low_mw)"; PWRHI="$(jnum power_forecast_high_mw)"; P95LO="$(fnum p95_forecast_low_ms)"; P95HI="$(fnum p95_forecast_high_ms)"; P99LO="$(fnum p99_forecast_low_ms)"; P99HI="$(fnum p99_forecast_high_ms)"; JRISK="$(jnum jank_over_10_risk_pct)"; THRISK="$(jnum thermal_escalation_risk_pct)"; FCONF="$(jnum foresight_confidence)"
+  PBOT="$(jstr predicted_bottleneck | cut -c1-160)"; FBASIS="$(jstr foresight_basis | cut -c1-220)"
+  ACCVER="$(jstr accountability_verdict | cut -c1-40)"; ACCPREV="$(jstr accountability_previous_decision_id | cut -c1-40)"; ACCLESSON="$(jstr accountability_lesson | cut -c1-220)"; ACCCORR="$(jstr accountability_correction | cut -c1-220)"; DECHYP="$(jstr decision_hypothesis | cut -c1-220)"; FACTS="$(jstr facts_summary | cut -c1-500)"; INFER="$(jstr inference_summary | cut -c1-500)"; UNKNOWNS="$(jstr unknowns_summary | cut -c1-500)"; REQOBS="$(jstr requested_observations | cut -c1-500)"
+  # GEMINITHOUGHTCOMMIT1: decoded narrative is advisory until the policy passes all validation gates.
+  rm -f "$DECODED" 2>/dev/null
+  case "$ESD" in ''|*[!0-9.-]*) ESD=0;; esac; case "$EFD" in ''|*[!0-9.-]*) EFD=0;; esac
+  case "$REVIEW" in ''|*[!0-9]*) REVIEW=60;; esac; [ "$REVIEW" -lt 30 ] && REVIEW=30; [ "$REVIEW" -gt 150 ] && REVIEW=150
+  validfloat(){ case "$1" in ''|*[!0-9.-]*) return 1;; *) return 0;; esac; }
+  validfloat "$FPSLO" || FPSLO="$AVG_FPS"; validfloat "$FPSHI" || FPSHI="$AVG_FPS"; validfloat "$SKINLO" || SKINLO="$AVG_SKIN"; validfloat "$SKINHI" || SKINHI="$AVG_SKIN"
+  awk -v a="$FPSLO" -v b="$FPSHI" 'BEGIN{exit !(a<=b)}' || { _t="$FPSLO"; FPSLO="$FPSHI"; FPSHI="$_t"; }
+  awk -v a="$SKINLO" -v b="$SKINHI" 'BEGIN{exit !(a<=b)}' || { _t="$SKINLO"; SKINLO="$SKINHI"; SKINHI="$_t"; }
+  case "$PWRLO" in ''|*[!0-9]*) PWRLO=NA;; esac; case "$PWRHI" in ''|*[!0-9]*) PWRHI=NA;; esac
+  validfloat "$P95LO" || P95LO="$AVG_P95"; validfloat "$P95HI" || P95HI="$AVG_P95"; validfloat "$P99LO" || P99LO="$AVG_P99"; validfloat "$P99HI" || P99HI="$AVG_P99"
+  awk -v a="$P95LO" -v b="$P95HI" 'BEGIN{exit !(a<=b)}' || { _t="$P95LO"; P95LO="$P95HI"; P95HI="$_t"; }; awk -v a="$P99LO" -v b="$P99HI" 'BEGIN{exit !(a<=b)}' || { _t="$P99LO"; P99LO="$P99HI"; P99HI="$_t"; }
+  case "$JRISK" in ''|*[!0-9]*) JRISK=50;; esac; [ "$JRISK" -gt 100 ] && JRISK=100
+  case "$THRISK" in ''|*[!0-9]*) THRISK=50;; esac; [ "$THRISK" -gt 100 ] && THRISK=100
+  case "$FCONF" in ''|*[!0-9]*) FCONF="$CONF";; esac; [ "$FCONF" -gt 100 ] && FCONF=100
+  case "$CMODE" in PROFILE|DYNAMIC|ENVELOPE) ;; *) CMODE=PROFILE;; esac
+  case "${OINT:-}" in FRAME_RECOVERY|SUSTAINED_PERFORMANCE|THERMAL_HOLD|EFFICIENCY|BALANCED|EXPLORATION) ;; *) OINT=BALANCED;; esac
+  # REBUILD3 AI Agent validates against LIVE kernel capabilities, never a chipset whitelist.
+  numeric(){ case "$1" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
+  map_up_words(){ v="$1"; shift; last=""; for x in "$@"; do last="$x"; [ "$x" -ge "$v" ] 2>/dev/null && { echo "$x"; return; }; done; echo "$last"; }
+  map_down_words(){ v="$1"; shift; last="$1"; for x in "$@"; do [ "$x" -gt "$v" ] 2>/dev/null && { echo "$last"; return; }; last="$x"; done; echo "$last"; }
+  caprow(){ awk -F '\t' -v typ="$1" -v idx="$2" '$1==typ{n++;if(n==idx){print;exit}}' "$KERNEL_CAPABILITY_FILE" 2>/dev/null; }
+  quant_cpu(){
+    idx="$1"; v="$2"; dir="$3"; row="$(caprow CPU "$idx")"; freqs="$(printf '%s\n' "$row"|awk -F '\t' '{print $5}')"
+    [ -n "$freqs" ] || { echo "$v"; return; }
+    if [ "$dir" = up ]; then map_up_words "$v" $freqs; else map_down_words "$v" $freqs; fi
+  }
+  quant_gpu(){
+    v="$1"; dir="$2"; row="$(caprow GPU 1)"; freqs="$(printf '%s\n' "$row"|awk -F '\t' '{print $5}')"
+    [ -n "$freqs" ] || { echo "$v"; return; }
+    # Kernel GPU frequencies are Hz; predictor schema uses MHz.
+    mf=""; for hz in $freqs; do numeric "$hz" && mf="$mf $((hz/1000000))"; done
+    mf="$(printf '%s\n' "$mf"|tr ' ' '\n'|awk '/^[0-9]+$/{print}'|sort -n -u|tr '\n' ' '|sed 's/ $//')"
+    [ -n "$mf" ] || { echo "$v"; return; }
+    if [ "$dir" = up ]; then map_up_words "$v" $mf; else map_down_words "$v" $mf; fi
+  }
+  if [ "$CMODE" = DYNAMIC ] || [ "$CMODE" = ENVELOPE ]; then
+    numeric "$LMIN" && numeric "$LMAX" && numeric "$BMIN" && numeric "$BMAX" && numeric "$GMIN" && numeric "$GMAX" || return 33
+    [ "$LMIN" -le "$LMAX" ] && [ "$BMIN" -le "$BMAX" ] && [ "$GMIN" -le "$GMAX" ] || return 34
+    RAW_LMIN="$LMIN"; RAW_LMAX="$LMAX"; RAW_BMIN="$BMIN"; RAW_BMAX="$BMAX"; RAW_GMIN="$GMIN"; RAW_GMAX="$GMAX"
+    GMIN="$(gpu_unit_to_mhz "$GMIN")" || { plog "GPU_UNIT_REJECT field=min raw=$RAW_GMIN"; return 33; }
+    GMAX="$(gpu_unit_to_mhz "$GMAX")" || { plog "GPU_UNIT_REJECT field=max raw=$RAW_GMAX"; return 33; }
+    [ "$GMIN" -le "$GMAX" ] 2>/dev/null || return 34
+    [ -r "$KERNEL_CAPABILITY_FILE" ] && {
+      LMIN="$(quant_cpu 1 "$LMIN" up)"; LMAX="$(quant_cpu 1 "$LMAX" down)"
+      _cpun="$(awk -F '\t' '$1=="CPU"{n++}END{print n+0}' "$KERNEL_CAPABILITY_FILE" 2>/dev/null)"
+      [ "${_cpun:-0}" -gt 1 ] || _cpun=1
+      BMIN="$(quant_cpu "$_cpun" "$BMIN" up)"; BMAX="$(quant_cpu "$_cpun" "$BMAX" down)"
+      GMIN="$(quant_gpu "$GMIN" up)"; GMAX="$(quant_gpu "$GMAX" down)"
+    }
+    [ "$LMIN" -le "$LMAX" ] && [ "$BMIN" -le "$BMAX" ] && [ "$GMIN" -le "$GMAX" ] || return 34
+    plog "LIVE_OPP_MAP RAW_L=${RAW_LMIN}-${RAW_LMAX} RAW_B=${RAW_BMIN}-${RAW_BMAX} RAW_G=${RAW_GMIN}-${RAW_GMAX} CANON_G=${GMIN}-${GMAX}MHz MAPPED_L=${LMIN}-${LMAX} MAPPED_B=${BMIN}-${BMAX} MAPPED_G=${GMIN}-${GMAX}"
+  else LMIN=NA; LMAX=NA; BMIN=NA; BMAX=NA; GMIN=NA; GMAX=NA; fi
+  case "$SF" in ''|null|NULL|NA) SF=NA;; *[!0-9]*) SF=NA;; esac
+  case "$FF" in ''|null|NULL|NA) FF=NA;; *[!0-9]*) FF=NA;; esac
+  [ -n "$ACTION" ] || return 30
+
+  case "$ACTION" in EXECUTE|KEEP|AVOID_RESPONSE|MORE_RESPONSE|COOLER) ;; *) return 31;; esac
+  [ -n "$FACTS" ] && [ -n "$INFER" ] && [ -n "$UNKNOWNS" ] && [ -n "$REQOBS" ] || { plog "EPISTEMIC_REJECT missing_structured_reasoning=1"; return 36; }
+  if [ "$UNKNOWNS" != NONE ] && [ "$REQOBS" != NONE ] && [ "$CONF" -lt 70 ] 2>/dev/null && [ "$ACTION" = EXECUTE ]; then plog "EPISTEMIC_VETO low_confidence_unknowns=1 requested_observation=1"; ACTION=KEEP; fi
+  case "$REC" in COOL|SOFT_COOL|STABLE|PERFORM|RESPONSE|SAFE) ;; *) REC=STABLE;; esac
+  case "$CONF" in ''|*[!0-9]*) return 32;; esac
+  [ "$CONF" -gt 100 ] && CONF=100
+  # UI6_FIX1 Decision Accountability: fail closed for ATTRIBUTION, not for Gemini resource authority.
+  # A stale/wrong retrospective ID or textual frequency claim is quarantined from learning,
+  # but it cannot veto a current schema/context/OPP-valid Gemini plan.
+  ACCOUNTABILITY_STATUS="TRUSTED"; ACCOUNTABILITY_TRUSTED=1; ACCPREV_MODEL="$ACCPREV"
+  case "$ACCVER" in
+    NO_PRIOR_OUTCOME|ACCEPT_SUCCESS|ACCEPT_FAILURE|DEFEND_WITH_NEW_EVIDENCE|REVISE|ABANDON) :;;
+    *) ACCOUNTABILITY_STATUS="INVALID_VERDICT_QUARANTINED"; ACCOUNTABILITY_TRUSTED=0;;
+  esac
+  if [ "$LAST_DECISION_ID" != NONE ]; then
+    if [ "$ACCPREV" != "$LAST_DECISION_ID" ]; then ACCOUNTABILITY_STATUS="STALE_REFERENCE_QUARANTINED"; ACCOUNTABILITY_TRUSTED=0; fi
+    if [ "$ACCOUNTABILITY_TRUSTED" -eq 1 ]; then
+      case "$LAST_DECISION_OUTCOME:$ACCVER" in
+        FAILED:ACCEPT_SUCCESS|SUCCESS:ACCEPT_FAILURE) ACCOUNTABILITY_STATUS="OUTCOME_CONTRADICTION_QUARANTINED"; ACCOUNTABILITY_TRUSTED=0;;
+      esac
+      [ "$ACCVER" != NO_PRIOR_OUTCOME ] || { ACCOUNTABILITY_STATUS="MISSING_PRIOR_ACK_QUARANTINED"; ACCOUNTABILITY_TRUSTED=0; }
+    fi
+  else
+    ACCPREV=NONE; ACCVER=NO_PRIOR_OUTCOME; ACCOUNTABILITY_STATUS="NO_PRIOR_OUTCOME"; ACCOUNTABILITY_TRUSTED=1
+  fi
+  # Ground frequency claims against canonical CPU-kHz / GPU-MHz prior budget. Legacy
+  # Hz/kHz GPU rows are normalized before this comparison.
+  if [ "$ACCOUNTABILITY_TRUSTED" -eq 1 ] && [ "$LAST_DECISION_BUDGET" != NONE ]; then
+    _freq_claims="$(printf '%s %s' "$ACCLESSON" "$ACCCORR" | grep -Eo '[0-9]{3,10}[[:space:]]*(MHz|kHz)' 2>/dev/null | tr -s ' ' | sort -u)"
+    while IFS= read -r _claim; do
+      [ -n "$_claim" ] || continue
+      _fc="$(printf '%s' "$_claim" | grep -Eo '^[0-9]+')"; _fu="$(printf '%s' "$_claim" | grep -Eo '(MHz|kHz)$')"
+      _fc_canon="$_fc"
+      if [ "$_fu" = MHz ]; then _fc_canon="$(gpu_unit_to_mhz "$_fc")" || { ACCOUNTABILITY_STATUS="FREQUENCY_UNIT_QUARANTINED"; ACCOUNTABILITY_TRUSTED=0; break; }; fi
+      printf '%s' "$LAST_DECISION_BUDGET" | grep -Eq "(^|[-=])${_fc_canon}([[:space:]-]|$)" || { ACCOUNTABILITY_STATUS="UNGROUNDED_FREQUENCY_QUARANTINED"; ACCOUNTABILITY_TRUSTED=0; break; }
+    done <<EOF_ACC_CLAIMS
+$_freq_claims
+EOF_ACC_CLAIMS
+  fi
+  if [ "$ACCOUNTABILITY_TRUSTED" -ne 1 ]; then
+    plog "ACCOUNTABILITY_QUARANTINE status=$ACCOUNTABILITY_STATUS model_previous=${ACCPREV_MODEL:-NONE} expected=${LAST_DECISION_ID:-NONE} current_plan_continues=1 NO_ATTRIBUTION_LEARNING=1"
+  fi
+  case "$DUR" in ''|*[!0-9]*) DUR=150;; esac
+  [ "$DUR" -lt 30 ] && DUR=30
+  [ "$DUR" -gt 150 ] && DUR=150
+  case "$EXIT_SKIN" in ''|*[!0-9]*) EXIT_SKIN=NA;; esac
+  if [ "$EXIT_SKIN" != NA ]; then [ "$EXIT_SKIN" -lt 40 ] && EXIT_SKIN=40; [ "$EXIT_SKIN" -gt 41 ] && EXIT_SKIN=41; fi
+  BASE_POWER_MW="$(tail -n 60 "$TEL" 2>/dev/null | awk -F, -v wm="$CURRENT_WINDOW_MODE" -v we="$CURRENT_WINDOW_EPOCH" '$23==wm && $24==we && $19~/^[0-9]+$/ && $20=="VALID"{s+=$19;n++}END{if(n)printf "%.0f",s/n;else print "NA"}')"
+  # Persist server-side structured reasoning as inert evolution memory.
+  # This is not sourced/eval'd and cannot directly execute hardware changes.
+  _evo_sanitize(){ printf '%s' "$1" | tr '\t\r\n' '   ' | cut -c1-260; }
+  _evo_acc_lesson="${ACCLESSON:-NA}"; _evo_acc_correction="${ACCCORR:-NA}"; [ "${ACCOUNTABILITY_TRUSTED:-0}" -eq 1 ] || { _evo_acc_lesson="QUARANTINED"; _evo_acc_correction="QUARANTINED"; }; _evo_line="$(date +%s)\t${GAME_ID:-UNKNOWN}\t${CURRENT_WINDOW_MODE:-UNKNOWN}\t$(_evo_sanitize "${ACTION:-NA}")\t$(_evo_sanitize "${CMODE:-NA}")\t$(_evo_sanitize "${OINT:-NA}")\t$(_evo_sanitize "${DECHYP:-NA}")\t$(_evo_sanitize "${_evo_acc_lesson:-NA}")\t$(_evo_sanitize "${_evo_acc_correction:-NA}")\t$(_evo_sanitize "${RAT:-NA}")"
+  umask 077
+  printf '%b\n' "$_evo_line" >>"$EVOLUTION_MEMORY"
+  tail -n 1200 "$EVOLUTION_MEMORY" >"$EVOLUTION_MEMORY.tmp.$$" 2>/dev/null && mv -f "$EVOLUTION_MEMORY.tmp.$$" "$EVOLUTION_MEMORY"
+  chmod 600 "$EVOLUTION_MEMORY" 2>/dev/null || true
+
+  case "${ASCOPE:-}" in RESOURCE_ONLY|FULL_EXPERT) :;; *) ASCOPE=FULL_EXPERT;; esac
+  case "${TMODE:-}" in NATIVE|RELAXED|PERFORMANCE|BYPASS) :;; *) TMODE=NATIVE;; esac
+  # Governor names are validated against live kernel lists, not a module whitelist.
+  case "${CGOV:-}" in ''|AUTO) CGOV=AUTO;; *[!A-Za-z0-9_.-]*) CGOV=AUTO;; esac
+  case "${GGOV:-}" in ''|AUTO) GGOV=AUTO;; *[!A-Za-z0-9_.-]*) GGOV=AUTO;; esac
+  if [ -r "$KERNEL_CAPABILITY_FILE" ]; then
+    if [ "$CGOV" != AUTO ]; then
+      _cgovok="$(awk -F '\t' -v g="$CGOV" '$1=="CPU"{x=" "$6" ";if(index(x," "g" "))ok=1}END{print ok+0}' "$KERNEL_CAPABILITY_FILE" 2>/dev/null)"
+      [ "$_cgovok" = 1 ] || { plog "GOVERNOR_REJECT cpu=$CGOV reason=not_live_capability"; CGOV=AUTO; }
+    fi
+    if [ "$GGOV" != AUTO ]; then
+      _ggovok="$(awk -F '\t' -v g="$GGOV" '$1=="GPU"{x=" "$6" ";if(index(x," "g" "))ok=1}END{print ok+0}' "$KERNEL_CAPABILITY_FILE" 2>/dev/null)"
+      [ "$_ggovok" = 1 ] || { plog "GOVERNOR_REJECT gpu=$GGOV reason=not_live_capability"; GGOV=AUTO; }
+    fi
+  fi
+  case "${BMODE:-}" in NATIVE|COOL|BALANCED|PERFORMANCE|CUSTOM) :;; *) BMODE=NATIVE;; esac
+  case "${CENABLE:-}" in AUTO|ENABLE|DISABLE) :;; *) CENABLE=AUTO;; esac
+  case "${CCURRENT:-}" in ''|*[!0-9]*) CCURRENT=NA;; esac
+  case "${ICURRENT:-}" in ''|*[!0-9]*) ICURRENT=NA;; esac
+  case "${SMODE:-}" in NATIVE|FAST|BALANCED|SLOW|BYPASS) :;; *) SMODE=NATIVE;; esac
+  case "${CBOOST:-}" in AUTO|ON|OFF) :;; *) CBOOST=AUTO;; esac
+  case "${TPOLL:-}" in ''|*[!0-9]*) TPOLL=NA;; *) [ "$TPOLL" -gt 60000 ] 2>/dev/null && TPOLL=60000;; esac
+  case "${TPASS:-}" in ''|*[!0-9]*) TPASS=NA;; *) [ "$TPASS" -gt 60000 ] 2>/dev/null && TPASS=60000;; esac
+  case "${TSHIFT:-}" in ''|*[!0-9-]*) TSHIFT=0;; *) [ "$TSHIFT" -gt 30000 ] 2>/dev/null && TSHIFT=30000; [ "$TSHIFT" -lt -30000 ] 2>/dev/null && TSHIFT=-30000;; esac
+  case "${GBOOST:-}" in ''|*[!0-9]*) GBOOST=NA;; *) [ "$GBOOST" -gt 3 ] 2>/dev/null && GBOOST=3;; esac
+  case "${BVOLT:-}" in ''|*[!0-9]*) BVOLT=NA;; esac
+  case "${CEND:-}" in ''|*[!0-9]*) CEND=NA;; *) [ "$CEND" -gt 100 ] 2>/dev/null && CEND=100; [ "$CEND" -lt 50 ] 2>/dev/null && CEND=50;; esac
+
+
+  # COMFORT89 FULLSYNC1: normalize the Gemini proposal against the same GAME
+  # comfort contract seen by Hermes and the Agent BEFORE publishing either
+  # predictive_policy or root_authority_policy. This closes the RC1 execution gap.
+  GAME_COMFORT_CONTRACT_ID='UNAVAILABLE'
+  if [ -x "$GAME_COMFORT_POLICY" ]; then
+    GAME_COMFORT_CONTRACT_ID="$(DJAEGER_MODDIR="$M" sh "$GAME_COMFORT_POLICY" contract-id 2>/dev/null)"; [ -n "$GAME_COMFORT_CONTRACT_ID" ] || GAME_COMFORT_CONTRACT_ID='UNAVAILABLE'
+    _gcc_old="$LMIN-$LMAX:$BMIN-$BMAX:$GMIN-$GMAX"
+    _gcc_new="$(DJAEGER_MODDIR="$M" sh "$GAME_COMFORT_POLICY" clamp "$GAME_ID" "$REC" "$LMIN" "$LMAX" "$BMIN" "$BMAX" "$GMIN" "$GMAX" 2>/dev/null)"
+    if [ -n "$_gcc_new" ]; then
+      IFS=' ' read -r _gcc_lmin _gcc_lmax _gcc_bmin _gcc_bmax _gcc_gmin _gcc_gmax <<EOF_GCC
+$_gcc_new
+EOF_GCC
+      if [ -n "$_gcc_gmax" ]; then LMIN=$_gcc_lmin; LMAX=$_gcc_lmax; BMIN=$_gcc_bmin; BMAX=$_gcc_bmax; GMIN=$_gcc_gmin; GMAX=$_gcc_gmax; fi
+    fi
+    _gcc_after="$LMIN-$LMAX:$BMIN-$BMAX:$GMIN-$GMAX"
+    [ "$_gcc_old" = "$_gcc_after" ] || plog "GAME_COMFORT GEMINI_ENVELOPE_NORMALIZED contract=$GAME_COMFORT_CONTRACT_ID game=$GAME_ID profile=$REC old=$_gcc_old new=$_gcc_after"
+  fi
+
+
+  # Native kernel plan is inert data. Local executor accepts only exact paths discovered live as RW ACTUATOR nodes.
+  NWRITE="$(printf '%s' "${NWRITE:-}" | tr '\r\n' '  ' | cut -c1-6000)"
+  NOW="$(date +%s)"; UNTIL=$((NOW+DUR)); MIN_UNTIL=$((NOW+30))
+  {
+    printf "GAME_COMFORT_CONTRACT_ID='%s'\nGAME_COMFORT_SYNC='GEMINI_PREPROPOSAL_AND_PREEXEC'\n" "$GAME_COMFORT_CONTRACT_ID"
+    printf "POLICY_ACTION='%s'\n" "$ACTION"
+    printf "POLICY_PROFILE='%s'\n" "$REC"
+    printf "POLICY_CONTROL_MODE='%s'\nPOLICY_OPERATING_INTENT='%s'\nPOLICY_LITTLE_MIN='%s'\nPOLICY_LITTLE_MAX='%s'\nPOLICY_BIG_MIN='%s'\nPOLICY_BIG_MAX='%s'\nPOLICY_GPU_MIN='%s'\nPOLICY_GPU_MAX='%s'\nEXPECTED_SKIN_DELTA='%s'\nEXPECTED_FPS_DELTA='%s'\nREVIEW_SECONDS='%s'\nEFFICIENCY_INTENT='%s'\nEXPECTED_POWER_DELTA_PCT='%s'\n" "$CMODE" "$OINT" "$LMIN" "$LMAX" "$BMIN" "$BMAX" "$GMIN" "$GMAX" "$ESD" "$EFD" "$REVIEW" "$EINT" "$EPD"
+    printf "FORESIGHT_FPS_LOW='%s'\nFORESIGHT_FPS_HIGH='%s'\nFORESIGHT_SKIN_LOW_C='%s'\nFORESIGHT_SKIN_HIGH_C='%s'\nFORESIGHT_POWER_LOW_MW='%s'\nFORESIGHT_POWER_HIGH_MW='%s'\nFORESIGHT_P95_LOW_MS='%s'\nFORESIGHT_P95_HIGH_MS='%s'\nFORESIGHT_P99_LOW_MS='%s'\nFORESIGHT_P99_HIGH_MS='%s'\nFORESIGHT_JANK_RISK_PCT='%s'\nFORESIGHT_THERMAL_RISK_PCT='%s'\nFORESIGHT_CONFIDENCE='%s'\nPREDICTED_BOTTLENECK='%s'\nFORESIGHT_BASIS='%s'\n" "$FPSLO" "$FPSHI" "$SKINLO" "$SKINHI" "$PWRLO" "$PWRHI" "$P95LO" "$P95HI" "$P99LO" "$P99HI" "$JRISK" "$THRISK" "$FCONF" "$(printf '%s' "$PBOT"|tr "'" ' ')" "$(printf '%s' "$FBASIS"|tr "'" ' ')"
+    printf "AUTHORITY_SCOPE='%s'\nTHERMAL_MODE='%s'\nCPU_GOVERNOR='%s'\nGPU_GOVERNOR='%s'\nBATTERY_MODE='%s'\nCHARGE_ENABLE='%s'\nCHARGE_CURRENT_UA='%s'\nINPUT_CURRENT_UA='%s'\n" "$ASCOPE" "$TMODE" "$CGOV" "$GGOV" "$BMODE" "$CENABLE" "$CCURRENT" "$ICURRENT"
+    printf "NATIVE_WRITE_PLAN='%s'\n" "$(printf '%s' "$NWRITE"|tr "'" " ")"
+    printf "SENSOR_MODE='%s'\nTHERMAL_POLLING_MS='%s'\nTHERMAL_PASSIVE_MS='%s'\nTHERMAL_TRIP_SHIFT_MC='%s'\nCPU_BOOST='%s'\nGPU_BOOST_LEVEL='%s'\nBATTERY_VOLTAGE_UV='%s'\nCHARGE_END_PERCENT='%s'\n" "$SMODE" "$TPOLL" "$TPASS" "$TSHIFT" "$CBOOST" "$GBOOST" "$BVOLT" "$CEND"
+    printf "THERMAL_TREND='%s'\n" "$TT"
+    printf "PERFORMANCE_TREND='%s'\n" "$PT"
+    printf "THERMAL_RISK='%s'\n" "$TR"
+    printf "PERFORMANCE_RISK='%s'\n" "$PR"
+    printf "SKIN_FORECAST_2M='%s'\n" "$SF"
+    printf "FPS_FORECAST_2M='%s'\n" "$FF"
+    printf "POLICY_CONFIDENCE='%s'\n" "$CONF"
+    printf "INTERVENTION_SECONDS='%s'\nEXIT_SKIN_C='%s'\n" "$DUR" "$EXIT_SKIN"
+    printf "POLICY_AT='%s'\nPOLICY_MIN_UNTIL='%s'\nPOLICY_UNTIL='%s'\n" "$NOW" "$MIN_UNTIL" "$UNTIL"
+    printf "POLICY_SCENE_ID='%s'\nPOLICY_TIME_BUCKET='%s'\nPOLICY_SESSION_AGE='%s'\n" "$SCENE_ID" "$TIME_BUCKET" "$SESSION_AGE"
+    printf "POLICY_WINDOW_MODE='%s'\nPOLICY_WINDOW_EPOCH='%s'\n" "$CURRENT_WINDOW_MODE" "$CURRENT_WINDOW_EPOCH"
+    printf "POLICY_SESSION_ID='%s'\nPOLICY_GAME='%s'\nPOLICY_USER_MODE='%s'\n" "$(cat "$P/session_id" 2>/dev/null)" "$GAME_ID" "$USER_MODE"
+    printf "POLICY_BASE_SKIN='%s'\nPOLICY_BASE_FPS='%s'\nPOLICY_BASE_P95='%s'\nPOLICY_BASE_P99='%s'\nPOLICY_BASE_POWER_MW='%s'\n" "$AVG_SKIN" "$AVG_FPS" "$AVG_P95" "$AVG_P99" "$BASE_POWER_MW"
+    printf "POLICY_FACTS='%s'\nPOLICY_INFERENCES='%s'\nPOLICY_UNKNOWNS='%s'\nPOLICY_REQUESTED_OBSERVATIONS='%s'\n" "$(printf '%s' "$FACTS"|tr "'" " ")" "$(printf '%s' "$INFER"|tr "'" " ")" "$(printf '%s' "$UNKNOWNS"|tr "'" " ")" "$(printf '%s' "$REQOBS"|tr "'" " ")"
+    printf "POLICY_RATIONALE='%s'\n" "$(printf '%s' "$RAT"|tr "'" " ")"
+    printf "POLICY_DECISION_HYPOTHESIS='%s'\nACCOUNTABILITY_STATUS='%s'\nACCOUNTABILITY_TRUSTED='%s'\nACCOUNTABILITY_VERDICT='%s'\nACCOUNTABILITY_PREVIOUS_DECISION_ID='%s'\nACCOUNTABILITY_MODEL_PREVIOUS_DECISION_ID='%s'\nACCOUNTABILITY_LESSON='%s'\nACCOUNTABILITY_CORRECTION='%s'\n" "$(printf '%s' "$DECHYP"|tr "'," "  ")" "$ACCOUNTABILITY_STATUS" "$ACCOUNTABILITY_TRUSTED" "$ACCVER" "$ACCPREV" "${ACCPREV_MODEL:-$ACCPREV}" "$(printf '%s' "$ACCLESSON"|tr "'," "  ")" "$(printf '%s' "$ACCCORR"|tr "'," "  ")"
+  } >"$POL.tmp" && {
+    chmod 600 "$POL.tmp" 2>/dev/null
+    mv -f "$POL.tmp" "$POL"
+    # v12.9.16: expose the latest validated Gemini operating envelope as persistent state.
+    _envtmp="$ADAPTIVE_ENVELOPE.tmp.$$"
+    {
+      printf "updated_at='%s'\n" "$NOW"
+      printf "game='%s'\nwindow_mode='%s'\nuser_mode='%s'\n" "$GAME_ID" "$CURRENT_WINDOW_MODE" "$USER_MODE"
+      printf "control_mode='%s'\noperating_intent='%s'\nanchor_profile='%s'\n" "$CMODE" "$OINT" "$REC"
+      printf "little_khz='%s-%s'\nbig_khz='%s-%s'\ngpu_mhz='%s-%s'\n" "$LMIN" "$LMAX" "$BMIN" "$BMAX" "$GMIN" "$GMAX"
+      printf "confidence='%s'\nreview_seconds='%s'\nsource='GEMINI_VALIDATED'\n" "$CONF" "$REVIEW"
+    } >"$_envtmp" 2>/dev/null && chmod 600 "$_envtmp" 2>/dev/null && mv -f "$_envtmp" "$ADAPTIVE_ENVELOPE" 2>/dev/null
+    _al="$(printf '%s' "$ACCLESSON" | tr ',\n\r' '   ' | cut -c1-180)"; _ac="$(printf '%s' "$ACCCORR" | tr ',\n\r' '   ' | cut -c1-180)"
+    _arow="$NOW,$GAME_ID,$ACCPREV,$LAST_DECISION_OUTCOME,$ACCVER,$_al,$_ac,$REC,$LMIN-$LMAX,$BMIN-$BMAX,$GMIN-$GMAX,$CURRENT_WINDOW_MODE,$USER_MODE"
+    if [ "${ACCOUNTABILITY_TRUSTED:-0}" -eq 1 ]; then
+      csv_upsert_policy "$ACCOUNTABILITY_REVIEWS" 160 "decision_id,game,previous_decision_id,previous_outcome,verdict,lesson,correction,new_profile,little_budget,big_budget,gpu_budget,window_mode,user_mode" "$_arow" "$NOW" || plog "PERSISTENCE_FAIL memory=$ACCOUNTABILITY_REVIEWS"
+      plog "ACCOUNTABILITY_REVIEW decision_id=$NOW previous=$ACCPREV previous_outcome=$LAST_DECISION_OUTCOME verdict=$ACCVER correction=$(printf '%s' "$ACCCORR" | tr ' ' '_' | cut -c1-120)"
+    else
+      plog "ACCOUNTABILITY_REVIEW_SKIPPED status=${ACCOUNTABILITY_STATUS:-UNTRUSTED} NO_ATTRIBUTION_LEARNING=1"
+    fi
+    reasoning_trace_publish VALIDATED_POLICY "EVENT_DRIVEN_REASONING"
+    _RAP="$ROOT_AUTHORITY_POLICY.tmp.$$"
+    {
+      printf "POLICY_AT='%s'\n" "$NOW"
+      printf "POLICY_SESSION_ID='%s'\nPOLICY_GAME='%s'\nPOLICY_USER_MODE='%s'\nPOLICY_WINDOW_MODE='%s'\nPOLICY_WINDOW_EPOCH='%s'\n" "$(cat "$P/session_id" 2>/dev/null)" "$GAME_ID" "$USER_MODE" "$CURRENT_WINDOW_MODE" "$CURRENT_WINDOW_EPOCH"
+      printf "GAME_COMFORT_CONTRACT_ID='%s'\nGAME_COMFORT_SYNC='GEMINI_NORMALIZED'\nLOGICAL_PROFILE='%s'\n" "$GAME_COMFORT_CONTRACT_ID" "$REC"
+      printf "AUTHORITY_SCOPE='%s'\n" "$ASCOPE"
+      printf "THERMAL_MODE='%s'\nCPU_GOVERNOR='%s'\nGPU_GOVERNOR='%s'\n" "$TMODE" "$CGOV" "$GGOV"
+      printf "BATTERY_MODE='%s'\nCHARGE_ENABLE='%s'\nCHARGE_CURRENT_UA='%s'\nINPUT_CURRENT_UA='%s'\n" "$BMODE" "$CENABLE" "$CCURRENT" "$ICURRENT"
+      printf "SENSOR_MODE='%s'\nTHERMAL_POLLING_MS='%s'\nTHERMAL_PASSIVE_MS='%s'\nTHERMAL_TRIP_SHIFT_MC='%s'\n" "$SMODE" "$TPOLL" "$TPASS" "$TSHIFT"
+      printf "CPU_BOOST='%s'\nGPU_BOOST_LEVEL='%s'\nBATTERY_VOLTAGE_UV='%s'\nCHARGE_END_PERCENT='%s'\n" "$CBOOST" "$GBOOST" "$BVOLT" "$CEND"
+      printf "NATIVE_WRITE_PLAN='%s'\n" "$(printf '%s' "$NWRITE"|tr "'" " ")"
+      printf "LITTLE_MIN_KHZ='%s'\nLITTLE_MAX_KHZ='%s'\nBIG_MIN_KHZ='%s'\nBIG_MAX_KHZ='%s'\n" "$LMIN" "$LMAX" "$BMIN" "$BMAX"
+      _gmnhz=NA; _gmxhz=NA
+      case "$GMIN" in ''|*[!0-9]*) :;; *) _gmnhz=$((GMIN*1000000));; esac
+      case "$GMAX" in ''|*[!0-9]*) :;; *) _gmxhz=$((GMAX*1000000));; esac
+      printf "GPU_MIN_HZ='%s'\nGPU_MAX_HZ='%s'\n" "$_gmnhz" "$_gmxhz"
+      printf "CONFIDENCE='%s'\nRATIONALE='%s'\n" "$CONF" "$(printf '%s' "$RAT"|tr "'" ' ')"
+    } >"$_RAP" 2>/dev/null && chmod 600 "$_RAP" 2>/dev/null && mv -f "$_RAP" "$ROOT_AUTHORITY_POLICY"
+    # GEMINITHOUGHTCOMMIT1: publish Gemini thought/knowledge only after both executable policy files exist.
+    if [ -s "$POL" ] && [ -s "$ROOT_AUTHORITY_POLICY" ] && [ -n "${NARRATIVE:-}" ]; then
+      thought_publish GEMINI ONLINE "${CONF:-0}" "$NARRATIVE"
+      knowledge_append "$NARRATIVE"
+      memory_status_publish
+    fi
+    plog "POLICY ACTION=$ACTION MODE=$CMODE INTENT=$OINT ANCHOR=$REC L=$LMIN-$LMAX B=$BMIN-$BMAX G=$GMIN-$GMAX THERMAL=$TT/$TR PERF=$PT/$PR SKIN2M=$SF FPS2M=$FF CONF=$CONF DURATION=${DUR}s EXIT_SKIN=$EXIT_SKIN FORESIGHT=FPS[$FPSLO,$FPSHI]_SKIN[$SKINLO,$SKINHI]_JRISK${JRISK}_TRISK${THRISK}_FCONF${FCONF} PARSER=$PARSE_MODE"
+  }
+  return 0
+}
+
+# v12.9.8 PID-reuse-safe predictor singleton. PID + /proc starttime identify the owner.
+PRED_OWNER="$LOCKDIR/owner"
+proc_starttime(){ awk '{print $22}' "/proc/$1/stat" 2>/dev/null; }
+predictor_owner_is_live(){
+  _pid="$1"; _birth="$2"
+  case "$_pid:$_birth" in *[!0-9:]*|:|*:) return 1;; esac
+  [ "$_pid" -gt 1 ] 2>/dev/null || return 1
+  kill -0 "$_pid" 2>/dev/null || return 1
+  [ "$(proc_starttime "$_pid")" = "$_birth" ] || return 1
+  _cmd="$(tr '\000' ' ' <"/proc/$_pid/cmdline" 2>/dev/null)"
+  case "$_cmd" in *djaeger_game_stabilizer/predictor.sh*) return 0;; esac
+  return 1
+}
+acquire_predictor_lock(){
+  _try=0
+  while [ "$_try" -lt 3 ]; do
+    if mkdir "$LOCKDIR" 2>/dev/null; then
+      chmod 700 "$LOCKDIR" 2>/dev/null
+      _birth="$(proc_starttime "$$")"
+      printf 'PID=%s\nSTARTTIME=%s\n' "$$" "$_birth" >"$PRED_OWNER.tmp.$$" 2>/dev/null && { chmod 600 "$PRED_OWNER.tmp.$$" 2>/dev/null; mv -f "$PRED_OWNER.tmp.$$" "$PRED_OWNER"; }
+      printf '%s\n' "$$" >"$LOCK.tmp.$$" 2>/dev/null && { chmod 600 "$LOCK.tmp.$$" 2>/dev/null; mv -f "$LOCK.tmp.$$" "$LOCK"; }
+      return 0
+    fi
+    OLD="$(sed -n 's/^PID=//p' "$PRED_OWNER" 2>/dev/null)"
+    BIRTH="$(sed -n 's/^STARTTIME=//p' "$PRED_OWNER" 2>/dev/null)"
+    predictor_owner_is_live "$OLD" "$BIRTH" && return 1
+    plog "STALE_PREDICTOR_LOCK PID=${OLD:-NA} STARTTIME=${BIRTH:-NA} RECOVERED=1"
+    rm -rf "$LOCKDIR" 2>/dev/null; rm -f "$LOCK" 2>/dev/null
+    _try=$((_try+1))
+  done
+  return 1
+}
+predictor_cleanup(){
+  _pid="$(sed -n 's/^PID=//p' "$PRED_OWNER" 2>/dev/null)"
+  _birth="$(sed -n 's/^STARTTIME=//p' "$PRED_OWNER" 2>/dev/null)"
+  if [ "$_pid" = "$$" ] && [ "$_birth" = "$(proc_starttime "$$")" ]; then rm -f "$LOCK" 2>/dev/null; rm -rf "$LOCKDIR" 2>/dev/null; fi
+}
+acquire_predictor_lock || exit 0
+trap 'predictor_cleanup' EXIT INT TERM
+plog "WORKER ONLINE PID=$$ PARSER=v12.9.50-UI6_FIX1 REASONING_FEEDBACK=1 AGENT_COMPACT_TRUTH=1 TOKEN_POLICY=EVENT_DELTA HARDWARE_KNOWLEDGE=1 HARDWARE_FORESIGHT=1 STRUCTURED=1 AUTONOMOUS_COMFORT=1 COMFORT_PRIORITY=VERY_COMFORTABLE>COMFORTABLE"
+if ui6_fix1_migrate_gpu_learning_units; then plog "UI6_FIX1_GPU_UNIT_MIGRATION status=READY canonical=MHz backups=preserved"; else plog "UI6_FIX1_GPU_UNIT_MIGRATION status=FAILED learning_preserved=1"; fi
+resync_publish(){
+  _state="$1"; _reason="$2"; _now="$(date +%s)"; _tmp="$RESYNC_STATE.tmp.$$"
+  { printf "UPDATED_AT='%s'\nSTATE='%s'\nREASON='%s'\nSESSION_GAME='%s'\nLAST_GEMINI_AT='%s'\n" "$_now" "$_state" "$_reason" "$(cat "$SESSION_GAME" 2>/dev/null)" "${LAST_GEMINI_AT:-0}"; } >"$_tmp" 2>/dev/null && chmod 600 "$_tmp" 2>/dev/null && mv -f "$_tmp" "$RESYNC_STATE"
+}
+reasoning_trace_publish(){
+  _status="$1"; _reason="$2"; _now="$(date +%s)"; _tmp="$REASONING_TRACE.tmp.$$"
+  {
+    printf "UPDATED_AT='%s'\nSTATUS='%s'\nEVENT_REASON='%s'\n" "$_now" "$_status" "$_reason"
+    printf "GAME='%s'\nWINDOW_MODE='%s'\nUSER_MODE='%s'\n" "$(cat "$SESSION_GAME" 2>/dev/null)" "${CURRENT_WINDOW_MODE:-UNKNOWN}" "$(cat "$USER_MODE_FILE" 2>/dev/null)"
+    printf "FACTS='%s'\nINFERENCES='%s'\nUNKNOWNS='%s'\nREQUESTED_OBSERVATIONS='%s'\n" "$(printf '%s' "${FACTS:-NONE}"|tr "'\r\n" '   ')" "$(printf '%s' "${INFER:-NONE}"|tr "'\r\n" '   ')" "$(printf '%s' "${UNKNOWNS:-NONE}"|tr "'\r\n" '   ')" "$(printf '%s' "${REQOBS:-NONE}"|tr "'\r\n" '   ')"
+    printf "PROPOSAL_ACTION='%s'\nPROPOSAL_PROFILE='%s'\nCONFIDENCE='%s'\n" "${ACTION:-NA}" "${REC:-NA}" "${CONF:-0}"
+    printf "ACCOUNTABILITY_STATUS='%s'\nACCOUNTABILITY_TRUSTED='%s'\nACCOUNTABILITY_VERDICT='%s'\nPREVIOUS_DECISION_ID='%s'\nPREVIOUS_OUTCOME='%s'\n" "${ACCOUNTABILITY_STATUS:-NA}" "${ACCOUNTABILITY_TRUSTED:-0}" "${ACCVER:-NA}" "${ACCPREV:-NONE}" "${LAST_DECISION_OUTCOME:-NONE}"
+    printf "SAFETY_RESULT='%s'\nPOLICY_AT='%s'\n" "${ACTION:-NA}" "${NOW:-0}"
+load_live_capability || :
+[ "${SOURCE:-${POLICY_SOURCE:-}}" = "GEMINI" ] && publish_strategy_formula
+  } >"$_tmp" 2>/dev/null && chmod 600 "$_tmp" 2>/dev/null && mv -f "$_tmp" "$REASONING_TRACE"
+}
+FAILS=0
+LAST_GEMINI_AT=0
+LAST_EVENT_SIG=""
+EVENT_MIN_GAP=45
+EVENT_MAX_GAP=300
+GEMINI_WAS_UNAVAILABLE=0
+resync_publish INITIALIZING WORKER_START
+reasoning_context_identity(){
+  _sid="$(cat "$P/session_id" 2>/dev/null)"
+  _game="$(cat "$SESSION_GAME" 2>/dev/null)"
+  _wm="$(sed -n "s/^WINDOW_MODE='\([^']*\)'.*/\1/p" "$WINDOW_CTX" 2>/dev/null | head -1)"
+  _we="$(sed -n "s/^WINDOW_EPOCH='\([0-9][0-9]*\)'.*/\1/p" "$WINDOW_CTX" 2>/dev/null | head -1)"
+  _um="$(cat "$P/user_mode" 2>/dev/null | tr -d '\r\n ')"
+  printf '%s|%s|%s|%s|%s' "${_sid:-NA}" "${_game:-NA}" "${_wm:-INACTIVE}" "${_we:-0}" "${_um:-AUTO}"
+}
+# GEMINICONTEXTREFRESH1: compare committed policy lease to live context without executing stale policy.
+policy_context_identity(){
+  [ -r "$POL" ] || { printf 'NONE'; return 0; }
+  _pv(){ awk -v k="$1" 'index($0,k"=\047")==1&&substr($0,length($0),1)=="\047"{print substr($0,length(k)+3,length($0)-length(k)-3);exit}' "$POL" 2>/dev/null; }
+  _psid="$(_pv POLICY_SESSION_ID)"
+  _pgame="$(_pv POLICY_GAME)"
+  _pwm="$(_pv POLICY_WINDOW_MODE)"
+  _pwe="$(_pv POLICY_WINDOW_EPOCH)"
+  _pum="$(_pv POLICY_USER_MODE)"
+  printf '%s|%s|%s|%s|%s' "${_psid:-NA}" "${_pgame:-NA}" "${_pwm:-INACTIVE}" "${_pwe:-0}" "${_pum:-AUTO}"
+}
+reasoning_event_signature(){
+  _last="$(tail -n 1 "$TEL" 2>/dev/null)"
+  _sig="$(printf '%s\n' "$_last" | awk -F, '{skin=$4+0; fps=$11+0; j=$12+0; p95=$13+0; printf "skin%d_fps%d_j%d_p95%d_w%s_e%s", int(skin/2), int(fps/5), int(j/5), int(p95/5), $23, $24}')"
+  _out="$(tail -n 1 "$DECISION_LEDGER" 2>/dev/null | cut -d, -f1,11)"
+  printf '%s|%s|%s|%s' "$_sig" "$_out" "$(cat "$SESSION_GAME" 2>/dev/null)" "$(cat "$P/user_mode" 2>/dev/null)"
+}
+eco_predictor_screen_on(){ [ -x "$SCREEN_STATE" ] && sh "$SCREEN_STATE" on; }
+ECO_IDLE_PUBLISHED=0
+while true; do
+  if [ ! -s "$SESSION_GAME" ] || [ ! -s "$SESSION_START" ]; then
+    FAILS=0; LAST_GEMINI_AT=0; LAST_EVENT_SIG=""; GEMINI_WAS_UNAVAILABLE=0
+    [ "$ECO_IDLE_PUBLISHED" -eq 1 ] 2>/dev/null || { resync_publish IDLE NO_ACTIVE_SESSION; ECO_IDLE_PUBLISHED=1; }
+    if eco_predictor_screen_on; then sleep 20; else sleep 60; fi
+    continue
+  fi
+  ECO_IDLE_PUBLISHED=0
+  ROWS=$(tail -n 8 "$TEL" 2>/dev/null | awk -F, '$1~/^[0-9]+$/{n++}END{print n+0}')
+  if [ "${ROWS:-0}" -lt 3 ]; then FAILS=0; sleep 20; continue; fi
+  analyze 1
+  NOW_LOOP=$(date +%s); EVENT_SIG="$(reasoning_event_signature)"; AGE=$((NOW_LOOP-LAST_GEMINI_AT)); SHOULD_REASON=0
+  [ "$LAST_GEMINI_AT" -eq 0 ] && SHOULD_REASON=1
+  [ "$EVENT_SIG" != "$LAST_EVENT_SIG" ] && [ "$AGE" -ge "$EVENT_MIN_GAP" ] && SHOULD_REASON=1
+  [ "$AGE" -ge "$EVENT_MAX_GAP" ] && SHOULD_REASON=1
+
+  # GEMINICONTEXTREFRESH1: context changes request a new plan promptly; mismatched policy remains fail-closed.
+  LIVE_CONTEXT_ID="$(reasoning_context_identity)"
+  COMMITTED_CONTEXT_ID="$(policy_context_identity)"
+  if [ "$COMMITTED_CONTEXT_ID" != NONE ] && [ "$COMMITTED_CONTEXT_ID" != "$LIVE_CONTEXT_ID" ] && [ "$AGE" -ge 20 ] 2>/dev/null; then
+    SHOULD_REASON=1
+  fi
+
+  # GEMINIPOLICYREFRESH1: refresh before POLICY_UNTIL. Provider cooldown still wins because
+  # LAST_GEMINI_AT can be future-shifted, producing a negative AGE that blocks this gate.
+  POLICY_REFRESH_LEAD_SEC=30
+  POLICY_REMAIN_SEC=-1
+  if [ -r "$POL" ]; then
+    _policy_until="$(awk -v k=POLICY_UNTIL 'index($0,k"=\047")==1&&substr($0,length($0),1)=="\047"{print substr($0,length(k)+3,length($0)-length(k)-3);exit}' "$POL" 2>/dev/null)"
+    case "$_policy_until" in ''|*[!0-9]*) :;; *)
+      POLICY_REMAIN_SEC=$((_policy_until-NOW_LOOP))
+      [ "$POLICY_REMAIN_SEC" -le "$POLICY_REFRESH_LEAD_SEC" ] 2>/dev/null && [ "$AGE" -ge 30 ] 2>/dev/null && SHOULD_REASON=1
+    ;; esac
+  elif [ "$AGE" -ge 30 ] 2>/dev/null; then
+    SHOULD_REASON=1
+  fi
+
+  [ "$SHOULD_REASON" -eq 1 ] || { sleep 20; continue; }
+  PRE_CONTEXT_ID="$(reasoning_context_identity)"
+  analyze 0; RC=$?; NOW_LOOP=$(date +%s)
+  POST_CONTEXT_ID="$(reasoning_context_identity)"
+  if [ "$RC" -eq 0 ] && [ "$PRE_CONTEXT_ID" != "$POST_CONTEXT_ID" ]; then
+    # Fail closed: a Gemini proposal reasoned over a session/window/mode that changed
+    # while the request was in flight must never become executable policy.
+    rm -f "$POL" "$ROOT_AUTHORITY_POLICY" 2>/dev/null
+    RC=31
+    GEMINI_WAS_UNAVAILABLE=1
+    resync_publish NEEDS_RESYNC CONTEXT_CHANGED_DURING_REASONING
+    reasoning_trace_publish INVALIDATED_CONTEXT_CHANGE CONTEXT_CHANGED_DURING_REASONING
+    plog "REASONING_CONTEXT_INVALIDATED pre=$PRE_CONTEXT_ID post=$POST_CONTEXT_ID POLICY_REMOVED=1"
+  fi
+  if [ "$RC" -eq 0 ]; then
+    FAILS=0; LAST_GEMINI_AT=$NOW_LOOP; LAST_EVENT_SIG="$EVENT_SIG"
+    if [ "$GEMINI_WAS_UNAVAILABLE" -eq 1 ]; then
+      resync_publish RESYNCED FRESH_CONTEXT_ACCEPTED_AFTER_UNAVAILABLE
+      plog "GEMINI_STATE_RESYNC COMPLETE fresh_telemetry=1 prior_outcomes=1 session_context=1"
+    else
+      resync_publish SYNCHRONIZED VALIDATED_REASONING_COMMITTED
+    fi
+    GEMINI_WAS_UNAVAILABLE=0
+    plog "REASONING_EVENT COMMITTED signature=$EVENT_SIG max_refresh=${EVENT_MAX_GAP}s"
+  else
+    FAILS=$((FAILS+1))
+    if [ "$RC" -eq 11 ] || [ "$RC" -eq 13 ]; then WAIT=20; FAILS=0
+    elif [ "$RC" -eq 23 ]; then WAIT=900
+    elif [ "$RC" -eq 24 ] || [ "$RC" -eq 25 ]; then WAIT=300
+    elif [ "$RC" -eq 22 ]; then WAIT=120
+    elif [ "$RC" -eq 29 ]; then WAIT="${GEMINI_COOLDOWN_WAIT:-900}"; case "$WAIT" in ''|*[!0-9]*) WAIT=900;; esac; [ "$WAIT" -lt 20 ] && WAIT=20; [ "$WAIT" -gt 900 ] && WAIT=900
+    elif [ "$RC" -eq 31 ]; then WAIT=45
+    elif [ "$FAILS" -ge 3 ]; then WAIT=600
+    else WAIT=180; fi
+    LAST_GEMINI_AT=$((NOW_LOOP+WAIT-EVENT_MAX_GAP)); LAST_EVENT_SIG="$EVENT_SIG"
+    GEMINI_WAS_UNAVAILABLE=1; resync_publish NEEDS_RESYNC "GEMINI_UNAVAILABLE_RC_$RC"
+    reasoning_trace_publish LOCAL_FALLBACK "GEMINI_UNAVAILABLE_RC_$RC"
+    plog "UNAVAILABLE RC=$RC BACKOFF=${WAIT}s LOCAL_ONLY_CONTINUES=1 EVENT_DRIVEN=1 RESYNC_REQUIRED=1"
+  fi
+  sleep 20
+done
