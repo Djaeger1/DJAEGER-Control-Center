@@ -1,6 +1,7 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='32'
-RELEASE='CLOUDTRUTH-AUDIT1'
+SEQ='33'
+RELEASE='CLOUDTRUTH-AUDIT1-VERIFY'
 TARGET_VC='129659'
-FILE_COUNT='1'
+FILE_COUNT='2'
 FILE|djaeger-live-audit-v4|system/bin/djaeger-live-audit|aced3b228553f0e60ed6d38274fac2acd1115970de4f2db22aeb3e20dd487fd2|755
+FILE|djaeger-railway-bridge-cloudtruth2|system/bin/djaeger-railway-bridge|8071d693eb99870c9779e8cbe8b9eddf81d3a1d64dbc0ef5a949ac8ef170c93e|755
