@@ -1,6 +1,8 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='25'
-RELEASE='HOTCTRL1'
+SEQ='26'
+RELEASE='CLOUDTRUTH1-THOUGHTCOMMIT1'
 TARGET_VC='129659'
-FILE_COUNT='1'
-FILE|djaeger-railway-updater-hotctrl1|system/bin/djaeger-railway-updater|3c662283fe96301572c5602ac81ee1c0acfcf066be71c0a54667db4398d789b9|755
+FILE_COUNT='3'
+FILE|controller-cloudtruth1|controller.sh|78cec6542a9ea04e318dacd41cbae2808245bd48084a8c124948d9b2c4e574a0|755
+FILE|predictor-thoughtcommit1|predictor.sh|63cfe3dfc336e58d87aaacb4bae3feecfd4e8ef70ae41f718cd483e2bdbc9943|755
+FILE|djaeger-railway-bridge-cloudtruth1|system/bin/djaeger-railway-bridge|f729280e172d218237d4049ea2f144c28d6be6c60c57ebd0795b90e69f879369|755
