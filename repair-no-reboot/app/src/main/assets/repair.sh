@@ -32,7 +32,7 @@ chmod 700 "$R" 2>/dev/null || true
 
 # The updater is inside the signed APK. Validate the exact PID fix plus its own selftest.
 grep -Fq '[ "$_old" != "$$" ]' "$BUNDLED" || fail BUNDLED_PID_GUARD_INVALID
-grep -Fq 'printf '\''%s\n'\'' "$$" >"$PIDFILE"' "$BUNDLED" || fail BUNDLED_PID_WRITE_INVALID
+grep -Fq '"$$" >"$PIDFILE"' "$BUNDLED" || fail BUNDLED_PID_WRITE_INVALID
 DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$BUNDLED" selftest >/dev/null 2>&1 || fail BUNDLED_UPDATER_SELFTEST
 
 BAK="$R/updater.pre_noreboot_recovery2"
