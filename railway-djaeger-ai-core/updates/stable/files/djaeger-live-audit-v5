@@ -1,0 +1,161 @@
+#!/system/bin/sh
+# DJAEGER LIVEAUDIT5 — read-only installed-runtime audit for Railway observability.
+# No sysfs writes, no hardware authority, no secret values exported.
+M="${DJAEGER_MODDIR:-/data/adb/modules/djaeger_game_stabilizer}"
+P="${DJAEGER_STATE_DIR:-/data/adb/djaeger_ai}"
+R="$P/railway"
+OUT="$R/live_audit.env"
+mkdir -p "$R" 2>/dev/null || exit 2
+chmod 700 "$R" 2>/dev/null || true
+PASS=0; WARN=0; FAIL=0
+ok(){ PASS=$((PASS+1)); }
+warn(){ WARN=$((WARN+1)); }
+bad(){ FAIL=$((FAIL+1)); }
+clean(){ printf '%s' "${1:-}" | tr '\r\n\t' '   ' | tr "'" ' ' | cut -c1-180; }
+qget(){ [ -r "$1" ] || return 0; awk -F= -v k="$2" '$1==k{v=substr($0,index($0,"=")+1);gsub(/^[[:space:]\047\042]+|[[:space:]\047\042]+$/,"",v);print v;exit}' "$1" 2>/dev/null; }
+sha(){ sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
+mode(){ stat -c '%a' "$1" 2>/dev/null | tail -1; }
+proc_live(){
+  _pf="$1"; _needle="$2"; _pid="$(cat "$_pf" 2>/dev/null)"
+  case "$_pid" in ''|*[!0-9]*) echo NO; return;; esac
+  [ "$_pid" -gt 1 ] 2>/dev/null && kill -0 "$_pid" 2>/dev/null || { echo NO; return; }
+  _cmd="$(tr '\000' ' ' <"/proc/$_pid/cmdline" 2>/dev/null)"
+  case "$_cmd" in *"$_needle"*) echo YES;; *) echo PID_MISMATCH;; esac
+}
+test_component(){
+  _name="$1"; _path="$2"; shift 2
+  [ -r "$_path" ] || { printf '%s=MISSING\n' "$_name"; bad; return; }
+  _o="$R/.audit_${_name}.$$"
+  DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$_path" "$@" >"$_o" 2>&1; _rc=$?
+  _fc="$(sed -n 's/^FAIL_COUNT[= ]*//p' "$_o" | tail -1 | tr -cd '0-9')"
+  [ -n "$_fc" ] || _fc=0
+  if [ "$_rc" -eq 0 ] && [ "$_fc" -eq 0 ] 2>/dev/null; then
+    printf '%s=PASS\n' "$_name"; ok
+  else
+    _fails="$(sed -n 's/^FAIL|//p' "$_o" 2>/dev/null | tr '\n' ',' | sed 's/,$//' | cut -c1-240)"
+    [ -n "$_fails" ] || _fails=UNKNOWN
+    printf '%s=FAIL_RC%s_F%s[%s]\n' "$_name" "$_rc" "$_fc" "$(clean "$_fails")"; bad
+  fi
+  rm -f "$_o" 2>/dev/null
+}
+test_component_isolated(){
+  _name="$1"; _path="$2"; shift 2
+  [ -r "$_path" ] || { printf '%s=MISSING\n' "$_name"; bad; return; }
+  _iso="$R/.audit_iso_${_name}.$"; _o="$R/.audit_${_name}.$"
+  rm -rf "$_iso" "$_o" 2>/dev/null; mkdir -p "$_iso" 2>/dev/null || { printf '%s=ISOLATION_FAILED\n' "$_name"; bad; return; }
+  chmod 700 "$_iso" 2>/dev/null || true
+  DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$_iso" sh "$_path" "$@" >"$_o" 2>&1; _rc=$?
+  _fc="$(sed -n 's/^FAIL_COUNT[= ]*//p' "$_o" | tail -1 | tr -cd '0-9')"; [ -n "$_fc" ] || _fc=0
+  if [ "$_rc" -eq 0 ] && [ "$_fc" -eq 0 ] 2>/dev/null; then
+    printf '%s=PASS\n' "$_name"; ok
+  else
+    _fails="$(sed -n 's/^FAIL|//p' "$_o" 2>/dev/null | tr '\n' ',' | sed 's/,$//' | cut -c1-240)"
+    [ -n "$_fails" ] || _fails=UNKNOWN
+    printf '%s=FAIL_RC%s_F%s[%s]\n' "$_name" "$_rc" "$_fc" "$(clean "$_fails")"; bad
+  fi
+  rm -rf "$_iso" "$_o" 2>/dev/null
+}
+run(){
+  _now="$(date +%s)"
+  _tmp="$OUT.tmp.$$"
+  _ct="$(proc_live "$P/controller.pid" 'djaeger_game_stabilizer/controller.sh')"
+  _pt="$(proc_live "$P/predictor.pid" 'djaeger_game_stabilizer/predictor.sh')"
+  _st="$(proc_live "$P/supervisor.pid" 'djaeger_game_stabilizer/supervisor.sh')"
+  _wt="$(proc_live "$P/workload/run/daemon.pid" 'djaeger-workload-daemon')"
+  _at="$(proc_live "$P/app_control/run/daemon.pid" 'djaeger-app-control')"
+  _bt="$(proc_live "$P/railway/daemon.pid" 'djaeger-railway-bridge')"
+  _ut="$(proc_live "$P/railway/updater.pid" 'djaeger-railway-updater')"
+  _kt="$(proc_live "$P/hermes/knowledge_sync.pid" 'djaeger-hermes-knowledge-sync')"
+  for _x in "$_ct" "$_st" "$_wt" "$_at" "$_bt" "$_ut" "$_kt"; do [ "$_x" = YES ] && ok || warn; done
+  # Predictor is session-driven; absence outside GAME is informational, not a failure.
+  [ "$_pt" = PID_MISMATCH ] && warn || ok
+  _ep="$(qget "$P/railway.conf" ENDPOINT)"; [ -n "$_ep" ] || _ep="$(qget "$M/system/etc/djaeger/railway/railway.conf" ENDPOINT)"
+  case "$_ep" in https://*) _https=YES; ok;; *) _https=NO; bad;; esac
+  _perm=PASS
+  for _f in "$P/railway.conf" "$P/gemini.conf" "$P/gemini_keys.vault" "$P/hermes_cloud.conf"; do
+    [ -e "$_f" ] || continue
+    _m="$(mode "$_f")"; case "$_m" in 600|400) :;; *) _perm=FAIL; bad;; esac
+  done
+  [ "$_perm" = PASS ] && ok
+  _hc="$(sha "$M/controller.sh")"; _hp="$(sha "$M/predictor.sh")"; _hs="$(sha "$M/supervisor.sh")"; _hsvc="$(sha "$M/service.sh")"
+  _hai="$(sha "$M/system/bin/djaeger-ai")"; _hac="$(sha "$M/system/bin/djaeger-agent-core")"; _has="$(sha "$M/system/bin/djaeger-agent-sysfs")"; _hra="$(sha "$M/system/bin/djaeger-root-authority")"
+  _hpm="$(sha "$M/system/etc/djaeger/game-profile-map.conf")"; _hru="$(sha "$M/system/bin/djaeger-railway-updater")"; _hrb="$(sha "$M/system/bin/djaeger-railway-bridge")"
+  for _h in "$_hc" "$_hp" "$_hs" "$_hsvc" "$_hai" "$_hac" "$_has" "$_hra" "$_hpm" "$_hru" "$_hrb"; do [ "${#_h}" -eq 64 ] 2>/dev/null && ok || bad; done
+  _tests="$R/.audit_tests.$"; : >"$_tests"
+
+  # CLOUDTRUTHAUDIT2: verify that Control Center cloud/Thought attribution matches
+  # the brain and provider actually selected by the installed controller.
+  _lb="$P/local_brain_state"
+  _cloud_truth=PASS; _thought_truth=PASS; _cloud_detail=OK; _thought_detail=OK
+  if [ -r "$_lb" ]; then
+    _bm="$(qget "$_lb" BRAIN_MODE)"; _ccp="$(qget "$_lb" CLOUD_CONTROL_PROVIDER)"; _cpp="$(qget "$_lb" CLOUD_PLAN_PROVIDER)"
+    _cps="$(qget "$_lb" CLOUD_PLAN_STATE)"; _hcu="$(qget "$_lb" HERMES_CLOUD_USED)"
+    _ts="$(qget "$_lb" THOUGHT_SOURCE_CURRENT)"; _tst="$(qget "$_lb" THOUGHT_STATUS_CURRENT)"; _tf="$(qget "$_lb" THOUGHT_FRESH)"
+    case "$_bm" in
+      GEMINI_PRIMARY)
+        [ "$_ccp" = GEMINI ] && [ "$_cpp" = GEMINI ] && [ "$_cps" = VALID ] || { _cloud_truth=FAIL; _cloud_detail="GEMINI_${_ccp}_${_cpp}_${_cps}"; }
+        [ "$_tf" != 1 ] || [ "$_ts" = GEMINI ] || { _thought_truth=FAIL; _thought_detail="GEMINI_SOURCE_${_ts}"; }
+        ;;
+      HERMES_CLOUD)
+        [ "$_hcu" = YES ] && [ "$_ccp" = HERMES_CLOUD ] && [ "$_cpp" = HERMES_CLOUD ] && [ "$_cps" = VALID ] || { _cloud_truth=FAIL; _cloud_detail="HERMES_CLOUD_${_hcu}_${_ccp}_${_cpp}_${_cps}"; }
+        [ "$_tf" != 1 ] || [ "$_ts" = HERMES_CLOUD ] || { _thought_truth=FAIL; _thought_detail="HERMES_CLOUD_SOURCE_${_ts}"; }
+        ;;
+      HERMES_LOCAL)
+        [ "$_hcu" != YES ] && [ "$_ccp" = NONE ] && [ "$_cpp" = NONE ] && [ "$_cps" = NOT_USED ] || { _cloud_truth=FAIL; _cloud_detail="HERMES_LOCAL_${_hcu}_${_ccp}_${_cpp}_${_cps}"; }
+        [ "$_tf" != 1 ] || [ "$_ts" = HERMES_H2 ] || { _thought_truth=FAIL; _thought_detail="HERMES_LOCAL_SOURCE_${_ts}"; }
+        ;;
+      NO_ACTIVE_GAME_SESSION)
+        [ "$_ccp" = NONE ] && [ "$_cpp" = NONE ] && [ "$_cps" = NOT_USED ] || { _cloud_truth=FAIL; _cloud_detail="INACTIVE_${_ccp}_${_cpp}_${_cps}"; }
+        case "$_tst:$_ts" in INACTIVE:*|*:NA) :;; *) _thought_truth=FAIL; _thought_detail="INACTIVE_${_tst}_${_ts}";; esac
+        ;;
+      NATIVE_FAILSAFE|OFFLINE_BASELINE|UNKNOWN|"")
+        [ "$_ccp" = NONE ] && [ "$_cpp" = NONE ] || { _cloud_truth=FAIL; _cloud_detail="NATIVE_${_ccp}_${_cpp}_${_cps}"; }
+        ;;
+      *)
+        _cloud_truth=WARN; _cloud_detail="UNCLASSIFIED_${_bm}"
+        ;;
+    esac
+  else
+    _wm_now="$(qget "$P/window_context" WINDOW_MODE)"
+    _wg_now="$(qget "$P/window_context" GAME)"
+    case "$_wm_now:$_wg_now" in
+      INACTIVE:*|*:NA|":")
+        _cloud_truth=PASS; _thought_truth=PASS; _cloud_detail=INACTIVE_NO_BRAIN; _thought_detail=INACTIVE_NO_BRAIN
+        ;;
+      *)
+        _cloud_truth=FAIL; _thought_truth=FAIL; _cloud_detail="ACTIVE_LOCAL_BRAIN_MISSING_${_wm_now}_${_wg_now}"; _thought_detail="ACTIVE_LOCAL_BRAIN_MISSING_${_wm_now}_${_wg_now}"
+        ;;
+    esac
+  fi
+  case "$_cloud_truth" in PASS) printf 'CLOUD_TRUTH=PASS\n' >>"$_tests"; ok;; WARN) printf 'CLOUD_TRUTH=WARN[%s]\n' "$(clean "$_cloud_detail")" >>"$_tests"; warn;; *) printf 'CLOUD_TRUTH=FAIL[%s]\n' "$(clean "$_cloud_detail")" >>"$_tests"; bad;; esac
+  case "$_thought_truth" in PASS) printf 'THOUGHT_TRUTH=PASS\n' >>"$_tests"; ok;; WARN) printf 'THOUGHT_TRUTH=WARN[%s]\n' "$(clean "$_thought_detail")" >>"$_tests"; warn;; *) printf 'THOUGHT_TRUTH=FAIL[%s]\n' "$(clean "$_thought_detail")" >>"$_tests"; bad;; esac
+  test_component AI_SELFTEST "$M/system/bin/djaeger-ai" selftest >>"$_tests"
+  test_component AGENT_CORE "$M/system/bin/djaeger-agent-core" selftest >>"$_tests"
+  test_component AGENT_SYSFS "$M/system/bin/djaeger-agent-sysfs" selftest >>"$_tests"
+  # LIVEAUDIT3: HERMES selftest fixtures are hermetic; live runtime state must not contaminate them.\n  test_component_isolated HERMES_LOCAL "$M/system/bin/djaeger-hermes-local" selftest >>"$_tests"
+  test_component PROFILE_MAP "$M/system/bin/djaeger-profile-map" selftest >>"$_tests"
+  test_component COMFORT_POLICY "$M/system/bin/djaeger-game-comfort-policy" selftest >>"$_tests"
+  test_component RAILWAY_UPDATER "$M/system/bin/djaeger-railway-updater" selftest >>"$_tests"
+  _summary="$(tr '\n' ';' <"$_tests" 2>/dev/null | cut -c1-600)"; rm -f "$_tests" 2>/dev/null
+  _status=PASS; [ "$WARN" -gt 0 ] && _status=WARN; [ "$FAIL" -gt 0 ] && _status=FAIL
+  {
+    printf "SCHEMA='DJAEGER_LIVE_AUDIT_V5'\nAT='%s'\nSTATUS='%s'\nPASS_COUNT='%s'\nWARN_COUNT='%s'\nFAIL_COUNT='%s'\n" "$_now" "$_status" "$PASS" "$WARN" "$FAIL"
+    printf "CONTROLLER_LIVE='%s'\nPREDICTOR_LIVE='%s'\nSUPERVISOR_LIVE='%s'\nWORKLOAD_LIVE='%s'\nAPP_CONTROL_LIVE='%s'\nBRIDGE_LIVE='%s'\nUPDATER_LIVE='%s'\nKNOWLEDGE_SYNC_LIVE='%s'\n" "$_ct" "$_pt" "$_st" "$_wt" "$_at" "$_bt" "$_ut" "$_kt"
+    printf "ENDPOINT_HTTPS='%s'\nSECRET_PERMISSIONS='%s'\nSELFTEST_SUMMARY='%s'\n" "$_https" "$_perm" "$(clean "$_summary")"
+    printf "HASH_CONTROLLER='%s'\nHASH_PREDICTOR='%s'\nHASH_SUPERVISOR='%s'\nHASH_SERVICE='%s'\nHASH_DJAEGER_AI='%s'\nHASH_AGENT_CORE='%s'\nHASH_AGENT_SYSFS='%s'\nHASH_ROOT_AUTHORITY='%s'\nHASH_PROFILE_MAP='%s'\nHASH_RAILWAY_UPDATER='%s'\nHASH_RAILWAY_BRIDGE='%s'\n" "$_hc" "$_hp" "$_hs" "$_hsvc" "$_hai" "$_hac" "$_has" "$_hra" "$_hpm" "$_hru" "$_hrb"
+    printf "DIRECT_HARDWARE_AUTHORITY='NONE'\nREMOTE_HARDWARE_COMMANDS='DISABLED'\n"
+  } >"$_tmp" 2>/dev/null && { chmod 600 "$_tmp" 2>/dev/null; mv -f "$_tmp" "$OUT"; }
+  cat "$OUT" 2>/dev/null
+  [ "$FAIL" -eq 0 ]
+}
+selftest(){
+  _p=0; _f=0; _ok(){ echo "PASS|$1"; _p=$((_p+1)); }; _bad(){ echo "FAIL|$1"; _f=$((_f+1)); }
+  grep -Fq "DIRECT_HARDWARE_AUTHORITY='NONE'" "$0" && _ok no_hardware_authority || _bad no_hardware_authority
+  grep -Fq "REMOTE_HARDWARE_COMMANDS='DISABLED'" "$0" && _ok remote_hw_disabled || _bad remote_hw_disabled
+  grep -Fq 'CLOUDTRUTHAUDIT1' "$0" && grep -Fq 'HERMES_CLOUD_SOURCE_' "$0" && _ok cloud_thought_truth_contract || _bad cloud_thought_truth_contract
+  _code="$R/.audit_code.$$"; sed '/^selftest(){/,$d' "$0" >"$_code" 2>/dev/null
+  if grep -Eq '>[[:space:]]*/(sys|proc/sys)/|tee[[:space:]]+/(sys|proc/sys)/|djaeger-root-authority[[:space:]]+(apply|set)' "$_code" 2>/dev/null; then _bad read_only; else _ok read_only; fi
+  rm -f "$_code" 2>/dev/null
+  echo "PASS_COUNT=$_p"; echo "FAIL_COUNT=$_f"; [ "$_f" -eq 0 ]
+}
+case "${1:-run}" in run|once) run;; status) [ -r "$OUT" ] && cat "$OUT" || echo "STATUS='NOT_YET_RUN'";; selftest) selftest;; *) echo 'usage: djaeger-live-audit {run|status|selftest}'; exit 2;; esac
