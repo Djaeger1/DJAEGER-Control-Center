@@ -339,8 +339,8 @@ bridge_force_recover(){
 }
 daemon(){
   ensure || exit 2
-  _old="$(cat "$PIDFILE" 2>/dev/null)"; case "$_old" in ''|*[!0-9]*) :;; *) [ "$_old" != "$" ] && kill -0 "$_old" 2>/dev/null && exit 0;; esac
-  printf '%s\n' "$" >"$PIDFILE"; chmod 600 "$PIDFILE" 2>/dev/null || true
+  _old="$(cat "$PIDFILE" 2>/dev/null)"; case "$_old" in ''|*[!0-9]*) :;; *) [ "$_old" != "$$" ] && kill -0 "$_old" 2>/dev/null && exit 0;; esac
+  printf '%s\n' "$$" >"$PIDFILE"; chmod 600 "$PIDFILE" 2>/dev/null || true
 
   _core_fail=NONE
   controller_health_guard >/dev/null 2>&1 || _core_fail=CONTROLLER
