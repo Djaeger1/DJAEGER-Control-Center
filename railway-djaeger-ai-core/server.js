@@ -159,7 +159,7 @@ function sanitizeTelemetry(x) {
     'skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c',
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
-    'hermes_cloud_state','hermes_cloud_http','hermes_active_route','hermes_cloud_used','hermes_proposal_source','thought_source_current','thought_status_current','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model','current_brain','brain_mode','final_source','cloud_in_control','cloud_plan_state','cloud_plan_reason','cloud_control_provider','cloud_plan_provider','policy_session_id','policy_game','policy_user_mode','policy_window_mode','policy_window_epoch','policy_until','policy_remaining_s','live_session_id','live_game','live_user_mode','live_window_mode','live_window_epoch','reasoning_status','reasoning_event_reason','reasoning_proposal_action','reasoning_proposal_profile','reasoning_confidence','predictive_policy_present','predictive_policy_age_s','root_policy_present','root_policy_age_s','audit_status','audit_pass_count','audit_warn_count','audit_fail_count','audit_at','audit_controller_live','audit_predictor_live','audit_supervisor_live','audit_workload_live','audit_app_control_live','audit_bridge_live','audit_updater_live','audit_knowledge_sync_live','audit_endpoint_https','audit_secret_permissions','audit_selftest_summary','audit_hash_predictor','audit_hash_updater','audit_hash_bridge',
+    'hermes_cloud_state','hermes_cloud_http','hermes_active_route','hermes_cloud_used','hermes_proposal_source','thought_source_current','thought_status_current','gemini_status','gemini_last_event_status','gemini_status_age_s','gemini_status_fresh','gemini_http_code','gemini_cooldown_until','gemini_cooldown_remaining_s','gemini_vault_count','gemini_ready_slots','gemini_cooling_slots','gemini_curl_rc','gemini_http_at','gemini_model','current_brain','brain_mode','final_source','cloud_in_control','cloud_plan_state','cloud_plan_reason','cloud_control_provider','cloud_plan_provider','policy_session_id','policy_game','policy_user_mode','policy_window_mode','policy_window_epoch','policy_until','policy_remaining_s','live_session_id','live_game','live_user_mode','live_window_mode','live_window_epoch','reasoning_status','reasoning_event_reason','reasoning_proposal_action','reasoning_proposal_profile','reasoning_confidence','predictive_policy_present','predictive_policy_age_s','root_policy_present','root_policy_age_s','audit_status','audit_pass_count','audit_warn_count','audit_fail_count','audit_at','audit_controller_live','audit_predictor_live','audit_supervisor_live','audit_workload_live','audit_app_control_live','audit_bridge_live','audit_updater_live','audit_knowledge_sync_live','audit_endpoint_https','audit_secret_permissions','audit_selftest_summary','audit_hash_controller','audit_hash_predictor','audit_hash_updater','audit_hash_bridge',
     'control_loop_age_s','agent_execution_status','agent_execution_source','agent_execution_age_s',
     'remote_repair_state','remote_repair_seq','remote_repair_release','remote_repair_detail','source'
   ];
@@ -183,6 +183,8 @@ function safeTelemetrySummary(t) {
     workload_context_age_s: t.workload_context_age_s ?? null,
     game_session_active: t.game_session_active || null,
     workload_session_consistency: t.workload_session_consistency || null,
+    subject_package: t.subject_package || null,
+    window_mode: t.window_mode || null,
     profile: t.profile || null,
     skin_temp_c: t.skin_temp_c ?? null,
     battery_temp_c: t.battery_temp_c ?? null,
@@ -262,6 +264,7 @@ function safeTelemetrySummary(t) {
     audit_endpoint_https: t.audit_endpoint_https || null,
     audit_secret_permissions: t.audit_secret_permissions || null,
     audit_selftest_summary: t.audit_selftest_summary || null,
+    audit_hash_controller: t.audit_hash_controller || null,
     audit_hash_predictor: t.audit_hash_predictor || null,
     audit_hash_updater: t.audit_hash_updater || null,
     audit_hash_bridge: t.audit_hash_bridge || null,
