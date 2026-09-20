@@ -1,0 +1,296 @@
+#!/system/bin/sh
+# DJAEGER REMOTEBOOT1 — Railway software-repair bootstrap.
+# UPDATERALLOWPRED1: predictor.sh is an explicit software-repair target; hardware authority remains local.
+# Purpose: receive signed-by-transport, hash-pinned software repair files from the dedicated
+# DJAEGER Railway service. It never accepts direct hardware commands and never writes sysfs.
+M="${DJAEGER_MODDIR:-/data/adb/modules/djaeger_game_stabilizer}"
+P="${DJAEGER_STATE_DIR:-/data/adb/djaeger_ai}"
+DEF="$M/system/etc/djaeger/railway/railway.conf"
+CFG="$P/railway.conf"
+RDIR="$P/railway"
+STATE="$RDIR/update_state.env"
+PIDFILE="$RDIR/updater.pid"
+SEQFILE="$RDIR/update_seq"
+RELFILE="$RDIR/update_release"
+BACKUPS="$RDIR/rollback"
+
+qget(){
+  [ -r "$1" ] || return 0
+  awk -F= -v k="$2" '$1==k{v=substr($0,index($0,"=")+1);gsub(/^[[:space:]\047\042]+|[[:space:]\047\042]+$/,"",v);print v;exit}' "$1" 2>/dev/null
+}
+conf(){ _v="$(qget "$CFG" "$1")"; [ -n "$_v" ] || _v="$(qget "$DEF" "$1")"; [ -n "$_v" ] && printf '%s' "$_v" || printf '%s' "$2"; }
+clean(){ printf '%s' "${1:-}" | tr '\r\n\t' '   ' | tr "'" ' ' | cut -c1-220; }
+num(){ case "${1:-}" in ''|*[!0-9]*) echo 0;; *) echo "$1";; esac; }
+ensure(){ mkdir -p "$RDIR" "$BACKUPS" 2>/dev/null || return 1; chmod 700 "$RDIR" "$BACKUPS" 2>/dev/null || true; if [ ! -s "$CFG" ] && [ -r "$DEF" ]; then cp -f "$DEF" "$CFG.tmp.$$" 2>/dev/null && chmod 600 "$CFG.tmp.$$" 2>/dev/null && mv -f "$CFG.tmp.$$" "$CFG"; fi; }
+device_id(){ _f="$RDIR/device_id"; if [ ! -s "$_f" ]; then _id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null | tr -d '\r\n')"; [ -n "$_id" ] || _id="djg-$(date +%s)-$$"; umask 077; printf '%s\n' "$_id" >"$_f.tmp.$$" && mv -f "$_f.tmp.$$" "$_f"; fi; cat "$_f" 2>/dev/null | head -1 | tr -d '\r\n'; }
+write_state(){
+  ensure || return 1
+  _tmp="$STATE.tmp.$$"
+  {
+    printf "SCHEMA='DJAEGER_RAILWAY_UPDATE_STATE_V1'\n"
+    printf "AT='%s'\n" "$(date +%s)"
+    printf "STATE='%s'\n" "$(clean "${1:-UNKNOWN}")"
+    printf "SEQ='%s'\n" "$(clean "${2:-$(cat "$SEQFILE" 2>/dev/null)}")"
+    printf "RELEASE='%s'\n" "$(clean "${3:-$(cat "$RELFILE" 2>/dev/null)}")"
+    printf "DETAIL='%s'\n" "$(clean "${4:-NA}")"
+    printf "REMOTE_SOFTWARE_REPAIRS='ENABLED'\n"
+    printf "REMOTE_HARDWARE_COMMANDS='DISABLED'\n"
+    printf "HARDWARE_AUTHORITY='NONE'\n"
+  } >"$_tmp" 2>/dev/null && { chmod 600 "$_tmp" 2>/dev/null; mv -f "$_tmp" "$STATE"; }
+}
+allow_path(){
+  _ap="$1"
+  case "$_ap" in ''|/*|*'..'*|*'//'*) return 1;; esac
+  case "$_ap" in
+    controller.sh|predictor.sh|supervisor.sh|service.sh|module.prop|system/bin/*|system/etc/djaeger/*) ;;
+    *) return 1;;
+  esac
+  case "$_ap" in META-INF/*|customize.sh|post-fs-data.sh) return 1;; esac
+  return 0
+}
+shellish(){ case "$1" in *.sh|controller.sh|supervisor.sh|service.sh|system/bin/*|system/etc/djaeger/*) return 0;; *) return 1;; esac; }
+preflight_file(){
+  _f="$1"; _path="$2"
+  [ -s "$_f" ] || return 1
+  if shellish "$_path"; then
+    sh -n "$_f" >/dev/null 2>&1 || return 1
+    if grep -Eq '(^|[;[:space:]])(reboot|poweroff)[;[:space:]]|dd[[:space:]].*/dev/block|mkfs\.|>[[:space:]]*/proc/sys/|tee[[:space:]]+/proc/sys/' "$_f" 2>/dev/null; then return 1; fi
+  fi
+  return 0
+}
+fetch(){
+  _url="$1"; _out="$2"; _tok="$3"; _ct="$(conf CONNECT_TIMEOUT_SEC 4)"; _tt="$(conf TOTAL_TIMEOUT_SEC 8)"
+  _code="$(curl -4 --http1.1 --connect-timeout "$_ct" -m "$_tt" -sS -o "$_out" -w '%{http_code}' -H "Authorization: Bearer $_tok" "$_url" 2>/dev/null)"; _rc=$?
+  if [ "$_rc" -ne 0 ]; then _code="$(curl --http1.1 --connect-timeout "$_ct" -m "$_tt" -sS -o "$_out" -w '%{http_code}' -H "Authorization: Bearer $_tok" "$_url" 2>/dev/null)"; _rc=$?; fi
+  [ "$_rc" -eq 0 ] && [ "$_code" = 200 ]
+}
+ack(){
+  _seq="$1"; _rel="$2"; _state="$3"; _detail="$4"
+  _ep="$(conf ENDPOINT '')"; _tok="$(conf ACCESS_TOKEN '')"; [ -n "$_ep" ] && [ -n "$_tok" ] || return 0
+  _did="$(device_id)"; _vc="$(sed -n 's/^versionCode=//p' "$M/module.prop" 2>/dev/null | head -1)"
+  _body="$RDIR/.ack.$$"; printf '{"device_id":"%s","seq":%s,"release":"%s","state":"%s","detail":"%s","module_version_code":"%s"}' \
+    "$(clean "$_did")" "$(num "$_seq")" "$(clean "$_rel")" "$(clean "$_state")" "$(clean "$_detail")" "$(clean "$_vc")" >"$_body" 2>/dev/null || return 0
+  curl -4 --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -H 'Content-Type: application/json' -H "Authorization: Bearer $_tok" --data-binary @"$_body" "${_ep%/}/v1/device/update/ack" 2>/dev/null || \
+  curl --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -H 'Content-Type: application/json' -H "Authorization: Bearer $_tok" --data-binary @"$_body" "${_ep%/}/v1/device/update/ack" 2>/dev/null || true
+  rm -f "$_body" 2>/dev/null
+}
+rollback(){
+  _bak="$1"; _list="$2"
+  [ -r "$_list" ] || return 0
+  while IFS='|' read -r _path _existed; do
+    [ -n "$_path" ] || continue
+    _dst="$M/$_path"; _src="$_bak/$_path"
+    if [ "$_existed" = YES ] && [ -f "$_src" ]; then mkdir -p "$(dirname "$_dst")" 2>/dev/null; cp -pf "$_src" "$_dst.rollback.$$" 2>/dev/null && mv -f "$_dst.rollback.$$" "$_dst"; else rm -f "$_dst" 2>/dev/null; fi
+  done <"$_list"
+}
+post_validate(){
+  PV_FAIL_DETAIL=NONE
+  sh "$M/system/bin/djaeger-railway-updater" selftest >/dev/null 2>&1 || { PV_FAIL_DETAIL=UPDATER_SELFTEST; return 1; }
+  if [ -x "$M/system/bin/djaeger-railway-bridge" ]; then
+    sh "$M/system/bin/djaeger-railway-bridge" selftest >/dev/null 2>&1 || { PV_FAIL_DETAIL=BRIDGE_SELFTEST; return 1; }
+  else
+    PV_FAIL_DETAIL=BRIDGE_MISSING; return 1
+  fi
+  if [ -x "$M/system/bin/djaeger-hermes-cloud" ]; then
+    _t="$RDIR/.hc-selftest.$$"; rm -rf "$_t"; mkdir -p "$_t/hermes" 2>/dev/null
+    DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$_t" sh "$M/system/bin/djaeger-hermes-cloud" selftest >/dev/null 2>&1 || { rm -rf "$_t"; PV_FAIL_DETAIL=HERMES_CLOUD_SELFTEST; return 1; }
+    rm -rf "$_t" 2>/dev/null
+  fi
+  if [ -x "$M/system/bin/djaeger-ai" ]; then
+    DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$M/system/bin/djaeger-ai" selftest >/dev/null 2>&1 || { PV_FAIL_DETAIL=DJAEGER_AI_SELFTEST; return 1; }
+  fi
+  return 0
+}
+proc_is(){
+  _pid="$1"; _needle="$2"
+  case "$_pid" in ''|*[!0-9]*) return 1;; esac
+  [ "$_pid" -gt 1 ] 2>/dev/null && kill -0 "$_pid" 2>/dev/null || return 1
+  _cmd="$(tr '\000' ' ' <"/proc/$_pid/cmdline" 2>/dev/null)"
+  case "$_cmd" in *"$_needle"*) return 0;; *) return 1;; esac
+}
+controller_stack_recover(){
+  # HOTSTACK3: an on-disk controller update is not successful until a NEW
+  # controller process is proven to be running. Supervisor is preferred, with a
+  # direct controller start as a bounded fallback when supervisor is unavailable
+  # or does not relaunch it.
+  _cp1="$(cat "$P/controller.pid" 2>/dev/null)"
+  _cp2="$(sed -n 's/^PID=//p' "$P/controller.lock/owner" 2>/dev/null | head -1)"
+  _old_pid="$_cp1"
+  for _cp in "$_cp1" "$_cp2"; do
+    proc_is "$_cp" 'djaeger_game_stabilizer/controller.sh' && kill "$_cp" 2>/dev/null || true
+  done
+  _sp="$(cat "$P/supervisor.pid" 2>/dev/null)"
+  proc_is "$_sp" 'djaeger_game_stabilizer/supervisor.sh' && kill "$_sp" 2>/dev/null || true
+  _i=0
+  while [ "$_i" -lt 10 ]; do
+    _alive=0
+    for _pp in "$_cp1" "$_cp2" "$_sp"; do
+      case "$_pp" in ''|*[!0-9]*) continue;; esac
+      kill -0 "$_pp" 2>/dev/null && _alive=1
+    done
+    [ "$_alive" -eq 0 ] && break
+    sleep 1; _i=$((_i+1))
+  done
+  rm -f "$P/controller.pid" "$P/supervisor.pid" 2>/dev/null
+  rm -rf "$P/controller.lock" "$P/supervisor.lock" 2>/dev/null
+
+  _started_via=NONE
+  if [ -r "$M/supervisor.sh" ]; then
+    nohup sh "$M/supervisor.sh" >/dev/null 2>&1 </dev/null &
+    _started_via=SUPERVISOR
+  fi
+  _i=0
+  while [ "$_i" -lt 8 ]; do
+    _np="$(cat "$P/controller.pid" 2>/dev/null)"
+    case "$_np" in ''|*[!0-9]*) :;; *)
+      if proc_is "$_np" 'djaeger_game_stabilizer/controller.sh' && [ "$_np" != "$_old_pid" ]; then
+        printf "RESULT='PASS'\nOLD_PID='%s'\nNEW_PID='%s'\nVIA='%s'\nAT='%s'\n" "$_old_pid" "$_np" "$_started_via" "$(date +%s)" >"$RDIR/controller_reload.env.tmp.$$" 2>/dev/null && { chmod 600 "$RDIR/controller_reload.env.tmp.$$" 2>/dev/null; mv -f "$RDIR/controller_reload.env.tmp.$$" "$RDIR/controller_reload.env"; }
+        return 0
+      fi
+    ;; esac
+    sleep 1; _i=$((_i+1))
+  done
+
+  # Supervisor did not produce a verified fresh controller. Start the singleton
+  # directly; controller.sh owns its own birth-time lock and predictor watchdog.
+  nohup sh "$M/controller.sh" >/dev/null 2>&1 </dev/null &
+  _started_via=DIRECT_FALLBACK
+  _i=0
+  while [ "$_i" -lt 12 ]; do
+    _np="$(cat "$P/controller.pid" 2>/dev/null)"
+    case "$_np" in ''|*[!0-9]*) :;; *)
+      if proc_is "$_np" 'djaeger_game_stabilizer/controller.sh' && [ "$_np" != "$_old_pid" ]; then
+        printf "RESULT='PASS'\nOLD_PID='%s'\nNEW_PID='%s'\nVIA='%s'\nAT='%s'\n" "$_old_pid" "$_np" "$_started_via" "$(date +%s)" >"$RDIR/controller_reload.env.tmp.$$" 2>/dev/null && { chmod 600 "$RDIR/controller_reload.env.tmp.$$" 2>/dev/null; mv -f "$RDIR/controller_reload.env.tmp.$$" "$RDIR/controller_reload.env"; }
+        return 0
+      fi
+    ;; esac
+    sleep 1; _i=$((_i+1))
+  done
+  printf "RESULT='FAIL'\nOLD_PID='%s'\nNEW_PID='%s'\nVIA='%s'\nAT='%s'\n" "$_old_pid" "${_np:-NA}" "$_started_via" "$(date +%s)" >"$RDIR/controller_reload.env.tmp.$$" 2>/dev/null && { chmod 600 "$RDIR/controller_reload.env.tmp.$$" 2>/dev/null; mv -f "$RDIR/controller_reload.env.tmp.$$" "$RDIR/controller_reload.env"; }
+  return 1
+}
+controller_health_guard(){
+  _cp="$(cat "$P/controller.pid" 2>/dev/null)"
+  # Treat PID reuse/mismatch exactly like a dead controller.
+  proc_is "$_cp" 'djaeger_game_stabilizer/controller.sh' && return 0
+  controller_stack_recover
+}
+
+restart_changed(){
+  _list="$1"
+  # HOTSTACK3: controller file changes use the supervised stack recovery path.
+  if grep -q '^controller.sh|' "$_list" 2>/dev/null; then
+    controller_stack_recover || return 1
+  fi
+  grep -q '^system/bin/djaeger-railway-bridge|' "$_list" 2>/dev/null && {
+    _pid="$(cat "$RDIR/daemon.pid" 2>/dev/null)"; case "$_pid" in ''|*[!0-9]*) :;; *) kill "$_pid" 2>/dev/null || true;; esac
+    rm -f "$RDIR/daemon.pid" 2>/dev/null
+    nohup sh "$M/system/bin/djaeger-railway-bridge" daemon >/dev/null 2>&1 </dev/null &
+  }
+  grep -q '^system/etc/djaeger/appcontrolrc2/bin/djaeger-app-control|' "$_list" 2>/dev/null && {
+    _pid="$(cat "$P/app_control/run/daemon.pid" 2>/dev/null)"; case "$_pid" in ''|*[!0-9]*) :;; *) kill "$_pid" 2>/dev/null || true;; esac
+    rm -rf "$P/app_control/run/daemon.lock" 2>/dev/null; rm -f "$P/app_control/run/daemon.pid" 2>/dev/null
+    nohup sh "$M/system/etc/djaeger/appcontrolrc2/bin/djaeger-app-control" daemon >/dev/null 2>&1 </dev/null &
+  }
+  # AUDITFIX2: every predictor software update must hot-reload the long-lived predictor.
+  # Older REMOTEBOOT1 restarted it only once after the original transport fix, so later
+  # predictor patches could be APPLIED on disk while the old process stayed in RAM.
+  grep -q '^predictor.sh|' "$_list" 2>/dev/null && {
+    rm -f "$RDIR/predictor_restart_auditfix_v2" 2>/dev/null
+    predictor_restart_once
+  }
+}
+check_once(){
+  ensure || { write_state ERROR 0 NONE CONFIG_INIT_FAILED; return 2; }
+  [ "$(conf REMOTE_SOFTWARE_REPAIRS ENABLED)" = ENABLED ] || { write_state DISABLED 0 NONE OWNER_DISABLED; return 0; }
+  _ep="$(conf ENDPOINT '')"; _tok="$(conf ACCESS_TOKEN '')"; _vc="$(sed -n 's/^versionCode=//p' "$M/module.prop" 2>/dev/null | head -1)"
+  case "$_ep" in https://*) :;; *) write_state ERROR 0 NONE ENDPOINT_INVALID; return 3;; esac
+  [ -n "$_tok" ] || { write_state ERROR 0 NONE TOKEN_MISSING; return 4; }
+  _mf="$RDIR/.manifest.$$"; fetch "${_ep%/}/v1/device/update/manifest.txt?vc=${_vc:-0}&device_id=$(device_id)" "$_mf" "$_tok" || { rm -f "$_mf"; write_state OFFLINE "$(cat "$SEQFILE" 2>/dev/null)" "$(cat "$RELFILE" 2>/dev/null)" MANIFEST_FETCH_FAILED; return 5; }
+  _schema="$(qget "$_mf" SCHEMA)"; _seq="$(qget "$_mf" SEQ)"; _rel="$(qget "$_mf" RELEASE)"; _target="$(qget "$_mf" TARGET_VC)"; _count="$(qget "$_mf" FILE_COUNT)"
+  [ "$_schema" = DJAEGER_RAILWAY_REPAIR_V1 ] || { rm -f "$_mf"; write_state REJECTED 0 NONE BAD_SCHEMA; return 6; }
+  case "$_seq" in ''|*[!0-9]*) rm -f "$_mf"; write_state REJECTED 0 NONE BAD_SEQ; return 7;; esac
+  [ "$_target" = "${_vc:-0}" ] || { rm -f "$_mf"; write_state INCOMPATIBLE "$_seq" "$_rel" "TARGET_VC_${_target}"; return 0; }
+  _cur="$(cat "$SEQFILE" 2>/dev/null)"; case "$_cur" in ''|*[!0-9]*) _cur=0;; esac
+  if [ "$_seq" -le "$_cur" ] 2>/dev/null; then rm -f "$_mf"; write_state CURRENT "$_cur" "$(cat "$RELFILE" 2>/dev/null)" NO_UPDATE; return 0; fi
+  _stage="$RDIR/stage.$_seq.$$"; _bak="$BACKUPS/$_seq"; _list="$_stage/files.list"; mkdir -p "$_stage/files" "$_bak" 2>/dev/null || { rm -f "$_mf"; write_state ERROR "$_seq" "$_rel" STAGE_MKDIR_FAILED; return 8; }
+  _seen=0; : >"$_list"
+  while IFS='|' read -r _tag _id _path _sha _mode; do
+    [ "$_tag" = FILE ] || continue
+    _seen=$((_seen+1)); allow_path "$_path" || { rm -rf "$_stage"; rm -f "$_mf"; write_state REJECTED "$_seq" "$_rel" "PATH_DENIED_$_path"; return 9; }
+    case "$_id" in ''|*[!A-Za-z0-9._-]*) rm -rf "$_stage"; rm -f "$_mf"; write_state REJECTED "$_seq" "$_rel" BAD_FILE_ID; return 10;; esac
+    case "$_sha" in ???????*) :;; *) rm -rf "$_stage"; rm -f "$_mf"; write_state REJECTED "$_seq" "$_rel" BAD_SHA; return 11;; esac
+    case "$_mode" in 600|644|700|755) :;; *) _mode=755;; esac
+    _sf="$_stage/files/$_id"; fetch "${_ep%/}/v1/device/update/file/$_id" "$_sf" "$_tok" || { rm -rf "$_stage"; rm -f "$_mf"; write_state OFFLINE "$_seq" "$_rel" "FILE_FETCH_FAILED_$_id"; return 12; }
+    _got="$(sha256sum "$_sf" 2>/dev/null | awk '{print $1}')"; [ "$_got" = "$_sha" ] || { rm -rf "$_stage"; rm -f "$_mf"; write_state REJECTED "$_seq" "$_rel" "HASH_MISMATCH_$_id"; return 13; }
+    preflight_file "$_sf" "$_path" || { rm -rf "$_stage"; rm -f "$_mf"; write_state REJECTED "$_seq" "$_rel" "PREFLIGHT_FAILED_$_path"; return 14; }
+    printf '%s|%s|%s|%s\n' "$_path" "$_id" "$_mode" "$_sha" >>"$_list"
+  done <"$_mf"
+  _expect="$(num "$_count")"; [ "$_seen" -eq "$_expect" ] 2>/dev/null || { rm -rf "$_stage"; rm -f "$_mf"; write_state REJECTED "$_seq" "$_rel" COUNT_MISMATCH; return 15; }
+  _applied="$_stage/applied.list"; : >"$_applied"
+  while IFS='|' read -r _path _id _mode _sha; do
+    [ -n "$_path" ] || continue; _dst="$M/$_path"; _src="$_stage/files/$_id"; mkdir -p "$(dirname "$_dst")" "$_bak/$(dirname "$_path")" 2>/dev/null
+    if [ -e "$_dst" ]; then cp -pf "$_dst" "$_bak/$_path" 2>/dev/null || { rollback "$_bak" "$_applied"; rm -rf "$_stage"; rm -f "$_mf"; write_state ROLLED_BACK "$_seq" "$_rel" BACKUP_FAILED; return 16; }; _ex=YES; else _ex=NO; fi
+    cp -f "$_src" "$_dst.new.$$" 2>/dev/null && chmod "$_mode" "$_dst.new.$$" 2>/dev/null && mv -f "$_dst.new.$$" "$_dst" || { rollback "$_bak" "$_applied"; rm -rf "$_stage"; rm -f "$_mf"; write_state ROLLED_BACK "$_seq" "$_rel" "APPLY_FAILED_$_path"; return 17; }
+    printf '%s|%s\n' "$_path" "$_ex" >>"$_applied"
+  done <"$_list"
+  if ! post_validate; then _pvd="${PV_FAIL_DETAIL:-UNKNOWN}"; rollback "$_bak" "$_applied"; rm -rf "$_stage"; rm -f "$_mf"; write_state ROLLED_BACK "$_seq" "$_rel" "POST_VALIDATION_FAILED_$_pvd"; ack "$_seq" "$_rel" ROLLED_BACK "POST_VALIDATION_FAILED_$_pvd"; return 18; fi
+  printf '%s\n' "$_seq" >"$SEQFILE.tmp.$$" && mv -f "$SEQFILE.tmp.$$" "$SEQFILE"; printf '%s\n' "$_rel" >"$RELFILE.tmp.$$" && mv -f "$RELFILE.tmp.$$" "$RELFILE"; chmod 600 "$SEQFILE" "$RELFILE" 2>/dev/null || true
+  if ! restart_changed "$_list"; then
+    write_state RELOAD_FAILED "$_seq" "$_rel" CONTROLLER_RELOAD_UNVERIFIED
+    ack "$_seq" "$_rel" RELOAD_FAILED CONTROLLER_RELOAD_UNVERIFIED
+    rm -rf "$_stage" 2>/dev/null; rm -f "$_mf" 2>/dev/null
+    return 19
+  fi
+  write_state APPLIED "$_seq" "$_rel" PASS
+  ack "$_seq" "$_rel" APPLIED PASS
+  _self=0; grep -q '^system/bin/djaeger-railway-updater|' "$_list" 2>/dev/null && _self=1
+  rm -rf "$_stage" 2>/dev/null; rm -f "$_mf" 2>/dev/null
+  [ "$_self" -eq 1 ] && exec sh "$M/system/bin/djaeger-railway-updater" daemon
+  return 0
+}
+predictor_restart_once(){
+  _mark="$RDIR/predictor_restart_auditfix_v2"
+  [ -e "$_mark" ] && return 0
+  _pid="$(cat "$P/predictor.pid" 2>/dev/null)"
+  case "$_pid" in ''|*[!0-9]*) :;; *)
+    if [ "$_pid" -gt 1 ] 2>/dev/null && kill -0 "$_pid" 2>/dev/null; then
+      _cmd="$(tr '\000' ' ' <"/proc/$_pid/cmdline" 2>/dev/null)"
+      case "$_cmd" in *djaeger_game_stabilizer/predictor.sh*) kill "$_pid" 2>/dev/null || true;; esac
+    fi
+  ;; esac
+  # Controller is the canonical predictor owner and will relaunch it through its atomic watchdog.
+  # Do not remove its lock pre-emptively; predictor trap cleans it after TERM.
+  _i=0
+  while [ "$_i" -lt 10 ]; do
+    _old="$(cat "$P/predictor.pid" 2>/dev/null)"
+    case "$_old" in ''|*[!0-9]*) break;; *) kill -0 "$_old" 2>/dev/null || break;; esac
+    sleep 1; _i=$((_i+1))
+  done
+  printf "RESTART=REQUESTED\nAT=%s\n" "$(date +%s)" >"$_mark.tmp.$$" 2>/dev/null && chmod 600 "$_mark.tmp.$$" 2>/dev/null && mv -f "$_mark.tmp.$$" "$_mark"
+}
+daemon(){
+  ensure || exit 2
+  _old="$(cat "$PIDFILE" 2>/dev/null)"; case "$_old" in ''|*[!0-9]*) :;; *) [ "$_old" != "$$" ] && kill -0 "$_old" 2>/dev/null && exit 0;; esac
+  printf '%s\n' "$$" >"$PIDFILE"; chmod 600 "$PIDFILE" 2>/dev/null || true
+  predictor_restart_once
+  controller_health_guard >/dev/null 2>&1 || true
+  while :; do check_once >/dev/null 2>&1 || true; _w="$(conf UPDATE_INTERVAL_SEC 60)"; case "$_w" in ''|*[!0-9]*) _w=60;; esac; [ "$_w" -lt 30 ] 2>/dev/null && _w=30; sleep "$_w"; done
+}
+status(){ [ -r "$STATE" ] || write_state NOT_YET_CHECKED 0 NONE NO_CHECK_YET; cat "$STATE" 2>/dev/null; }
+selftest(){
+  ST_PASS=0; ST_FAIL=0; ok(){ echo "PASS|$1"; ST_PASS=$((ST_PASS+1)); }; bad(){ echo "FAIL|$1"; ST_FAIL=$((ST_FAIL+1)); }
+  allow_path controller.sh && allow_path predictor.sh && allow_path system/bin/djaeger-hermes-cloud && allow_path system/etc/djaeger/test.conf && ok allowlist_positive || bad allowlist_positive
+  ! allow_path ../../system/bin/sh && ! allow_path /data/local/tmp/x && ! allow_path META-INF/update-binary && ! allow_path customize.sh && ok allowlist_negative || bad allowlist_negative
+  grep -Fq "REMOTE_HARDWARE_COMMANDS='DISABLED'" "$0" && ok remote_hardware_disabled || bad remote_hardware_disabled
+  if grep -Eq '>[[:space:]]*/sys/|tee[[:space:]]+/sys/|djaeger-root-authority[[:space:]].*apply' "$0" 2>/dev/null; then bad no_direct_hardware_path; else ok no_direct_hardware_path; fi
+  grep -Fq '/v1/device/update/manifest.txt' "$0" && grep -Fq '/v1/device/update/file/' "$0" && grep -Fq '/v1/device/update/ack' "$0" && ok railway_update_contract || bad railway_update_contract
+  grep -Fq 'sha256sum' "$0" && ok hash_pin || bad hash_pin
+  grep -Fq 'rollback' "$0" && grep -Fq 'post_validate' "$0" && ok rollback_and_regression || bad rollback_and_regression
+  grep -Fq 'SEQFILE' "$0" && ok monotonic_sequence || bad monotonic_sequence
+  grep -Fq 'predictor_restart_once' "$0" && grep -Fq 'djaeger_game_stabilizer/predictor.sh' "$0" && grep -Fq "grep -q '^predictor.sh|'" "$0" && ok predictor_restart_guard || bad predictor_restart_guard
+  grep -Fq 'HOTSTACK3' "$0" && grep -Fq 'controller_stack_recover' "$0" && grep -Fq 'controller_health_guard' "$0" && ok controller_hot_reload_guard || bad controller_hot_reload_guard
+  echo "PASS_COUNT=$ST_PASS"; echo "FAIL_COUNT=$ST_FAIL"; [ "$ST_FAIL" -eq 0 ]
+}
+case "${1:-check}" in
+  check|once) check_once;; daemon) daemon;; status) status;; selftest) selftest;; *) echo 'Usage: djaeger-railway-updater {check|daemon|status|selftest}'; exit 2;; esac
