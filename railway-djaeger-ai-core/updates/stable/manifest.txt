@@ -1,6 +1,7 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='35'
-RELEASE='GAMECAPTURE1'
+SEQ='36'
+RELEASE='DUALREG4-GAMEWINS1'
 TARGET_VC='129659'
-FILE_COUNT='1'
+FILE_COUNT='2'
+FILE|controller-dualreg4-gamewins1|controller.sh|244ed54a4e6259dc23a299d64da88b98a4af5288985449ea441eac498f717d4d|755
 FILE|djaeger-railway-bridge-gamecapture1|system/bin/djaeger-railway-bridge|b430a5a3befa907d259c50dadafe980daa4b1bae7ef090e56431ae9dc3292cf2|755
