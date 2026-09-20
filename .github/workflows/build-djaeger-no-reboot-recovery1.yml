@@ -1,4 +1,4 @@
-name: Build DJAEGER No-Reboot Recovery
+name: Build DJAEGER No-Reboot Recovery 2
 on:
   push:
     branches: [codex/djaeger-no-reboot-recovery1]
@@ -23,13 +23,18 @@ jobs:
         run: |
           set -euo pipefail
           S=repair-no-reboot/app/src/main/assets/repair.sh
-          grep -Fq 'GOOD_SHA=00a05a5c3a2062331e3948b260c0439ab25fb13e69031c0a119a43457834b41f' "$S"
-          grep -Fq 'djaeger-railway-updater-predrestart1' "$S"
-          grep -Fq "printf 'sts.al" "$S"
+          U=repair-no-reboot/app/src/main/assets/djaeger-railway-updater-hotstack6-pidfix1
+          grep -Fq 'DJAEGER NO-REBOOT RECOVERY2' "$S"
+          grep -Fq 'BUNDLED_UPDATER_SELFTEST' "$S"
+          grep -Fq "sts.al" "$S"
           grep -Fq 'CONTROLLER_BINARY=UNCHANGED' "$S"
           grep -Fq 'PREDICTOR_BINARY=UNCHANGED' "$S"
           grep -Fq 'PROFILE_MAP=UNCHANGED' "$S"
           grep -Fq 'NO_REBOOT=YES' "$S"
+          grep -Fq '[ "$_old" != "$" ]' "$U"
+          grep -Fq 'printf '''%s\n''' "$" >"$PIDFILE"' "$U"
+          sh -n "$S"
+          sh -n "$U"
           ! grep -Eq '(^|[[:space:]])(reboot|svc power reboot|setprop sys.powerctl)' "$S"
           ! grep -Eq 'cp .*controller\.sh|mv .*controller\.sh|cp .*predictor\.sh|mv .*predictor\.sh|game-profile-map\.conf.*(cp|mv)' "$S"
           echo SAFETY_GATE=PASS
@@ -59,7 +64,7 @@ jobs:
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$OUT/APKSIGNER_VERIFY.txt"
           sha256sum "$APK" > "$OUT/SHA256.txt"
           rm "$OUT/aligned.apk"
-          printf '%s\n' 'STATUS=PASS' 'NO_REBOOT=YES' 'NO_FLASH=YES' 'CONTROLLER_BINARY=UNCHANGED' 'PREDICTOR_BINARY=UNCHANGED' 'PROFILE_MAP=UNCHANGED' 'ARCANE_REGISTRY_REASSERT=YES' 'UPDATER_REPAIR=PINNED_SEQ9_BINARY' > "$OUT/BUILD_REPORT.txt"
+          printf '%s\n' 'STATUS=PASS' 'NO_REBOOT=YES' 'NO_FLASH=YES' 'CONTROLLER_BINARY=UNCHANGED' 'PREDICTOR_BINARY=UNCHANGED' 'PROFILE_MAP=UNCHANGED' 'ARCANE_REGISTRY_REASSERT=YES' 'UPDATER_REPAIR=BUNDLED_HOTSTACK6_PIDFIX1' > "$OUT/BUILD_REPORT.txt"
 
       - uses: actions/upload-artifact@v4
         with:
