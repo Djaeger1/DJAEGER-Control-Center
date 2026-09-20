@@ -1,7 +1,8 @@
 #!/system/bin/sh
-# DJAEGER NO-REBOOT RECOVERY1
-# Scope: restore Railway updater transport, reassert Arcane GAME registry authority,
-# refresh controller/session publication. Does NOT replace controller/predictor/profile map.
+# DJAEGER NO-REBOOT RECOVERY2
+# Scope: repair the dead Railway updater without network download, confirm Arcane
+# GAME registration, hot-restart the controller only while no game session is bound,
+# then refresh snapshot/audit/telemetry. No profile or core binary replacement.
 M=/data/adb/modules/djaeger_game_stabilizer
 P=/data/adb/djaeger_ai
 R="$P/railway"
@@ -10,64 +11,71 @@ GR="$M/system/bin/djaeger-game-registry"
 AUD="$M/system/bin/djaeger-live-audit"
 BR="$M/system/bin/djaeger-railway-bridge"
 CFP="$M/system/bin/djaeger-cc-freshness-patch"
-GOOD_SHA=00a05a5c3a2062331e3948b260c0439ab25fb13e69031c0a119a43457834b41f
+BUNDLED="${1:-}"
 
 fail(){ echo "STATUS=FAIL"; echo "REASON=$1"; exit 1; }
-qget(){ [ -r "$1" ] || return 0; awk -F= -v k="$2" '$1==k{v=substr($0,index($0,"=")+1);gsub(/^[[:space:]\047\042]+|[[:space:]\047\042]+$/,"",v);print v;exit}' "$1" 2>/dev/null; }
-proc_is(){ _p="$1"; _n="$2"; case "$_p" in ''|*[!0-9]*) return 1;; esac; [ "$_p" -gt 1 ] 2>/dev/null && kill -0 "$_p" 2>/dev/null || return 1; _c="$(tr '\000' ' ' <"/proc/$_p/cmdline" 2>/dev/null)"; case "$_c" in *"$_n"*) return 0;; *) return 1;; esac; }
+proc_is(){
+  _p="$1"; _n="$2"
+  case "$_p" in ''|*[!0-9]*) return 1;; esac
+  [ "$_p" -gt 1 ] 2>/dev/null && kill -0 "$_p" 2>/dev/null || return 1
+  _c="$(tr '\000' ' ' <"/proc/$_p/cmdline" 2>/dev/null)"
+  case "$_c" in *"$_n"*) return 0;; *) return 1;; esac
+}
 
 [ -d "$M" ] || fail MODULE_NOT_FOUND
 VER="$(sed -n 's/^version=//p' "$M/module.prop" 2>/dev/null | head -1)"
 case "$VER" in *VC129659*R89COMFORT2*) :;; *) fail "UNEXPECTED_MODULE=$VER";; esac
+[ -r "$BUNDLED" ] || fail BUNDLED_UPDATER_MISSING
+command -v sha256sum >/dev/null 2>&1 || fail SHA256SUM_MISSING
 mkdir -p "$R" 2>/dev/null || fail RAILWAY_STATE_UNAVAILABLE
 chmod 700 "$R" 2>/dev/null || true
 
-CFG="$P/railway.conf"; DEF="$M/system/etc/djaeger/railway/railway.conf"
-EP="$(qget "$CFG" ENDPOINT)"; [ -n "$EP" ] || EP="$(qget "$DEF" ENDPOINT)"
-TOK="$(qget "$CFG" ACCESS_TOKEN)"; [ -n "$TOK" ] || TOK="$(qget "$DEF" ACCESS_TOKEN)"
-case "$EP" in https://*) :;; *) fail RAILWAY_ENDPOINT_INVALID;; esac
-[ -n "$TOK" ] || fail RAILWAY_TOKEN_MISSING
-command -v curl >/dev/null 2>&1 || fail CURL_MISSING
-command -v sha256sum >/dev/null 2>&1 || fail SHA256SUM_MISSING
+# The updater is inside the signed APK. Validate the exact PID fix plus its own selftest.
+grep -Fq '[ "$_old" != "$$" ]' "$BUNDLED" || fail BUNDLED_PID_GUARD_INVALID
+grep -Fq 'printf '\''%s\n'\'' "$$" >"$PIDFILE"' "$BUNDLED" || fail BUNDLED_PID_WRITE_INVALID
+DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$BUNDLED" selftest >/dev/null 2>&1 || fail BUNDLED_UPDATER_SELFTEST
 
-STAGE="$R/recovery1.updater.$$"
-URL="${EP%/}/v1/device/update/file/djaeger-railway-updater-predrestart1"
-HTTP="$(curl -4 --http1.1 --connect-timeout 5 -m 15 -sS -o "$STAGE" -w '%{http_code}' -H "Authorization: Bearer $TOK" "$URL" 2>/dev/null)"
-if [ "$HTTP" != 200 ]; then
-  HTTP="$(curl --http1.1 --connect-timeout 5 -m 15 -sS -o "$STAGE" -w '%{http_code}' -H "Authorization: Bearer $TOK" "$URL" 2>/dev/null)"
-fi
-unset TOK
-[ "$HTTP" = 200 ] || { rm -f "$STAGE"; fail "UPDATER_DOWNLOAD_HTTP_$HTTP"; }
-GOT="$(sha256sum "$STAGE" 2>/dev/null | awk '{print $1}')"
-[ "$GOT" = "$GOOD_SHA" ] || { rm -f "$STAGE"; fail UPDATER_HASH_MISMATCH; }
-DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$STAGE" selftest >/dev/null 2>&1 || { rm -f "$STAGE"; fail UPDATER_STAGE_SELFTEST; }
-
-BAK="$R/updater.pre_noreboot_recovery1"
+BAK="$R/updater.pre_noreboot_recovery2"
 [ -f "$UP" ] && cp -pf "$UP" "$BAK" 2>/dev/null || true
-cp -f "$STAGE" "$UP.new.$$" 2>/dev/null && chmod 755 "$UP.new.$$" 2>/dev/null && mv -f "$UP.new.$$" "$UP" || { rm -f "$STAGE"; fail UPDATER_INSTALL_FAILED; }
-rm -f "$STAGE"
+cp -f "$BUNDLED" "$UP.new.$$" 2>/dev/null && chmod 755 "$UP.new.$$" 2>/dev/null && mv -f "$UP.new.$$" "$UP" || fail UPDATER_INSTALL_FAILED
 DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$UP" selftest >/dev/null 2>&1 || {
   [ -f "$BAK" ] && cp -pf "$BAK" "$UP" 2>/dev/null && chmod 755 "$UP" 2>/dev/null
   fail UPDATER_INSTALLED_SELFTEST
 }
 
+# Confirm Arcane belongs to GAME. Add only if it is genuinely absent.
 [ -x "$GR" ] || fail GAME_REGISTRY_HELPER_MISSING
-printf 'sts.al\nArcane Legends\n' | DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$GR" add-stdin >/dev/null 2>&1 || fail ARCANE_REGISTRY_REPAIR_FAILED
-awk -F '\t' '$1=="sts.al"{f=1}END{exit !f}' "$P/custom_games.tsv" 2>/dev/null || fail ARCANE_GAME_REGISTRY_MISSING
-if awk -F '\t' '$1=="sts.al"{f=1}END{exit !f}' "$P/workload/app_registry.tsv" 2>/dev/null; then fail ARCANE_STILL_IN_APP_REGISTRY; fi
+LIST="$(DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$GR" list 2>/dev/null)"
+if ! printf '%s\n' "$LIST" | awk -F'|' '$2=="sts.al"{f=1} END{exit !f}'; then
+  printf 'sts.al\nArcane Legends\n' | DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$GR" add-stdin >/dev/null 2>&1 || fail ARCANE_REGISTRY_REPAIR_FAILED
+  LIST="$(DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$GR" list 2>/dev/null)"
+fi
+printf '%s\n' "$LIST" | awk -F'|' '$2=="sts.al"{f=1} END{exit !f}' || fail ARCANE_GAME_REGISTRY_MISSING
 
+# Remove an accidental APP-registry conflict only if the file exists; keep a backup.
+APPREG="$P/workload/app_registry.tsv"
+if [ -r "$APPREG" ] && awk -F '\t' '$1=="sts.al"{f=1} END{exit !f}' "$APPREG" 2>/dev/null; then
+  cp -pf "$APPREG" "$R/app_registry.pre_noreboot_recovery2.tsv" 2>/dev/null || fail APP_REGISTRY_BACKUP_FAILED
+  awk -F '\t' '$1!="sts.al"' "$APPREG" >"$APPREG.tmp.$$" 2>/dev/null || fail APP_REGISTRY_FILTER_FAILED
+  chmod 600 "$APPREG.tmp.$$" 2>/dev/null || true
+  mv -f "$APPREG.tmp.$$" "$APPREG" || fail APP_REGISTRY_REWRITE_FAILED
+fi
+if [ -r "$APPREG" ] && awk -F '\t' '$1=="sts.al"{f=1} END{exit !f}' "$APPREG" 2>/dev/null; then fail ARCANE_STILL_IN_APP_REGISTRY; fi
+
+# Revive updater daemon with process-identity validation.
 OLDUP="$(cat "$R/updater.pid" 2>/dev/null)"
 if proc_is "$OLDUP" djaeger-railway-updater; then kill "$OLDUP" 2>/dev/null || true; sleep 1; fi
 rm -f "$R/updater.pid" 2>/dev/null
-nohup sh "$UP" daemon >"$R/updater.recovery1.log" 2>&1 </dev/null &
+nohup sh "$UP" daemon >"$R/updater.recovery2.log" 2>&1 </dev/null &
 _i=0; UP_LIVE=NO
-while [ "$_i" -lt 10 ]; do
+while [ "$_i" -lt 12 ]; do
   NP="$(cat "$R/updater.pid" 2>/dev/null)"
   if proc_is "$NP" djaeger-railway-updater; then UP_LIVE=YES; break; fi
   sleep 1; _i=$((_i+1))
 done
 [ "$UP_LIVE" = YES ] || fail UPDATER_DAEMON_NOT_LIVE
 
+# Refresh current controller process without touching controller.sh itself.
 CTRL_ACTION=KEPT
 if [ ! -s "$P/session_game" ]; then
   CP="$(cat "$P/controller.pid" 2>/dev/null)"
@@ -77,8 +85,9 @@ if [ ! -s "$P/session_game" ]; then
   fi
   SP="$(cat "$P/supervisor.pid" 2>/dev/null)"
   if ! proc_is "$SP" djaeger_game_stabilizer/supervisor.sh; then
-    rm -f "$P/supervisor.pid" 2>/dev/null; rm -rf "$P/supervisor.lock" 2>/dev/null
-    nohup sh "$M/supervisor.sh" >"$M/supervisor.recovery1.log" 2>&1 </dev/null &
+    rm -f "$P/supervisor.pid" 2>/dev/null
+    rm -rf "$P/supervisor.lock" 2>/dev/null
+    nohup sh "$M/supervisor.sh" >"$M/supervisor.recovery2.log" 2>&1 </dev/null &
   fi
   _i=0
   while [ "$_i" -lt 20 ]; do
@@ -89,7 +98,8 @@ if [ ! -s "$P/session_game" ]; then
   [ "$CTRL_ACTION" = RESTARTED ] || fail CONTROLLER_RESTART_FAILED
 fi
 
-_i=0; while [ ! -s "$P/cc_snapshot" ] && [ "$_i" -lt 10 ]; do sleep 1; _i=$((_i+1)); done
+# Refresh published UI/audit truth and send one bridge sample for remote verification.
+sleep 2
 [ -x "$CFP" ] && DJAEGER_STATE_DIR="$P" sh "$CFP" >/dev/null 2>&1 || true
 [ -x "$AUD" ] && DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$AUD" run >/dev/null 2>&1 || true
 [ -x "$BR" ] && DJAEGER_MODDIR="$M" DJAEGER_STATE_DIR="$P" sh "$BR" once >/dev/null 2>&1 || true
