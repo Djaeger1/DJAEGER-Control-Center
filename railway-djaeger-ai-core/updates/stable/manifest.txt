@@ -1,6 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='27'
-RELEASE='HOTCTRL2'
+SEQ='28'
+RELEASE='HOTSTACK1'
 TARGET_VC='129659'
 FILE_COUNT='1'
-FILE|djaeger-railway-updater-hotctrl2|system/bin/djaeger-railway-updater|47f27a516f4bcfbcf2f8124f9be415f047b69d96d48be1d4daa23583cbb45abc|755
+FILE|djaeger-railway-updater-hotstack1|system/bin/djaeger-railway-updater|c64c2e7b559f03e1feada288d6161adad41ecae8dcd87717b33ac85ff0d65e01|755
