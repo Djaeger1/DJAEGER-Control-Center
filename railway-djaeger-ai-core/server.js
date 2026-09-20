@@ -155,7 +155,7 @@ function sanitizeTelemetry(x) {
   x = normalizeTelemetry(x);
   const allowed = [
     'schema','device_id','at','module_version','module_version_code',
-    'workload_class','subject_package','profile','user_mode','window_mode',
+    'workload_class','workload_context_age_s','game_session_active','workload_session_consistency','subject_package','profile','user_mode','window_mode',
     'skin_temp_c','battery_temp_c','cpu_temp_c','gpu_temp_c',
     'fps','jank_pct','p95_ms','p99_ms',
     'neurons_used','neurons_limit','neuron_tier','provider_quota_state','provider_quota_reason',
@@ -180,6 +180,9 @@ function safeTelemetrySummary(t) {
     schema: t.schema || null,
     module_version: t.module_version || null,
     workload_class: t.workload_class || null,
+    workload_context_age_s: t.workload_context_age_s ?? null,
+    game_session_active: t.game_session_active || null,
+    workload_session_consistency: t.workload_session_consistency || null,
     profile: t.profile || null,
     skin_temp_c: t.skin_temp_c ?? null,
     battery_temp_c: t.battery_temp_c ?? null,
@@ -350,6 +353,8 @@ function observeTelemetry(t) {
 
   const shouldLog = telemetryStats.accepted <= 5 ||
     telemetryStats.accepted % 10 === 0 ||
+    t.workload_class === 'GAME' ||
+    t.game_session_active === 'YES' ||
     anomalies.length > 0;
 
   if (shouldLog) {
