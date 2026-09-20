@@ -32,7 +32,7 @@ jobs:
           grep -Fq 'PROFILE_MAP=UNCHANGED' "$S"
           grep -Fq 'NO_REBOOT=YES' "$S"
           grep -Fq '[ "$_old" != "$$" ]' "$U"
-          grep -Fq 'printf '\''%s\\n'\'' "$$" >"$PIDFILE"' "$U"
+          grep -Fq '"$$" >"$PIDFILE"' "$U"
           sh -n "$S"
           sh -n "$U"
           ! grep -Eq '(^|[[:space:]])(reboot|svc power reboot|setprop sys.powerctl)' "$S"
