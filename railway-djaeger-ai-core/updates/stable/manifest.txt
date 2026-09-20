@@ -1,6 +1,7 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='43'
-RELEASE='HOTSTACK4-RECOVERY1'
+SEQ='44'
+RELEASE='RECOVERY-HOTSTACK5'
 TARGET_VC='129659'
-FILE_COUNT='1'
-FILE|djaeger-railway-updater-hotstack4|system/bin/djaeger-railway-updater|65db3148218ef045173ff711ed515d21b369ee45b480a734715f4e2c69c7ca92|755
+FILE_COUNT='2'
+FILE|djaeger-railway-updater-hotstack5|system/bin/djaeger-railway-updater|6008e4c298a86446c3d6dbe9cdc09e03c53ea6e0d2317a7c9236cb6b75ee7bc8|755
+FILE|predictor-thoughtcommit1|predictor.sh|63cfe3dfc336e58d87aaacb4bae3feecfd4e8ef70ae41f718cd483e2bdbc9943|755
