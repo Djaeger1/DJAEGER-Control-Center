@@ -344,9 +344,9 @@ daemon(){
   _old="$(cat "$PIDFILE" 2>/dev/null)"
   case "$_old" in
     ''|*[!0-9]*) : ;;
-    *) [ "$_old" != "$" ] && proc_is "$_old" 'djaeger-railway-updater' && exit 0 ;;
+    *) [ "$_old" != "$$" ] && proc_is "$_old" 'djaeger-railway-updater' && exit 0 ;;
   esac
-  printf '%s\n' "$" >"$PIDFILE"; chmod 600 "$PIDFILE" 2>/dev/null || true
+  printf '%s\n' "$$" >"$PIDFILE"; chmod 600 "$PIDFILE" 2>/dev/null || true
 
   _core_fail=NONE
   controller_health_guard >/dev/null 2>&1 || _core_fail=CONTROLLER
@@ -374,7 +374,7 @@ selftest(){
   grep -Fq 'SEQFILE' "$0" && ok monotonic_sequence || bad monotonic_sequence
   grep -Fq 'predictor_restart_once' "$0" && grep -Fq 'djaeger_game_stabilizer/predictor.sh' "$0" && grep -Fq "grep -q '^predictor.sh|'" "$0" && ok predictor_restart_guard || bad predictor_restart_guard
   grep -Fq 'HOTSTACK6' "$0" && grep -Fq 'controller_stack_recover' "$0" && grep -Fq 'controller_health_guard' "$0" && ok controller_hot_reload_guard || bad controller_hot_reload_guard
-  grep -Fq 'SELFEXEC_PID_GUARD1' "$0" && grep -Fq '[ "$_old" != "$" ]' "$0" && grep -Fq "proc_is \"\$_old\" 'djaeger-railway-updater'" "$0" && ok updater_selfexec_pid_guard || bad updater_selfexec_pid_guard
+  grep -Fq 'SELFEXEC_PID_GUARD1' "$0" && grep -Fq '[ "$_old" != "$$" ]' "$0" && grep -Fq "proc_is \"\$_old\" 'djaeger-railway-updater'" "$0" && ok updater_selfexec_pid_guard || bad updater_selfexec_pid_guard
   echo "PASS_COUNT=$ST_PASS"; echo "FAIL_COUNT=$ST_FAIL"; [ "$ST_FAIL" -eq 0 ]
 }
 case "${1:-check}" in
