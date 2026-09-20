@@ -1,6 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='41'
-RELEASE='HOTSTACK3-RELOADVERIFY1'
+SEQ='42'
+RELEASE='ROLLBACK-STABLE-CLOUDTRUTH1'
 TARGET_VC='129659'
 FILE_COUNT='1'
-FILE|djaeger-railway-updater-hotstack3|system/bin/djaeger-railway-updater|bd01cf26ce8472d07e5a90c35444b64e8dfa8ed9c4e4b6c9cc9fdde70881602c|755
+FILE|controller-cloudtruth1|controller.sh|78cec6542a9ea04e318dacd41cbae2808245bd48084a8c124948d9b2c4e574a0|755
