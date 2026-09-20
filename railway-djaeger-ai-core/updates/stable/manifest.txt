@@ -1,8 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='45'
-RELEASE='RECOVERY-STABLE-CLOUDTRUTH2'
+SEQ='46'
+RELEASE='CORESTACK-RECOVERY1'
 TARGET_VC='129659'
-FILE_COUNT='3'
-FILE|controller-cloudtruth1|controller.sh|78cec6542a9ea04e318dacd41cbae2808245bd48084a8c124948d9b2c4e574a0|755
-FILE|djaeger-railway-bridge-cloudtruth2|system/bin/djaeger-railway-bridge|8071d693eb99870c9779e8cbe8b9eddf81d3a1d64dbc0ef5a949ac8ef170c93e|755
-FILE|predictor-thoughtcommit1|predictor.sh|63cfe3dfc336e58d87aaacb4bae3feecfd4e8ef70ae41f718cd483e2bdbc9943|755
+FILE_COUNT='1'
+FILE|djaeger-railway-updater-hotstack6|system/bin/djaeger-railway-updater|585123406e0beb1c10406b8a55016c0f96fe97d0e1d996d10c0186da0b74bb26|755
