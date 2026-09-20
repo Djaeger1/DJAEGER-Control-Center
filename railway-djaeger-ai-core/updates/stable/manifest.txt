@@ -1,7 +1,7 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='37'
-RELEASE='WORKLOADSSOT1-GAMESESSION1'
+SEQ='38'
+RELEASE='WORKLOADSSOT2-GAMESESSION2'
 TARGET_VC='129659'
 FILE_COUNT='2'
-FILE|controller-workloadssot1|controller.sh|725156877ab5e2fe9d29f20af437a715b2d426e477e8e9ceadbb29c1f9925bca|755
+FILE|controller-workloadssot2|controller.sh|3ed714671a49786c0de9b5f1b9f07b6fa49e2801deebf6d40ee665bc930186d6|755
 FILE|djaeger-railway-bridge-gamecapture2|system/bin/djaeger-railway-bridge|4a77cad0140c88fa689c4230f84d794ca985d6c54485c71b11cf76d3ab8af074|755
