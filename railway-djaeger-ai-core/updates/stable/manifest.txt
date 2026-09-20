@@ -1,7 +1,6 @@
 SCHEMA='DJAEGER_RAILWAY_REPAIR_V1'
-SEQ='24'
-RELEASE='GEMINITHOUGHTCOMMIT1'
+SEQ='25'
+RELEASE='HOTCTRL1'
 TARGET_VC='129659'
-FILE_COUNT='2'
-FILE|predictor-r89comfort2-thoughtcommit1|predictor.sh|25f7496fdc5c868b502777131ea8f208805d44eab77cc69e9fb48c4e4f201599|755
-FILE|djaeger-railway-bridge-geminidiag2|system/bin/djaeger-railway-bridge|67a8366581eef260668547b34b0becdd768e43eb8604dba6a3f297c6dbea16bc|755
+FILE_COUNT='1'
+FILE|djaeger-railway-updater-hotctrl1|system/bin/djaeger-railway-updater|3c662283fe96301572c5602ac81ee1c0acfcf066be71c0a54667db4398d789b9|755
