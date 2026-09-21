@@ -90,8 +90,8 @@ private fun ageLabel(raw:String):String{
     val finalSource=envField(s.brain,"FINAL_SOURCE").ifBlank{envField(s.brain,"SOURCE")}
     val brainMode=envField(s.brain,"BRAIN_MODE").ifBlank{envField(s.brain,"MODE")}
     val cloudState=envField(s.brain,"CLOUD_PLAN_STATE").ifBlank{"UNAVAILABLE"}
-    val cloudConnection=envField(s.brain,"CLOUD_CONNECTION_STATUS").ifBlank{"UNKNOWN"}
-    val cloudProvider=envField(s.brain,"CLOUD_PROVIDER").ifBlank{if(cloudConnection!="UNKNOWN") "GEMINI" else "—"}
+    val cloudConnection=envField(s.brain,"GEMINI_CONNECTION_STATUS").ifBlank{"UNKNOWN"}
+    val cloudProvider="GEMINI"
     val cloudControlProvider=envField(s.brain,"CLOUD_CONTROL_PROVIDER").ifBlank{
         when{
             currentBrain=="GEMINI" -> "GEMINI"
@@ -677,7 +677,7 @@ private fun humanDecision(s:RuntimeState):String{
     LaunchedEffect(request){val q=request;if(q!=null){val r=repo.setUserMode(q);result=r.second;request=null}}
     LaunchedEffect(bridgeOp){
         when(bridgeOp){
-            "STATUS"->{val r=repo.geminiKeyStatus();bridgeStatus=r.second.ifBlank{"KEY_CONFIGURED=NO"}}
+            "STATUS"->{val r=repo.credentialStatus();bridgeStatus=r.second.ifBlank{"CREDENTIAL_STATUS=UNAVAILABLE"}}
             "SAVE"->{val r=repo.saveGeminiKey(keyInput);bridgeStatus=r.second;if(r.first)keyInput=""}
             "DELETE"->{val r=repo.deleteGeminiKey();bridgeStatus=r.second}
             "CHAT"->{val r=repo.geminiChat(chatInput);chatResult=r.second.ifBlank{"CHAT_ERROR=EMPTY_RESPONSE"}}
