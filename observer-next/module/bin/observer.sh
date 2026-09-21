@@ -253,7 +253,7 @@ while true; do
   mv -f "$TMP" "$SNAP"
 
   EXEC_STATE=$(sed -n 's/^EXECUTOR_STATE=//p' "$ROOT/runtime/execution.env" 2>/dev/null | head -n1)
-  [ "$EXEC_STATE" = APPLIED ] && SAMPLE_ORIGIN=ADAPTIVE_EXECUTION || SAMPLE_ORIGIN=STOCK_BASELINE
+  if [ "$EXEC_STATE" = APPLIED ] || [ -r "$ROOT/runtime/execution_backup.env" ]; then SAMPLE_ORIGIN=ADAPTIVE_EXECUTION; else SAMPLE_ORIGIN=STOCK_BASELINE; fi
   echo "$EPOCH,$SEQ,$PKG,$AVG,$MIN,$MAX,$LITTLE,$BIG,$GPU,$SKIN,$BATC,$CUR,$VOLT,$POWER,$PCT,$FPS,$JANK,$P95,$P99,$FN,$FAT,$BSTAT,$SAMPLE_ORIGIN" >> "$HISTORY"
 
   SIZE=$(wc -c < "$HISTORY" 2>/dev/null)
