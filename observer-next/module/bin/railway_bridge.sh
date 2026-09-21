@@ -15,8 +15,11 @@ send_once(){
   case "$URL" in https://*) :;; *) publish INVALID_URL; return 1;; esac
   body="$ROOT/runtime/.railway_payload.$$"
   printf '{"schema":"DJAEGER_AI_TELEMETRY_V1","device_id":"%s","at":%s,"package":"%s","cpu_little_khz":"%s","cpu_big_khz":"%s","gpu_hz":"%s","skin_temp_c":"%s","battery_temp_c":"%s","cpu_temp_c":"%s","gpu_temp_c":"%s","power_mw":"%s","fps":"%s","jank_pct":"%s","source":"LOCAL_OBSERVER"}'     "$(clean "$(kv DEVICE_ID "$ROOT/config/identity.env")")" "$(date +%s)" "$(clean "$(kv ACTIVE_PACKAGE "$SNAP")")"     "$(clean "$(kv LITTLE_CUR_KHZ "$SNAP")")" "$(clean "$(kv BIG_CUR_KHZ "$SNAP")")" "$(clean "$(kv GPU_CUR_HZ "$SNAP")")"     "$(clean "$(kv SKIN_TEMP_C "$SNAP")")" "$(clean "$(kv BATTERY_TEMP_C "$SNAP")")" "$(clean "$(kv CPU_TEMP_C "$SNAP")")" "$(clean "$(kv GPU_TEMP_C "$SNAP")")"     "$(clean "$(kv POWER_MW "$SNAP")")" "$(clean "$(kv FPS_EST "$SNAP")")" "$(clean "$(kv JANK_PCT "$SNAP")")" > "$body"
-  HTTP="$(curl --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" --data-binary "@$body" "${URL%/}/v1/device/telemetry" 2>/dev/null)"
-  rm -f "$body"; unset TOKEN
+  curlcfg="$ROOT/runtime/.railway_curl.$"
+  printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$curlcfg"
+  chmod 600 "$curlcfg"
+  HTTP="$(curl --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -w '%{http_code}' -K "$curlcfg" -H 'Content-Type: application/json' --data-binary "@$body" "${URL%/}/v1/device/telemetry" 2>/dev/null)"
+  rm -f "$curlcfg" "$body"; unset TOKEN
   [ "$HTTP" = 200 ] && publish CONNECTED "$HTTP" || publish OFFLINE "${HTTP:-000}"
 }
 case "${2:-once}" in once) send_once;; daemon) while :; do send_once >/dev/null 2>&1 || true; sleep 30; done;; *) exit 2;; esac
