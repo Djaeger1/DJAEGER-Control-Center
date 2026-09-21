@@ -8,16 +8,19 @@ trap 'rm -rf "$TEST_ROOT"' EXIT
 run_ctl(){ DJAEGER_OBSERVER_ROOT="$TEST_ROOT" sh "$MODULE/bin/observerctl.sh" "$@"; }
 
 LEGACY_ROOT="$TEST_ROOT/legacy_source"
+LEGACY_MODULE_ROOT="$TEST_ROOT/legacy_module"
 A=djaeger; B=work; C=hermes
 FOREIGN_A="$LEGACY_ROOT/${A}_${B}"
 FOREIGN_B="$LEGACY_ROOT/${C}_${B}"
-mkdir -p "$LEGACY_ROOT/config" "$FOREIGN_A" "$FOREIGN_B"
+mkdir -p "$LEGACY_ROOT/config" "$FOREIGN_A" "$FOREIGN_B" "$LEGACY_MODULE_ROOT/system/etc/djaeger/railway"
 
 cat > "$LEGACY_ROOT/config/identity.env" <<'EOF'
 DEVICE_ID=adaptive-migration-test
 GEMINI_API_KEY=AIzaAdaptiveMigrationFakeKey1234567890
 HERMES_ACCESS_KEY=hermes-clean-token-1234567890
 HERMES_ENDPOINT=https://hermes.example.invalid
+EOF
+cat > "$LEGACY_MODULE_ROOT/system/etc/djaeger/railway/railway.conf" <<'EOF'
 DJAEGER_ACCESS_TOKEN=railway-clean-token-1234567890
 EOF
 cat > "$FOREIGN_A/foreign.env" <<'EOF'
@@ -31,7 +34,7 @@ cat > "$LEGACY_ROOT/controller.sh" <<'EOF'
 echo controller-must-not-be-imported
 EOF
 
-DJAEGER_LEGACY_ROOT="$LEGACY_ROOT" sh "$MODULE/bin/migrate.sh" "$TEST_ROOT" "$MODULE"
+DJAEGER_LEGACY_ROOT="$LEGACY_ROOT" DJAEGER_LEGACY_MODULE_ROOT="$LEGACY_MODULE_ROOT" sh "$MODULE/bin/migrate.sh" "$TEST_ROOT" "$MODULE"
 test -r "$TEST_ROOT/config/gemini_vault.env"
 test -r "$TEST_ROOT/config/hermes_cloud.env"
 test -r "$TEST_ROOT/config/identity.env"
