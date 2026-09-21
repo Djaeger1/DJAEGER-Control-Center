@@ -26,6 +26,10 @@ pub_clean() {
   printf '%s' "$1" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/%=,@ -' | cut -c1-180
 }
 
+pub_clean_long() {
+  printf '%s' "$1" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/%=,@ -' | cut -c1-420
+}
+
 pub_registry_has() {
   [ -r "$1" ] || return 1
   awk -F'|' -v p="$2" '$2==p{found=1}END{exit !found}' "$1" 2>/dev/null
@@ -73,9 +77,15 @@ publish_cc() {
   _visible_game="$(pub_kv VISIBLE_GAME "$_snap")"; [ -n "$_visible_game" ] || _visible_game=NONE
   _pkg_source="$(pub_kv PACKAGE_SOURCE "$_snap")"; [ -n "$_pkg_source" ] || _pkg_source=LEGACY_FOREGROUND
   _samples="$(pub_kv PACKAGE_SAMPLES "$_snap")"; case "$_samples" in ''|*[!0-9]*) _samples=0;; esac
-  _learning="$(pub_kv STATE "$_learn")"; [ -n "$_learning" ] || _learning="$(pub_kv LEARNING_STATE "$_snap")"
+  _learn_pkg="$(pub_kv PACKAGE "$_learn")"
+  if [ -n "$_learn_pkg" ] && [ "$_learn_pkg" = "$_pkg" ]; then
+    _learning="$(pub_kv STATE "$_learn")"
+    _confidence="$(pub_kv CONFIDENCE "$_learn")"; case "$_confidence" in ''|*[!0-9]*) _confidence=0;; esac
+  else
+    _learning="$(pub_kv LEARNING_STATE "$_snap")"
+    _confidence=0
+  fi
   [ -n "$_learning" ] || _learning=WAITING
-  _confidence="$(pub_kv CONFIDENCE "$_learn")"; case "$_confidence" in ''|*[!0-9]*) _confidence=0;; esac
 
   _frame_evidence="$(pub_kv FRAME_EVIDENCE "$_snap")"; [ -n "$_frame_evidence" ] || _frame_evidence=UNAVAILABLE
   _workload=UNKNOWN
@@ -130,12 +140,16 @@ publish_cc() {
   _p95="$(pub_kv P95_MS "$_snap")"; [ -n "$_p95" ] && [ "$_p95" != NA ] || _p95=0
   _p99="$(pub_kv P99_MS "$_snap")"; [ -n "$_p99" ] && [ "$_p99" != NA ] || _p99=0
 
-  _lmin="$(pub_kv LITTLE_MIN_KHZ "$_learn")"; [ -n "$_lmin" ] || _lmin=NA
-  _lmax="$(pub_kv LITTLE_MAX_KHZ "$_learn")"; [ -n "$_lmax" ] || _lmax=NA
-  _bmin="$(pub_kv BIG_MIN_KHZ "$_learn")"; [ -n "$_bmin" ] || _bmin=NA
-  _bmax="$(pub_kv BIG_MAX_KHZ "$_learn")"; [ -n "$_bmax" ] || _bmax=NA
-  _gmin="$(pub_kv GPU_MIN_HZ "$_learn")"; [ -n "$_gmin" ] || _gmin=NA
-  _gmax="$(pub_kv GPU_MAX_HZ "$_learn")"; [ -n "$_gmax" ] || _gmax=NA
+  if [ "$_learn_pkg" = "$_pkg" ]; then
+    _lmin="$(pub_kv LITTLE_MIN_KHZ "$_learn")"; [ -n "$_lmin" ] || _lmin=NA
+    _lmax="$(pub_kv LITTLE_MAX_KHZ "$_learn")"; [ -n "$_lmax" ] || _lmax=NA
+    _bmin="$(pub_kv BIG_MIN_KHZ "$_learn")"; [ -n "$_bmin" ] || _bmin=NA
+    _bmax="$(pub_kv BIG_MAX_KHZ "$_learn")"; [ -n "$_bmax" ] || _bmax=NA
+    _gmin="$(pub_kv GPU_MIN_HZ "$_learn")"; [ -n "$_gmin" ] || _gmin=NA
+    _gmax="$(pub_kv GPU_MAX_HZ "$_learn")"; [ -n "$_gmax" ] || _gmax=NA
+  else
+    _lmin=NA; _lmax=NA; _bmin=NA; _bmax=NA; _gmin=NA; _gmax=NA
+  fi
 
   _gem="$(pub_kv GEMINI_STATE "$_gem_state")"; [ -n "$_gem" ] || _gem=WAITING
   _gem_conf="$(pub_kv CONFIDENCE "$_gem_prop")"; case "$_gem_conf" in ''|*[!0-9]*) _gem_conf=0;; esac
@@ -429,7 +443,7 @@ publish_cc() {
     echo "AGENT_CAN_CHOOSE_BRAIN=NO"; echo "AGENT_CAN_OVERRIDE_BRAIN=NO"; echo "AGENT_EXECUTION_BACKEND=LOCAL_VALIDATED_SYSFS"
     echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "DECISION_PRIORITY=SAFETY>MEASURED_EVIDENCE>AI_REVIEW"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
-    echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
+    echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
     echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
     echo "__AUTHORITY__"; echo "STATE=LOCAL_GATED"; echo "HARDWARE_AUTHORITY=LOCAL_VALIDATED_EXECUTOR"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
     echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
