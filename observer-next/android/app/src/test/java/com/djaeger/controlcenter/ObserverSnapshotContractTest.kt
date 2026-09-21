@@ -12,23 +12,23 @@ class ObserverSnapshotContractTest {
             __INSTALLED__
             1
             __VERSION__
-            0.2.1-observer-next
+            1.0.0-adaptive-clean
             __RUNTIME__
             UPDATED_AT=1789970000
             ACTIVE=1
             GAME=sts.al
             WINDOW_MODE=FOREGROUND
-            USER_MODE=OBSERVER
+            USER_MODE=AUTO
             __TEL__
-            1789970000,54,50,39,37,1000000,1800000,600000000,STOCK_OBSERVER,16.67,60.0,1.0,17.0,20.0,0,Discharging,500000,4200000,2100,VALID,MEASURED_DISCHARGE,sts.al,FOREGROUND
+            1789970000,54,50,39,37,1000000,1800000,600000000,ADAPTIVE_LEARNED,16.67,60.0,1.0,17.0,20.0,0,Discharging,500000,4200000,2100,VALID,MEASURED_DISCHARGE,sts.al,FOREGROUND
             __CONTROL_CENTER_SYNC__
-            CONTRACT=OBSERVER_NEXT_V1
-            MODULE_VERSION_CODE=201
-            CONTROL_CENTER_VERSION_CODE=102
+            CONTRACT=DJAEGER_AI_ADAPTIVE_V1
+            MODULE_VERSION_CODE=202
+            CONTROL_CENTER_VERSION_CODE=103
             __AUTHORITY__
-            STATE=READ_ONLY
-            SYSFS_WRITES=DISABLED
-            EXECUTOR=NOT_STARTED
+            STATE=LOCAL_GATED
+            SYSFS_WRITES=EXECUTOR_ONLY
+            EXECUTOR=APPLIED
             __BUG_HEALTH__
             STATE=OK
         """.trimIndent()
@@ -44,10 +44,10 @@ class ObserverSnapshotContractTest {
         ))
 
         assertTrue(mapped.installed)
-        assertEquals("0.2.1-observer-next", mapped.moduleVersion)
+        assertEquals("1.0.0-adaptive-clean", mapped.moduleVersion)
         assertEquals("sts.al", mapped.runtime["GAME"])
-        assertEquals("OBSERVER_NEXT_V1", AtomicSnapshot.keyValues(mapped.controlCenterSync)["CONTRACT"])
-        assertEquals("DISABLED", AtomicSnapshot.keyValues(mapped.authority)["SYSFS_WRITES"])
-        assertEquals("NOT_STARTED", AtomicSnapshot.keyValues(mapped.authority)["EXECUTOR"])
+        assertEquals("DJAEGER_AI_ADAPTIVE_V1", AtomicSnapshot.keyValues(mapped.controlCenterSync)["CONTRACT"])
+        assertEquals("EXECUTOR_ONLY", AtomicSnapshot.keyValues(mapped.authority)["SYSFS_WRITES"])
+        assertEquals("APPLIED", AtomicSnapshot.keyValues(mapped.authority)["EXECUTOR"])
     }
 }
