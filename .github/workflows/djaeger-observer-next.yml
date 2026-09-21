@@ -1,6 +1,11 @@
 name: DJAEGER Observer Next
 
 on:
+  push:
+    branches: [observer-v1]
+    paths:
+      - 'observer-next/**'
+      - '.github/workflows/djaeger-observer-next.yml'
   pull_request:
     branches: [main]
     paths:
