@@ -17,7 +17,7 @@ data class StrategyTruth(val source:String="UNAVAILABLE",val proposal:String="UN
 data class R16Plan(val epoch:String,val state:String,val score:String,val reason:String,val mode:String,val profile:String,val lmin:String,val lmax:String,val bmin:String,val bmax:String,val gmin:String,val gmax:String)
 fun parseR16Plan(raw:String):R16Plan?=raw.lineSequence().map{it.trim()}.filter{it.isNotBlank()}.mapNotNull{line->val p=line.split(',');if(p.size>=12&&p[0].toLongOrNull()!=null)R16Plan(p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8],p[9],p[10],p[11])else null}.lastOrNull{it.state=="PROMOTED"}
 
-data class RuntimeState(val root:Boolean=false,val sampleFresh:Boolean=false,val installed:Boolean=false,val active:String="0",val game:String="NA",val window:String="INACTIVE",val controllerPid:String="",val predictorPid:String="",val updated:Long=0,val userMode:String="AUTO",val moduleVersion:String="unknown",val telemetry:Telemetry=Telemetry(),val brain:String="",val thoughts:String="",val memoryStatus:String="",val strategyResult:String="",val authority:String="",val sessionSafety:String="",val supervisor:String="",val hermesCtx1Status:String="",val hermesCtx1Runtime:String="",val hermesCtx1Safety:String="",val hermesCtx1Hardware:String="",val hermesCtx1Memory:String="",val hermesCtx1Learning:String="",val hermesCognitionStatus:String="",val hermesMemoryVNext:String="",val hermesReasoningV2:String="",val hermesSkillsVNext:String="",val hermesLearningV2:String="",val hermesResearchV2:String="",val hermesHumanComfort:String="",val hermesLanguage:String="",val hermesMath:String="",val hermesKernel1:String="",val agentSysfs1Capability:String="",val agentSysfs1Execution:String="",val controlCenterSync:String="",val workloadContext:String="",val workloadGate:String="",val proposalBinding:String="",val workloadFinal:String="",val workloadExecGuard:String="",val appRegistry:String="",val gameRegistryManual:String="",val envelope:String="",val geminiHttp:String="",val geminiServer:String="",val decisions:String="",val plans:String="",val frameIntel:String="",val log:String="",val latestDecision:DecisionRecord?=null,val latestPlan:PlanRecord?=null,val error:String="",val network:NetworkState=NetworkState(),val bugHealth:BugHealthState=BugHealthState(),val strategy:StrategyTruth=StrategyTruth())
+data class RuntimeState(val root:Boolean=false,val sampleFresh:Boolean=false,val installed:Boolean=false,val active:String="0",val game:String="NA",val window:String="INACTIVE",val controllerPid:String="",val predictorPid:String="",val updated:Long=0,val userMode:String="AUTO",val moduleVersion:String="unknown",val telemetry:Telemetry=Telemetry(),val brain:String="",val thoughts:String="",val memoryStatus:String="",val strategyResult:String="",val execution:String="",val authority:String="",val sessionSafety:String="",val supervisor:String="",val hermesCtx1Status:String="",val hermesCtx1Runtime:String="",val hermesCtx1Safety:String="",val hermesCtx1Hardware:String="",val hermesCtx1Memory:String="",val hermesCtx1Learning:String="",val hermesCognitionStatus:String="",val hermesMemoryVNext:String="",val hermesReasoningV2:String="",val hermesSkillsVNext:String="",val hermesLearningV2:String="",val hermesResearchV2:String="",val hermesHumanComfort:String="",val hermesLanguage:String="",val hermesMath:String="",val hermesKernel1:String="",val agentSysfs1Capability:String="",val agentSysfs1Execution:String="",val controlCenterSync:String="",val workloadContext:String="",val workloadGate:String="",val proposalBinding:String="",val workloadFinal:String="",val workloadExecGuard:String="",val appRegistry:String="",val gameRegistryManual:String="",val envelope:String="",val geminiHttp:String="",val geminiServer:String="",val decisions:String="",val plans:String="",val frameIntel:String="",val log:String="",val latestDecision:DecisionRecord?=null,val latestPlan:PlanRecord?=null,val error:String="",val network:NetworkState=NetworkState(),val bugHealth:BugHealthState=BugHealthState(),val strategy:StrategyTruth=StrategyTruth())
 
 class DjaegerRepository {
     private var lastGoodNetwork:NetworkState?=null
@@ -48,8 +48,8 @@ class DjaegerRepository {
         val tel = parseTelemetry(mapped.telemetryRaw)
         val now = System.currentTimeMillis()/1000
         val age = if(tel.epoch > 0) now - tel.epoch else Long.MAX_VALUE
-        val observerContract = AtomicSnapshot.keyValues(mapped.controlCenterSync)["CONTRACT"] == "OBSERVER_NEXT_V1"
-        val telemetryTtlSec = if(observerContract) 15L else 5L
+        val adaptiveContract = AtomicSnapshot.keyValues(mapped.controlCenterSync)["CONTRACT"] == "DJAEGER_AI_ADAPTIVE_V1"
+        val telemetryTtlSec = if(adaptiveContract) 15L else 5L
         val fresh = tel.epoch > 0 && age in 0..telemetryTtlSec
         val runtimeUpdated=(rt["UPDATED_AT"] ?: rt["updated_at"])?.toLongOrNull() ?: 0L
         val activeClaim=(rt["ACTIVE"] ?: rt["active"] ?: "0") == "1"
@@ -100,12 +100,13 @@ class DjaegerRepository {
         val fEpoch=frameParts.getOrNull(0)?.toLongOrNull()?:0L
         val fFresh=fEpoch>0 && (now-fEpoch) in 0..15
         val telBound=if(activeClaim && runtimeFresh && fFresh) tel.copy(epoch=fEpoch,profile=frameParts.getOrNull(1)?:tel.profile,frameMs=frameParts.getOrNull(2)?.toDoubleOrNull()?:tel.frameMs,fps=frameParts.getOrNull(3)?.toDoubleOrNull()?:tel.fps,jank=frameParts.getOrNull(4)?.toDoubleOrNull()?:tel.jank,p95=frameParts.getOrNull(5)?.toDoubleOrNull()?:tel.p95,p99=frameParts.getOrNull(6)?.toDoubleOrNull()?:tel.p99) else tel
+        val execKv=AtomicSnapshot.keyValues(mapped.execution)
         val strategy=StrategyTruth(
             source=rv("DECISION_SOURCE","decision_source","SOURCE").let{if(it=="—") rv("SOURCE") else it},
-            proposal=plan?.let{"LAST PROMOTED @${it.epoch}: ${it.mode} ${it.profile}"}?:"UNAVAILABLE",
+            proposal=plan?.let{"LAST PROPOSAL @${it.epoch}: ${it.mode} ${it.profile}"}?:"UNAVAILABLE",
             validation=plan?.let{"${it.state} score=${it.score}: ${it.reason}"}?:"UNAVAILABLE",
-            applied="UNAVAILABLE — requires fresh __EXECUTION__",
-            readback="UNAVAILABLE — no verified readback evidence",
+            applied=execKv["STATUS"] ?: "IDLE",
+            readback=execKv["READBACK"] ?: "UNAVAILABLE",
             outcome=dec?.outcome?:"UNAVAILABLE",
             cpuLittleMin=plan?.lmin?:"—",cpuLittleMax=plan?.lmax?:"—",cpuBigMin=plan?.bmin?:"—",cpuBigMax=plan?.bmax?:"—",gpuMin=plan?.gmin?:"—",gpuMax=plan?.gmax?:"—",
             confidence=plan?.score?:rv("STRATEGY_CONFIDENCE","CONFIDENCE"),
@@ -130,7 +131,7 @@ class DjaegerRepository {
             telemetry=telBound,
             brain=mapped.brain,
             thoughts=mapped.thoughts,
-            memoryStatus=mapped.memoryStatus,strategyResult=mapped.strategyResult,authority=mapped.authority,sessionSafety=mapped.sessionSafety,supervisor=mapped.supervisor,hermesCtx1Status=mapped.hermesCtx1Status,hermesCtx1Runtime=mapped.hermesCtx1Runtime,hermesCtx1Safety=mapped.hermesCtx1Safety,hermesCtx1Hardware=mapped.hermesCtx1Hardware,hermesCtx1Memory=mapped.hermesCtx1Memory,hermesCtx1Learning=mapped.hermesCtx1Learning,hermesCognitionStatus=mapped.hermesCognitionStatus,hermesMemoryVNext=mapped.hermesMemoryVNext,hermesReasoningV2=mapped.hermesReasoningV2,hermesSkillsVNext=mapped.hermesSkillsVNext,hermesLearningV2=mapped.hermesLearningV2,hermesResearchV2=mapped.hermesResearchV2,hermesHumanComfort=mapped.hermesHumanComfort,hermesLanguage=mapped.hermesLanguage,hermesMath=mapped.hermesMath,hermesKernel1=mapped.hermesKernel1,agentSysfs1Capability=mapped.agentSysfs1Capability,agentSysfs1Execution=mapped.agentSysfs1Execution,controlCenterSync=mapped.controlCenterSync,workloadContext=mapped.workloadContext,workloadGate=mapped.workloadGate,proposalBinding=mapped.proposalBinding,workloadFinal=mapped.workloadFinal,workloadExecGuard=mapped.workloadExecGuard,appRegistry=mapped.appRegistry,gameRegistryManual=mapped.gameRegistryManual,
+            memoryStatus=mapped.memoryStatus,strategyResult=mapped.strategyResult,execution=mapped.execution,authority=mapped.authority,sessionSafety=mapped.sessionSafety,supervisor=mapped.supervisor,hermesCtx1Status=mapped.hermesCtx1Status,hermesCtx1Runtime=mapped.hermesCtx1Runtime,hermesCtx1Safety=mapped.hermesCtx1Safety,hermesCtx1Hardware=mapped.hermesCtx1Hardware,hermesCtx1Memory=mapped.hermesCtx1Memory,hermesCtx1Learning=mapped.hermesCtx1Learning,hermesCognitionStatus=mapped.hermesCognitionStatus,hermesMemoryVNext=mapped.hermesMemoryVNext,hermesReasoningV2=mapped.hermesReasoningV2,hermesSkillsVNext=mapped.hermesSkillsVNext,hermesLearningV2=mapped.hermesLearningV2,hermesResearchV2=mapped.hermesResearchV2,hermesHumanComfort=mapped.hermesHumanComfort,hermesLanguage=mapped.hermesLanguage,hermesMath=mapped.hermesMath,hermesKernel1=mapped.hermesKernel1,agentSysfs1Capability=mapped.agentSysfs1Capability,agentSysfs1Execution=mapped.agentSysfs1Execution,controlCenterSync=mapped.controlCenterSync,workloadContext=mapped.workloadContext,workloadGate=mapped.workloadGate,proposalBinding=mapped.proposalBinding,workloadFinal=mapped.workloadFinal,workloadExecGuard=mapped.workloadExecGuard,appRegistry=mapped.appRegistry,gameRegistryManual=mapped.gameRegistryManual,
             envelope=mapped.envelope,
             geminiHttp=mapped.geminiHttp,
             geminiServer=mapped.geminiServer,
@@ -147,11 +148,15 @@ class DjaegerRepository {
     }
 
     suspend fun setUserMode(mode:String):Pair<Boolean,String> = withContext(Dispatchers.IO) {
-        Pair(false,"OBSERVER_ONLY • fixed modes are retired; stock behavior is being learned")
+        when(mode.uppercase()){
+            "AUTO" -> { val (rc,out)=su("$module/bin/observerctl.sh execution-auto",5000); Pair(rc==0,out.trim()) }
+            "OFF" -> { val (rc,out)=su("$module/bin/observerctl.sh execution-off",5000); Pair(rc==0,out.trim()) }
+            else -> Pair(false,"ADAPTIVE_ONLY • static profiles are retired")
+        }
     }
 
     suspend fun setHumanComfortPreset(preset:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
-        Pair(false,"OBSERVER_ONLY • no fixed comfort preset is installed")
+        Pair(false,"ADAPTIVE_ONLY • comfort input is learned as evidence, not a fixed preset")
     }
 
     suspend fun submitHumanComfortFeedback(level:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
