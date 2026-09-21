@@ -1,0 +1,105 @@
+name: DJAEGER AI Cleanroom Build
+
+on:
+  push:
+    branches: [djaeger-ai-cleanroom-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Cleanroom isolation gate
+        run: |
+          set -euo pipefail
+          test -d observer-next
+          test ! -d railway-relay
+          test ! -d runtime
+          test ! -d railway-djaeger-ai-core
+          ! grep -R -I -E 'DJAEGER[ _-]+WORK|HERMES[ _-]+WORK|HERMES_WORK|railway-relay|studio-feed|publish-feed|youtube-publisher' observer-next
+          ! grep -R -I -E '/data/adb/(djaeger_work|hermes_work)|/sdcard/.*/(djaeger_work|hermes_work)' observer-next
+          grep -Fq 'LEGACY=${DJAEGER_LEGACY_ROOT:-/data/adb/djaeger_ai}' observer-next/module/bin/migrate.sh
+          ! grep -R -I -E '>[[:space:]]*/sys/|tee[[:space:]]+/sys/|echo[[:space:]].*>[[:space:]]*/sys/' observer-next/module
+          test ! -e observer-next/module/bin/executor.sh
+          test ! -e observer-next/module/bin/agent_bus.sh
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Module contract tests
+        run: bash observer-next/tests/module_contract_test.sh
+
+      - name: Android unit tests and release build
+        working-directory: observer-next/android
+        run: gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
+
+      - name: Package signed cleanroom artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cd observer-next/module
+          zip -qr ../../out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip .
+          cd ../..
+
+          UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
+          test -n "$UNSIGNED"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | sort -V | tail -n1)"
+          SIGN_DIR="$RUNNER_TEMP/djaeger-cleanroom-signing"
+          mkdir -p "$SIGN_DIR"
+          PASS="$(openssl rand -hex 24)"
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -noprompt -storetype PKCS12             -keystore "$SIGN_DIR/cleanroom.p12"             -storepass "$PASS" -keypass "$PASS"             -alias cleanroom -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER AI Cleanroom, O=DJAEGER, C=ID'
+
+          ALIGNED="$RUNNER_TEMP/cleanroom-aligned.apk"
+          APK="out/DJAEGER-AI-Cleanroom-v1.0.2.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign             --ks "$SIGN_DIR/cleanroom.p12" --ks-type PKCS12             --ks-key-alias cleanroom             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$ALIGNED"
+
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee out/APKSIGNER_VERIFY.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
+          "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
+          unzip -t "$APK" > out/APK_ZIP_TEST.txt
+          unzip -t out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip > out/MODULE_ZIP_TEST.txt
+          unzip -l out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip > out/MODULE_CONTENTS.txt
+
+          grep -q "package: name='com.djaeger.observer' versionCode='102'" out/AAPT_BADGING.txt
+          grep -qx 'false' out/APK_DEBUGGABLE.txt
+          ! grep -Eq 'executor\.sh|agent_bus\.sh' out/MODULE_CONTENTS.txt
+          cd out
+          sha256sum DJAEGER-AI-Cleanroom-v1.0.2.apk DJAEGER-AI-Cleanroom-Module-v0.2.1.zip > SHA256SUMS.txt
+          printf '%s\n'             'STATUS=PASS'             'SOURCE_LINEAGE=CLEANROOM'             'FOREIGN_PROJECT_RESIDUE=0'             'HARDWARE_MODE=READ_ONLY_VALIDATION'             'SYSFS_WRITES=DISABLED'             'EXECUTOR_PACKAGED=NO'             > BUILD_REPORT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-AI-Cleanroom-v1
+          path: |
+            out/DJAEGER-AI-Cleanroom-v1.0.2.apk
+            out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip
+            out/SHA256SUMS.txt
+            out/BUILD_REPORT.txt
+            out/APKSIGNER_VERIFY.txt
+            out/AAPT_BADGING.txt
+            out/APK_DEBUGGABLE.txt
+            out/APK_ZIP_TEST.txt
+            out/MODULE_ZIP_TEST.txt
+            out/MODULE_CONTENTS.txt
+          if-no-files-found: error

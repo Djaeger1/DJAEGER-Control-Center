@@ -1,0 +1,6 @@
+id=djaeger_ai_observer
+name=DJAEGER AI Observer
+version=0.2.1-observer-next
+versionCode=201
+author=DJAEGER
+description=Read-only validation: stock learning, Gemini + ONE HERMES review, counterfactual shadow evidence, legacy credential migration, and no sysfs execution.
