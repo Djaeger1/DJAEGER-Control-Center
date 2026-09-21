@@ -383,7 +383,13 @@ publish_cc() {
     _plmin="$(pub_kv LITTLE_MIN_KHZ "$_candidate")"; _plmax="$(pub_kv LITTLE_MAX_KHZ "$_candidate")"
     _pbmin="$(pub_kv BIG_MIN_KHZ "$_candidate")"; _pbmax="$(pub_kv BIG_MAX_KHZ "$_candidate")"
     _pgmin="$(pub_kv GPU_MIN_HZ "$_candidate")"; _pgmax="$(pub_kv GPU_MAX_HZ "$_candidate")"
-    _plan_line="$_epoch,$_shadow_state,$_pc,AI_CONSENSUS_MEASURED_ENVELOPE,ADAPTIVE,LEARNED,$_plmin,$_plmax,$_pbmin,$_pbmax,$_pgmin,$_pgmax"
+    _plan_state=PROPOSED
+    [ "$_cons_state" = PENDING_SHADOW ] && _plan_state=PENDING_SHADOW
+    [ "$_shadow_state" = PASS ] && _plan_state=SHADOW_PASS
+    [ "$_exec_state" = APPLIED ] && [ "$_readback" = VERIFIED ] && _plan_state=PROMOTED
+    [ "$_exec_state" = ROLLED_BACK ] && _plan_state=ROLLED_BACK
+    [ "$_exec_state" = ROLLBACK_FAILED ] && _plan_state=ROLLBACK_FAILED
+    _plan_line="$_epoch,$_plan_state,$_pc,AI_CONSENSUS_MEASURED_ENVELOPE,ADAPTIVE,LEARNED,$_plmin,$_plmax,$_pbmin,$_pbmax,$_pgmin,$_pgmax"
   fi
 
   _tmp="$_out.tmp.$$"
