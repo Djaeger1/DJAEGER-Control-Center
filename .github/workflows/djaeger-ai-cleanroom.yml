@@ -35,6 +35,10 @@ jobs:
           ! grep -R -I -E 'DJAEGER[ _-]+WORK|HERMES[ _-]+WORK|HERMES_WORK|railway-relay|studio-feed|publish-feed|youtube-publisher' observer-next
           ! grep -R -I -E '/data/adb/(djaeger_work|hermes_work)|/sdcard/.*/(djaeger_work|hermes_work)' observer-next
           grep -Fq 'LEGACY=${DJAEGER_LEGACY_ROOT:-/data/adb/djaeger_ai}' observer-next/module/bin/migrate.sh
+          grep -Fq 'RAW_LEGACY_FILES_IMPORTED=0' observer-next/module/bin/migrate.sh
+          grep -Fq 'FOREIGN_PROJECT_IMPORTS=0' observer-next/module/bin/migrate.sh
+          grep -Fq 'MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY' observer-next/module/bin/migrate.sh
+          ! grep -R -I -E 'recovery/legacy|ROOT/config.*LEGACY|find .*LEGACY' observer-next/module/bin/gemini_reasoner.sh observer-next/module/bin/hermes_adapter.sh
           ! grep -R -I -E '>[[:space:]]*/sys/|tee[[:space:]]+/sys/|echo[[:space:]].*>[[:space:]]*/sys/' observer-next/module
           test ! -e observer-next/module/bin/executor.sh
           test ! -e observer-next/module/bin/agent_bus.sh
@@ -86,9 +90,19 @@ jobs:
           grep -q "package: name='com.djaeger.observer' versionCode='102'" out/AAPT_BADGING.txt
           grep -qx 'false' out/APK_DEBUGGABLE.txt
           ! grep -Eq 'executor\.sh|agent_bus\.sh' out/MODULE_CONTENTS.txt
+
+          mkdir -p "$RUNNER_TEMP/module-audit" "$RUNNER_TEMP/apk-audit"
+          unzip -q out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip -d "$RUNNER_TEMP/module-audit"
+          unzip -q "$APK" -d "$RUNNER_TEMP/apk-audit"
+          ! grep -R -I -E 'DJAEGER[ _-]+WORK|HERMES[ _-]+WORK|HERMES_WORK|railway-relay|youtube-publisher|studio-feed|publish-feed|djaeger_work|hermes_work' "$RUNNER_TEMP/module-audit"
+          ! grep -R -I -E 'DJAEGER[ _-]+WORK|HERMES[ _-]+WORK|HERMES_WORK|railway-relay|youtube-publisher|studio-feed|publish-feed|djaeger_work|hermes_work' "$RUNNER_TEMP/apk-audit" || {
+            echo 'FOREIGN_PROJECT_RESIDUE_IN_APK=1' >&2
+            exit 1
+          }
+          ! grep -R -I -E '>[[:space:]]*/sys/|tee[[:space:]]+/sys/|echo[[:space:]].*>[[:space:]]*/sys/|SYSFS\|' "$RUNNER_TEMP/module-audit"
           cd out
           sha256sum DJAEGER-AI-Cleanroom-v1.0.2.apk DJAEGER-AI-Cleanroom-Module-v0.2.1.zip > SHA256SUMS.txt
-          printf '%s\n'             'STATUS=PASS'             'SOURCE_LINEAGE=CLEANROOM'             'FOREIGN_PROJECT_RESIDUE=0'             'HARDWARE_MODE=READ_ONLY_VALIDATION'             'SYSFS_WRITES=DISABLED'             'EXECUTOR_PACKAGED=NO'             > BUILD_REPORT.txt
+          printf '%s\n'             'STATUS=PASS'             'SOURCE_LINEAGE=CLEANROOM'             'FOREIGN_PROJECT_RESIDUE=0'             'RUNTIME_MIGRATION=EXPLICIT_KEY_ALLOWLIST_ONLY'             'RAW_LEGACY_FILES_IMPORTED=0'             'HARDWARE_MODE=READ_ONLY_VALIDATION'             'SYSFS_WRITES=DISABLED'             'EXECUTOR_PACKAGED=NO'             > BUILD_REPORT.txt
 
       - uses: actions/upload-artifact@v4
         with:
