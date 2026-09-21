@@ -155,8 +155,9 @@ publish_cc() {
   else _history_bytes=0
   fi
   case "$_history_bytes" in ''|*[!0-9]*) _history_bytes=0;; esac
-  _tel="$_epoch,$_cpu_t,$_gpu_t,$_skin_t,$_bat_t,$_little,$_big,$_gpu,STOCK_OBSERVER,$_frame_ms,$_fps,$_jank,$_p95,$_p99,0,$_battery_status,$_current,$_voltage,$_power,$_power_valid,$_power_reason,$_pkg,$_window"
-  _frame_line="$_epoch,STOCK_OBSERVER,$_frame_ms,$_fps,$_jank,$_p95,$_p99"
+  _runtime_profile=LEARNED_PENDING; [ "$_exec_state" = APPLIED ] && _runtime_profile=ADAPTIVE_LEARNED
+  _tel="$_epoch,$_cpu_t,$_gpu_t,$_skin_t,$_bat_t,$_little,$_big,$_gpu,$_runtime_profile,$_frame_ms,$_fps,$_jank,$_p95,$_p99,0,$_battery_status,$_current,$_voltage,$_power,$_power_valid,$_power_reason,$_pkg,$_window"
+  _frame_line="$_epoch,$_runtime_profile,$_frame_ms,$_fps,$_jank,$_p95,$_p99"
   _plan_line=""
   if [ -r "$_candidate" ]; then
     _pc="$(pub_kv CONFIDENCE "$_candidate")"; [ -n "$_pc" ] || _pc=0
@@ -186,7 +187,7 @@ publish_cc() {
       echo "EXEC_LITTLE=$_lmin-$_lmax"; echo "EXEC_BIG=$_bmin-$_bmax"; echo "EXEC_GPU=$_gmin-$_gmax"
     fi
     echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=GEMINI"
-    echo "CLOUD_CONTROL_PROVIDER=NONE"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
+    echo "CLOUD_IN_CONTROL=NO"; echo "CLOUD_CONTROL_PROVIDER=NONE"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
     echo "CLOUD_PLAN_STATE=$_cons_state"; echo "CLOUD_PLAN_SCORE=$_gem_conf"; echo "CLOUD_PLAN_REASON=$(pub_clean "$_gem_reason")"
     echo "HERMES_PROPOSAL_STATE=$_hlocal"; echo "HERMES_PROPOSAL_CONFIDENCE=$_hconf"; echo "HERMES_PROFILE=ADAPTIVE_NO_FIXED_PROFILE"
     echo "HERMES_REASON=$(pub_clean "$_hreason")"; echo "HERMES_BACKEND=$([ "$_hroute" = LOCAL ] && echo LOCAL || echo CLOUD)"
@@ -238,7 +239,7 @@ publish_cc() {
     echo "__EXECUTION__"; echo "STATUS=$_exec_state"; echo "READBACK=$_readback"; echo "ROLLBACK=$_rollback"; echo "RAILWAY=$_railway_state"
     echo "__POLICY_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "BASELINE=$_learning"
     echo "__ATTRIBUTION__"; echo "SOURCE=MEASURED_STOCK"
-    echo "__WORKLOAD_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD_CLASS=$_workload"; echo "WORKLOAD_PROFILE=STOCK_OBSERVER"; echo "SUBJECT_CLASS=$_workload"; echo "REASONING_DOMAIN=$_workload"; echo "GAME_SEMANTICS=REGISTRY_ONLY"; echo "FRAME_SEMANTICS=EVIDENCE_ONLY"; echo "SOURCE=$_workload_source"; echo "CONFIDENCE=$([ "$_workload_source" = GAME_REGISTRY ] && echo 100 || echo 60)"; echo "GAME_REGISTRY_AUTHORITY=MANUAL_PLUS_BUILTIN"
+    echo "__WORKLOAD_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD_CLASS=$_workload"; echo "WORKLOAD_PROFILE=$_runtime_profile"; echo "SUBJECT_CLASS=$_workload"; echo "REASONING_DOMAIN=$_workload"; echo "GAME_SEMANTICS=REGISTRY_ONLY"; echo "FRAME_SEMANTICS=EVIDENCE_ONLY"; echo "SOURCE=$_workload_source"; echo "CONFIDENCE=$([ "$_workload_source" = GAME_REGISTRY ] && echo 100 || echo 60)"; echo "GAME_REGISTRY_AUTHORITY=MANUAL_PLUS_BUILTIN"
     echo "__WORKLOAD_GATE__"; echo "GAME_ONLY=ADAPTIVE_GATED"; echo "APP_ONLY=OBSERVE"; echo "SYSTEM_ONLY=OBSERVE"
     echo "__PROPOSAL_BINDING__"; echo "LATEST_PROPOSAL_SOURCE=$_plan_provider"; echo "LATEST_SUBJECT_PACKAGE=$_pkg"; echo "LATEST_SUBJECT_CLASS=$_workload"; echo "LATEST_BINDING_DECISION=$_cons_state"; echo "LATEST_BINDING_REASON=$_exec_reason"
     echo "__WORKLOAD_FINAL__"; echo "STATUS=ACTIVE"; echo "DUAL_REGISTRY=SEPARATE"; echo "REGISTRY_CONFLICTS=0"; echo "EXECUTION_SCOPE=GAME_ONLY_LOCAL_GATED"; echo "APP_GAME_POLICY=NEVER_PROMOTE"; echo "SYSTEM_GAME_POLICY=NEVER_PROMOTE"; echo "UNKNOWN_GAME_POLICY=OBSERVE_ONLY"; echo "STALE_POLICY=FAIL_CLOSED"; echo "LEARNING_ISOLATION=PER_PACKAGE"; echo "ROOT_AUTHORITY_CHANGED=LOCAL_EXECUTOR_ONLY"; echo "SYSFS_AUTHORITY_CHANGED=LOCAL_EXECUTOR_ONLY"; echo "RESCUE_PATH_CHANGED=NO"
