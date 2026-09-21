@@ -436,7 +436,7 @@ private fun registryPreview(raw:String,max:Int=8):String{
     val root=envField(s.workloadFinal,"ROOT_AUTHORITY_CHANGED").ifBlank{"UNAVAILABLE"}
     val sysfs=envField(s.workloadFinal,"SYSFS_AUTHORITY_CHANGED").ifBlank{"UNAVAILABLE"}
     val rescue=envField(s.workloadFinal,"RESCUE_PATH_CHANGED").ifBlank{"UNAVAILABLE"}
-    val body="Final workload enforcement: $finalState\nAPP→game policy: $app\nSYSTEM→game policy: $system\nUNKNOWN→game policy: $unknown\nStale policy: $stale\nRoot Authority changed: $root\nSYSFS authority changed: $sysfs\nRescue path changed: $rescue\nControl Center authority: READ-ONLY / NO SYSFS WRITES"
+    val body="Final workload enforcement: $finalState\nAPP→game policy: $app\nSYSTEM→game policy: $system\nUNKNOWN→game policy: $unknown\nStale policy: $stale\nRoot Authority changed: $root\nSYSFS authority changed: $sysfs\nRescue path changed: $rescue\nControl Center authority: UI/telemetry only • local gated executor owns approved SYSFS writes"
     BoxCard("WORKLOAD ENFORCEMENT SAFETY",body,true)
 }
 
