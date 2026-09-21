@@ -36,15 +36,16 @@ temp_c() {
 }
 
 thermal_by_type() {
-  pat="$1"
+  pat="$1"; best=""
   for z in /sys/class/thermal/thermal_zone*; do
     [ -r "$z/type" ] || continue
     t=$(cat "$z/type" 2>/dev/null)
     echo "$t" | grep -Eqi "$pat" || continue
-    read_one "$z/temp"
-    return
+    c=$(temp_c "$(read_one "$z/temp")")
+    case "$c" in ''|NA|*[!0-9.-]*) continue;; esac
+    if [ -z "$best" ] || awk -v a="$c" -v b="$best" 'BEGIN{exit !(a>b)}'; then best="$c"; fi
   done
-  echo "NA"
+  [ -n "$best" ] && echo "$best" || echo "NA"
 }
 
 gpu_path() {
@@ -83,7 +84,7 @@ detect_workload_package(){
     echo sts.al
     awk -F'|' '$2!=""{print $2}' "$ROOT/config/game_registry.tsv" 2>/dev/null
   } | awk 'NF&&!seen[$0]++' | while IFS= read -r _g; do
-    if grep -F "$_g/" "$_act" 2>/dev/null | grep -Eq 'visible=true|state=RESUMED|mResumedActivity|topResumedActivity'; then
+    if grep -F "$_g/" "$_act" 2>/dev/null | grep -Eqi 'visible=true|mVisible=true|isVisible=true|state=RESUMED|mResumedActivity|topResumedActivity'; then
       echo "$_g" > "$RUNTIME/.visible_game.$OBSERVER_PID"
       break
     fi
