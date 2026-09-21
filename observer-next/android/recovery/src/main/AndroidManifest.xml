@@ -4,7 +4,7 @@
         android:allowBackup="false"
         android:label="DJAEGER Recovery"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.DeviceDefault.NoActionBar">
+        android:theme="@android:style/Theme.Material">
         <activity
             android:name=".MainActivity"
             android:exported="true">
