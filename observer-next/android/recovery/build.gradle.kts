@@ -3,15 +3,15 @@ plugins {
 }
 
 android {
-    namespace = "com.djaeger.recovery"
+    namespace = "com.djaeger.recovery2"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.djaeger.recovery"
+        applicationId = "com.djaeger.recovery2"
         minSdk = 26
         targetSdk = 33
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "2.0.0"
     }
 
     buildTypes {
