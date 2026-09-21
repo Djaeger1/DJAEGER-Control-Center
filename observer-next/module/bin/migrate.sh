@@ -38,7 +38,18 @@ H_ENDPOINT="$(extract_exact HERMES_ENDPOINT "$HERMES")"
 H_ID="$(extract_exact HERMES_CLOUD_ID "$HERMES")"
 DEVICE_ID="$(extract_exact DEVICE_ID "$IDENTITY")"
 R_TOKEN="$(extract_exact DJAEGER_ACCESS_TOKEN "$RAILWAY")"
+R_URL="$(extract_exact DJAEGER_RAILWAY_URL "$RAILWAY")"
 G_MODEL="$(extract_exact GEMINI_MODEL "$CONFIG/gemini.env")"
+
+# Legacy REMOTEBOOT1 used ACCESS_TOKEN + ENDPOINT. Import those aliases only
+# from exact DJAEGER Railway config locations; never from arbitrary files.
+for _rf in "$LEGACY/railway.conf" "$LEGACY_MODULE/system/etc/djaeger/railway/railway.conf"; do
+  [ -r "$_rf" ] || continue
+  [ -n "$R_TOKEN" ] || R_TOKEN="$(extract_exact DJAEGER_ACCESS_TOKEN "$_rf")"
+  [ -n "$R_TOKEN" ] || R_TOKEN="$(extract_exact ACCESS_TOKEN "$_rf")"
+  [ -n "$R_URL" ] || R_URL="$(extract_exact DJAEGER_RAILWAY_URL "$_rf")"
+  [ -n "$R_URL" ] || R_URL="$(extract_exact ENDPOINT "$_rf")"
+done
 
 STATE=NO_LEGACY
 : > "$TMP_SOURCES"
@@ -63,6 +74,7 @@ while IFS= read -r f; do
   [ -n "$H_ID" ] || H_ID="$(extract_exact HERMES_CLOUD_ID "$f")"
   [ -n "$DEVICE_ID" ] || DEVICE_ID="$(extract_exact DEVICE_ID "$f")"
   [ -n "$R_TOKEN" ] || R_TOKEN="$(extract_exact DJAEGER_ACCESS_TOKEN "$f")"
+  [ -n "$R_URL" ] || R_URL="$(extract_exact DJAEGER_RAILWAY_URL "$f")"
 done < "$TMP_SOURCES"
 rm -f "$TMP_SOURCES"
 
@@ -89,17 +101,23 @@ if [ -n "$G_MODEL" ]; then printf 'GEMINI_MODEL=%s\n' "$(safe_value "$G_MODEL")"
 if [ -s "$HERMES.tmp.$$" ]; then chmod 600 "$HERMES.tmp.$$"; mv -f "$HERMES.tmp.$$" "$HERMES"; else rm -f "$HERMES.tmp.$$"; fi
 
 if [ -n "$DEVICE_ID" ]; then printf 'DEVICE_ID=%s\n' "$(safe_value "$DEVICE_ID")" > "$IDENTITY.tmp.$$"; chmod 600 "$IDENTITY.tmp.$$"; mv -f "$IDENTITY.tmp.$$" "$IDENTITY"; fi
-if [ -n "$R_TOKEN" ]; then printf 'DJAEGER_ACCESS_TOKEN=%s\n' "$(safe_value "$R_TOKEN")" > "$RAILWAY.tmp.$$"; chmod 600 "$RAILWAY.tmp.$$"; mv -f "$RAILWAY.tmp.$$" "$RAILWAY"; fi
+if [ -n "$R_TOKEN" ] || [ -n "$R_URL" ]; then
+  {
+    [ -n "$R_TOKEN" ] && printf 'DJAEGER_ACCESS_TOKEN=%s\n' "$(safe_value "$R_TOKEN")"
+    [ -n "$R_URL" ] && printf 'DJAEGER_RAILWAY_URL=%s\n' "$(safe_value "$R_URL")"
+  } > "$RAILWAY.tmp.$"
+  chmod 600 "$RAILWAY.tmp.$"; mv -f "$RAILWAY.tmp.$" "$RAILWAY"
+fi
 
 GCOUNT=$(sed -n 's/^KEY_[1-4]=//p' "$GEMINI" 2>/dev/null | awk 'NF{n++}END{print n+0}')
 HCOUNT=0; [ -s "$HERMES" ] && HCOUNT=$(awk -F= 'NF>=2{n++}END{print n+0}' "$HERMES")
 ICOUNT=0; [ -s "$IDENTITY" ] && ICOUNT=1
-RCOUNT=0; [ -s "$RAILWAY" ] && RCOUNT=1
+RCOUNT=0; [ -s "$RAILWAY" ] && RCOUNT=$(awk -F= 'NF>=2{n++}END{print n+0}' "$RAILWAY")
 if [ "$GCOUNT" -gt 0 ] || [ "$HCOUNT" -gt 0 ] || [ "$ICOUNT" -gt 0 ] || [ "$RCOUNT" -gt 0 ]; then STATE=CLEAN_IMPORT_CREATED; else STATE=NO_CREDENTIALS_FOUND; fi
 
 TMP="$MARK.tmp.$$"
 {
-  echo "MIGRATION_SCHEMA=5"
+  echo "MIGRATION_SCHEMA=6"
   echo "MIGRATION_STATE=$STATE"
   echo "LEGACY_PATH=$LEGACY"
   echo "LEGACY_MODULE_PATH=$LEGACY_MODULE"
@@ -107,7 +125,8 @@ TMP="$MARK.tmp.$$"
   echo "GEMINI_KEY_COUNT=$GCOUNT"
   echo "HERMES_FIELD_COUNT=$HCOUNT"
   echo "IDENTITY_IMPORTED=$([ "$ICOUNT" -gt 0 ] && echo YES || echo NO)"
-  echo "RAILWAY_TOKEN_IMPORTED=$([ "$RCOUNT" -gt 0 ] && echo YES || echo NO)"
+  echo "RAILWAY_TOKEN_IMPORTED=$([ -n "$R_TOKEN" ] && echo YES || echo NO)"
+  echo "RAILWAY_URL_IMPORTED=$([ -n "$R_URL" ] && echo YES || echo NO)"
   echo "CREDENTIAL_FILE_COUNT=$((GCOUNT + HCOUNT + ICOUNT + RCOUNT))"
   echo "RAW_LEGACY_FILES_IMPORTED=0"
   echo "LEGACY_HARDWARE_CONTROLLER_IMPORTED=NO"
