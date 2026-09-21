@@ -65,7 +65,7 @@ registry_is_game(){
 }
 
 detect_workload_package(){
-  _act="$RUNTIME/.activity.$"; _win="$RUNTIME/.window.$"
+  _act="$RUNTIME/.activity.$OBSERVER_PID"; _win="$RUNTIME/.window.$OBSERVER_PID"
   if command -v timeout >/dev/null 2>&1; then
     timeout 2 dumpsys activity activities > "$_act" 2>/dev/null || : > "$_act"
     timeout 2 dumpsys window windows > "$_win" 2>/dev/null || : > "$_win"
@@ -84,13 +84,13 @@ detect_workload_package(){
     awk -F'|' '$2!=""{print $2}' "$ROOT/config/game_registry.tsv" 2>/dev/null
   } | awk 'NF&&!seen[$0]++' | while IFS= read -r _g; do
     if grep -F "$_g/" "$_act" 2>/dev/null | grep -Eq 'visible=true|state=RESUMED|mResumedActivity|topResumedActivity'; then
-      echo "$_g" > "$RUNTIME/.visible_game.$"
+      echo "$_g" > "$RUNTIME/.visible_game.$OBSERVER_PID"
       break
     fi
   done
-  if [ -r "$RUNTIME/.visible_game.$" ]; then
-    _visible=$(cat "$RUNTIME/.visible_game.$" 2>/dev/null | head -n1)
-    rm -f "$RUNTIME/.visible_game.$"
+  if [ -r "$RUNTIME/.visible_game.$OBSERVER_PID" ]; then
+    _visible=$(cat "$RUNTIME/.visible_game.$OBSERVER_PID" 2>/dev/null | head -n1)
+    rm -f "$RUNTIME/.visible_game.$OBSERVER_PID"
   fi
 
   if registry_is_game "$_top"; then
@@ -105,10 +105,10 @@ detect_workload_package(){
 }
 
 mkdir -p "$RUNTIME" "$ROOT/history"
-if [ -f "$HISTORY" ] && ! head -n1 "$HISTORY" 2>/dev/null | grep -q 'frame_at'; then
-  mv -f "$HISTORY" "$ROOT/history/telemetry.preframe.$(date +%s).csv" 2>/dev/null
+if [ -f "$HISTORY" ] && ! head -n1 "$HISTORY" 2>/dev/null | grep -q 'sample_origin'; then
+  mv -f "$HISTORY" "$ROOT/history/telemetry.prebaseline-v3.$(date +%s).csv" 2>/dev/null
 fi
-[ -f "$HISTORY" ] || echo "epoch,seq,package,cpu_avg_khz,cpu_min_cur_khz,cpu_max_cur_khz,little_cur_khz,big_cur_khz,gpu_cur_hz,skin_c,battery_c,current_ua,voltage_uv,power_mw,battery_pct,fps,jank_pct,p95_ms,p99_ms,frame_n,frame_at,battery_status" > "$HISTORY"
+[ -f "$HISTORY" ] || echo "epoch,seq,package,cpu_avg_khz,cpu_min_cur_khz,cpu_max_cur_khz,little_cur_khz,big_cur_khz,gpu_cur_hz,skin_c,battery_c,current_ua,voltage_uv,power_mw,battery_pct,fps,jank_pct,p95_ms,p99_ms,frame_n,frame_at,battery_status,sample_origin" > "$HISTORY"
 
 LOW_POLICY=""
 HIGH_POLICY=""
@@ -191,7 +191,7 @@ while true; do
   [ -n "$LEGACY_CONFIG_PRESENT" ] || LEGACY_CONFIG_PRESENT=NO
 
   if [ "$PKG" != "$LAST_COUNT_PKG" ] || [ $((SEQ % 5)) -eq 1 ]; then
-    PKG_SAMPLES=$(awk -F, -v p="$PKG" 'NR>1&&$3==p{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+    PKG_SAMPLES=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
     LAST_COUNT_PKG="$PKG"
   else
     PKG_SAMPLES=$((PKG_SAMPLES+1))
@@ -252,7 +252,9 @@ while true; do
   chmod 644 "$TMP"
   mv -f "$TMP" "$SNAP"
 
-  echo "$EPOCH,$SEQ,$PKG,$AVG,$MIN,$MAX,$LITTLE,$BIG,$GPU,$SKIN,$BATC,$CUR,$VOLT,$POWER,$PCT,$FPS,$JANK,$P95,$P99,$FN,$FAT,$BSTAT" >> "$HISTORY"
+  EXEC_STATE=$(sed -n 's/^EXECUTOR_STATE=//p' "$ROOT/runtime/execution.env" 2>/dev/null | head -n1)
+  [ "$EXEC_STATE" = APPLIED ] && SAMPLE_ORIGIN=ADAPTIVE_EXECUTION || SAMPLE_ORIGIN=STOCK_BASELINE
+  echo "$EPOCH,$SEQ,$PKG,$AVG,$MIN,$MAX,$LITTLE,$BIG,$GPU,$SKIN,$BATC,$CUR,$VOLT,$POWER,$PCT,$FPS,$JANK,$P95,$P99,$FN,$FAT,$BSTAT,$SAMPLE_ORIGIN" >> "$HISTORY"
 
   SIZE=$(wc -c < "$HISTORY" 2>/dev/null)
   case "$SIZE" in ''|*[!0-9]*) SIZE=0;; esac
