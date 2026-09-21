@@ -59,6 +59,37 @@ write_state(){
   chmod 600 "$t"; mv -f "$t" "$STATE"
 }
 
+cloud_probe(){
+  token=$(config_value HERMES_ACCESS_KEY)
+  if [ -z "$token" ]; then
+    HAUTH=NOT_CONFIGURED
+    HCLOUD_STATE=NO_KEY
+    HDETAIL=hermes_access_key_not_found
+    HTTP=NA
+    HROUTE=LOCAL
+    HMODEL=NA
+    return 1
+  fi
+  HAUTH=CONFIGURED
+  endpoint=$(config_value HERMES_ENDPOINT); [ -n "$endpoint" ] || endpoint=$(config_value ENDPOINT)
+  [ -n "$endpoint" ] || endpoint=https://hermes-cloud-djaeger.moclomper.workers.dev
+  case "$endpoint" in
+    */v1/chat) base="${endpoint%/v1/chat}" ;;
+    */chat) base="${endpoint%/chat}" ;;
+    *) base="${endpoint%/}" ;;
+  esac
+  command -v curl >/dev/null 2>&1 || {
+    HCLOUD_STATE=UNAVAILABLE; HDETAIL=curl_missing; HTTP=NA; HROUTE=LOCAL; HMODEL=NA; unset token; return 1;
+  }
+  HTTP=$(curl --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$base/health" 2>/dev/null)
+  unset token
+  case "$HTTP" in
+    200) HCLOUD_STATE=ONLINE_IDLE; HDETAIL=cloud_health_ok; HROUTE=CLOUD; HMODEL=NA; return 0 ;;
+    401|403) HCLOUD_STATE=AUTH_ERROR; HDETAIL="cloud_auth_$HTTP"; HROUTE=CLOUD; HMODEL=NA; return 1 ;;
+    *) HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_health_${HTTP:-000}"; HROUTE=CLOUD; HMODEL=NA; return 1 ;;
+  esac
+}
+
 local_validate(){
   HLOCAL_STATE=REJECTED
   [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { HDETAIL=non_game_workload; return 1; }
@@ -110,7 +141,7 @@ local_validate(){
 cloud_review(){
   d=$(digest "$GEM"); [ -n "$d" ] || return 1
   token=$(config_value HERMES_ACCESS_KEY)
-  [ -n "$token" ] || { rm -f "$CLOUD_OUT"; HAUTH=NOT_CONFIGURED; HCLOUD_STATE=NO_KEY; HDETAIL=restored_hermes_access_key_not_found; return 1; }
+  [ -n "$token" ] || { rm -f "$CLOUD_OUT"; HAUTH=NOT_CONFIGURED; HCLOUD_STATE=NO_KEY; HDETAIL=hermes_access_key_not_found; return 1; }
   HAUTH=CONFIGURED
   old=$(kv CANDIDATE_DIGEST "$CLOUD_OUT")
   if [ "$old" = "$d" ]; then
@@ -192,6 +223,7 @@ cloud_review(){
 
 while true; do
   HLOCAL_STATE=WAITING; HCLOUD_STATE=STANDBY; HDETAIL=waiting_for_candidate; HTTP=NA; HROUTE=LOCAL; HMODEL=NA; HAUTH=UNKNOWN
+  cloud_probe >/dev/null 2>&1 || true
   if [ ! -r "$SNAP" ] || [ ! -r "$LEARN" ]; then write_state WAITING; sleep 30; continue; fi
   if [ ! -r "$GEM" ]; then write_state OBSERVING; sleep 30; continue; fi
 
