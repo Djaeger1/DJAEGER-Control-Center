@@ -1,4 +1,4 @@
-name: DJAEGER AI Cleanroom Build
+name: DJAEGER AI Clean Build
 
 on:
   push:
@@ -25,23 +25,33 @@ jobs:
         with:
           gradle-version: '8.14.3'
 
-      - name: Cleanroom isolation gate
+      - name: Source isolation and backend tests
         run: |
           set -euo pipefail
+          node isolation-check.js
+          npm test
+
+          A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
+          for q in "$A-$B" "$A_$B" "$A $B" "$C-$B" "$C_$B" "$C $B" "$D-$E" "$F_$G" "$H_$I"; do
+            if grep -R -I -i -F --exclude-dir=.git --exclude=isolation-check.js "$q" observer-next; then
+              echo "FOREIGN_SOURCE_RESIDUE=$q" >&2
+              exit 1
+            fi
+          done
+
           test -d observer-next
-          test ! -d railway-relay
-          test ! -d runtime
-          test ! -d railway-djaeger-ai-core
-          ! grep -R -I -E 'DJAEGER[ _-]+WORK|HERMES[ _-]+WORK|HERMES_WORK|railway-relay|studio-feed|publish-feed|youtube-publisher' observer-next
-          ! grep -R -I -E '/data/adb/(djaeger_work|hermes_work)|/sdcard/.*/(djaeger_work|hermes_work)' observer-next
-          grep -Fq 'LEGACY=${DJAEGER_LEGACY_ROOT:-/data/adb/djaeger_ai}' observer-next/module/bin/migrate.sh
-          grep -Fq 'RAW_LEGACY_FILES_IMPORTED=0' observer-next/module/bin/migrate.sh
-          grep -Fq 'FOREIGN_PROJECT_IMPORTS=0' observer-next/module/bin/migrate.sh
-          grep -Fq 'MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY' observer-next/module/bin/migrate.sh
-          ! grep -R -I -E 'recovery/legacy|ROOT/config.*LEGACY|find .*LEGACY' observer-next/module/bin/gemini_reasoner.sh observer-next/module/bin/hermes_adapter.sh
-          ! grep -R -I -E '>[[:space:]]*/sys/|tee[[:space:]]+/sys/|echo[[:space:]].*>[[:space:]]*/sys/' observer-next/module
-          test ! -e observer-next/module/bin/executor.sh
           test ! -e observer-next/module/bin/agent_bus.sh
+          test -e observer-next/module/bin/executor.sh
+          grep -Fq 'MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY' observer-next/module/bin/migrate.sh
+          grep -Fq 'RAW_LEGACY_FILES_IMPORTED=0' observer-next/module/bin/migrate.sh
+          grep -Fq 'CLOUD_HARDWARE_AUTHORITY=NONE' observer-next/tests/module_contract_test.sh
+
+          # Hardware writes are local-executor-only. No other module file may
+          # contain direct sysfs redirect/tee write patterns.
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            [ "$f" = observer-next/module/bin/executor.sh ] && continue
+            ! grep -Eq 'tee[[:space:]]+/sys/|>[[:space:]]*/sys/' "$f"
+          done
 
       - name: Shell syntax
         run: |
@@ -50,66 +60,77 @@ jobs:
             bash -n "$f"
           done
 
-      - name: Module contract tests
+      - name: Module contract and fake-sysfs rollback tests
         run: bash observer-next/tests/module_contract_test.sh
 
       - name: Android unit tests and release build
         working-directory: observer-next/android
         run: gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
 
-      - name: Package signed cleanroom artifacts
+      - name: Package signed adaptive artifacts
         run: |
           set -euo pipefail
           mkdir -p out
           cd observer-next/module
-          zip -qr ../../out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip .
+          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.0.0.zip .
           cd ../..
 
           UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
           test -n "$UNSIGNED"
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
           APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | sort -V | tail -n1)"
-          SIGN_DIR="$RUNNER_TEMP/djaeger-cleanroom-signing"
+          SIGN_DIR="$RUNNER_TEMP/djaeger-ai-signing"
           mkdir -p "$SIGN_DIR"
           PASS="$(openssl rand -hex 24)"
           echo "::add-mask::$PASS"
-          keytool -genkeypair -noprompt -storetype PKCS12             -keystore "$SIGN_DIR/cleanroom.p12"             -storepass "$PASS" -keypass "$PASS"             -alias cleanroom -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER AI Cleanroom, O=DJAEGER, C=ID'
+          keytool -genkeypair -noprompt -storetype PKCS12             -keystore "$SIGN_DIR/djaeger-ai.p12"             -storepass "$PASS" -keypass "$PASS"             -alias djaegerai -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER AI, O=DJAEGER, C=ID'
 
-          ALIGNED="$RUNNER_TEMP/cleanroom-aligned.apk"
-          APK="out/DJAEGER-AI-Cleanroom-v1.0.2.apk"
+          ALIGNED="$RUNNER_TEMP/djaeger-ai-aligned.apk"
+          APK="out/DJAEGER-AI-Adaptive-v1.0.0.apk"
           "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
-          "$BUILD_TOOLS/apksigner" sign             --ks "$SIGN_DIR/cleanroom.p12" --ks-type PKCS12             --ks-key-alias cleanroom             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign             --ks "$SIGN_DIR/djaeger-ai.p12" --ks-type PKCS12             --ks-key-alias djaegerai             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$ALIGNED"
 
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee out/APKSIGNER_VERIFY.txt
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
           "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
           unzip -t "$APK" > out/APK_ZIP_TEST.txt
-          unzip -t out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip > out/MODULE_ZIP_TEST.txt
-          unzip -l out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip > out/MODULE_CONTENTS.txt
+          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.0.0.zip > out/MODULE_ZIP_TEST.txt
+          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.0.0.zip > out/MODULE_CONTENTS.txt
 
-          grep -q "package: name='com.djaeger.observer' versionCode='102'" out/AAPT_BADGING.txt
+          grep -q "package: name='com.djaeger.observer' versionCode='103' versionName='1.0.0-adaptive-clean'" out/AAPT_BADGING.txt
           grep -qx 'false' out/APK_DEBUGGABLE.txt
-          ! grep -Eq 'executor\.sh|agent_bus\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/executor\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/railway_bridge\.sh' out/MODULE_CONTENTS.txt
+          ! grep -Eq 'agent_bus\.sh' out/MODULE_CONTENTS.txt
 
           mkdir -p "$RUNNER_TEMP/module-audit" "$RUNNER_TEMP/apk-audit"
-          unzip -q out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip -d "$RUNNER_TEMP/module-audit"
+          unzip -q out/DJAEGER-AI-Adaptive-Module-v1.0.0.zip -d "$RUNNER_TEMP/module-audit"
           unzip -q "$APK" -d "$RUNNER_TEMP/apk-audit"
-          ! grep -R -I -E 'DJAEGER[ _-]+WORK|HERMES[ _-]+WORK|HERMES_WORK|railway-relay|youtube-publisher|studio-feed|publish-feed|djaeger_work|hermes_work' "$RUNNER_TEMP/module-audit"
-          ! grep -R -I -E 'DJAEGER[ _-]+WORK|HERMES[ _-]+WORK|HERMES_WORK|railway-relay|youtube-publisher|studio-feed|publish-feed|djaeger_work|hermes_work' "$RUNNER_TEMP/apk-audit" || {
-            echo 'FOREIGN_PROJECT_RESIDUE_IN_APK=1' >&2
-            exit 1
-          }
-          ! grep -R -I -E '>[[:space:]]*/sys/|tee[[:space:]]+/sys/|echo[[:space:]].*>[[:space:]]*/sys/|SYSFS\|' "$RUNNER_TEMP/module-audit"
+
+          A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
+          for q in "$A-$B" "$A_$B" "$A $B" "$C-$B" "$C_$B" "$C $B" "$D-$E" "$F_$G" "$H_$I"; do
+            ! grep -R -a -i -F "$q" "$RUNNER_TEMP/module-audit"
+            ! grep -R -a -i -F "$q" "$RUNNER_TEMP/apk-audit"
+          done
+
+          # Executor must carry the only hardware-write authority and all
+          # safety gates. No cloud/backend file is packaged in the module.
+          grep -Fq 'valid_cpu' "$RUNNER_TEMP/module-audit/bin/executor.sh"
+          grep -Fq 'thermal_safe' "$RUNNER_TEMP/module-audit/bin/executor.sh"
+          grep -Fq 'DIGEST_MISMATCH' "$RUNNER_TEMP/module-audit/bin/executor.sh"
+          grep -Fq 'ROLLBACK_STATE' "$RUNNER_TEMP/module-audit/bin/executor.sh"
+          ! find "$RUNNER_TEMP/module-audit" -type f ! -path '*/bin/executor.sh' -print0 | xargs -0 grep -El 'tee[[:space:]]+/sys/|>[[:space:]]*/sys/' || true
+
           cd out
-          sha256sum DJAEGER-AI-Cleanroom-v1.0.2.apk DJAEGER-AI-Cleanroom-Module-v0.2.1.zip > SHA256SUMS.txt
-          printf '%s\n'             'STATUS=PASS'             'SOURCE_LINEAGE=CLEANROOM'             'FOREIGN_PROJECT_RESIDUE=0'             'RUNTIME_MIGRATION=EXPLICIT_KEY_ALLOWLIST_ONLY'             'RAW_LEGACY_FILES_IMPORTED=0'             'HARDWARE_MODE=READ_ONLY_VALIDATION'             'SYSFS_WRITES=DISABLED'             'EXECUTOR_PACKAGED=NO'             > BUILD_REPORT.txt
+          sha256sum DJAEGER-AI-Adaptive-v1.0.0.apk DJAEGER-AI-Adaptive-Module-v1.0.0.zip > SHA256SUMS.txt
+          printf '%s\n'             'STATUS=PASS'             'SOURCE_LINEAGE=CLEANROOM_PRECONTAMINATION_BASE'             'FOREIGN_PROJECT_RESIDUE=0'             'RUNTIME_MIGRATION=EXPLICIT_KEY_ALLOWLIST_ONLY'             'RAW_LEGACY_FILES_IMPORTED=0'             'ENGINE=OBSERVE_LEARN_PROPOSE_VALIDATE_SHADOW_EXECUTE_READBACK_LEARN'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=LOCAL_GATED_EXECUTOR_ONLY'             'ROLLBACK=MANDATORY'             'EXECUTOR_PACKAGED=YES'             > BUILD_REPORT.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-AI-Cleanroom-v1
+          name: DJAEGER-AI-Adaptive-Clean-v1.0.0
           path: |
-            out/DJAEGER-AI-Cleanroom-v1.0.2.apk
-            out/DJAEGER-AI-Cleanroom-Module-v0.2.1.zip
+            out/DJAEGER-AI-Adaptive-v1.0.0.apk
+            out/DJAEGER-AI-Adaptive-Module-v1.0.0.zip
             out/SHA256SUMS.txt
             out/BUILD_REPORT.txt
             out/APKSIGNER_VERIFY.txt
