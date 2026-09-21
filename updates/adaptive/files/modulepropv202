@@ -1,0 +1,6 @@
+id=djaeger_ai_observer
+name=DJAEGER AI Adaptive
+version=1.0.0-adaptive-clean
+versionCode=202
+author=DJAEGER
+description=Device-first adaptive AI: CPU/GPU/frame/thermal/power learning, Gemini plus ONE HERMES consensus, shadow validation, local-only gated sysfs execution, rollback, and clean credential migration.
