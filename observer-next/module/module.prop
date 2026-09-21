@@ -1,0 +1,6 @@
+id=djaeger_ai_observer
+name=DJAEGER AI Observer
+version=0.1.0-observer
+versionCode=100
+author=DJAEGER
+description=Observer-first telemetry, learning bus, safe policy execution, and legacy credential migration.
