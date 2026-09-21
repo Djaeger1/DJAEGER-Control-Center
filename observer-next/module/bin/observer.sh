@@ -1,6 +1,8 @@
 #!/system/bin/sh
 ROOT="$1"
 MODDIR="$2"
+OBSERVER_PID=$(sh -c 'echo $PPID' 2>/dev/null)
+case "$OBSERVER_PID" in ''|*[!0-9]*) OBSERVER_PID=UNKNOWN;; esac
 RUNTIME="$ROOT/runtime"
 HISTORY="$ROOT/history/telemetry.csv"
 SNAP="$RUNTIME/snapshot.env"
