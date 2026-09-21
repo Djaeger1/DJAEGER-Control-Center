@@ -1,0 +1,54 @@
+name: DJAEGER Observer Next
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'observer-next/**'
+      - '.github/workflows/djaeger-observer-next.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build Observer APK
+        working-directory: observer-next/android
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Build Magisk module
+        run: |
+          mkdir -p out
+          cd observer-next/module
+          zip -qr ../../out/DJAEGER-AI-Observer-v0.1.0.zip .
+          cd ../..
+          cp observer-next/android/app/build/outputs/apk/debug/app-debug.apk out/DJAEGER-AI-Observer-v1.0.0.apk
+
+      - name: Static safety checks
+        run: |
+          ! grep -R -E 'SOFT_COOL|FREEZE|RESPONSE_REQUEST' observer-next/module
+          ! grep -R -E 'api[_-]?key=[A-Za-z0-9_-]{16,}|Bearer [A-Za-z0-9_-]{16,}' observer-next
+          grep -R 'VALIDATED_EXECUTOR_ONLY' observer-next/module
+          grep -R 'Legacy preset DISABLED' observer-next/android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Observer-Next
+          path: |
+            out/DJAEGER-AI-Observer-v1.0.0.apk
+            out/DJAEGER-AI-Observer-v0.1.0.zip
+          if-no-files-found: error
