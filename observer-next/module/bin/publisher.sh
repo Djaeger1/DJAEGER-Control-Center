@@ -187,6 +187,8 @@ publish_cc() {
     *) [ "$_hauth" = NOT_CONFIGURED ] && _hermes_connection=NOT_CONFIGURED ;;
   esac
 
+  _module_code=$(sed -n 's/^versionCode=//p' "${MODDIR:-/data/adb/modules/djaeger_ai_observer}/module.prop" 2>/dev/null | head -n1)
+  case "$_module_code" in ''|*[!0-9]*) _module_code=0;; esac
   _apk_ver="$(pub_kv APK_VERSION_CODE "$_handshake")"
   _expected_apk="$(pub_kv EXPECTED_APK_VERSION_CODE "$_handshake")"; [ -n "$_expected_apk" ] || _expected_apk=104
   _hand_schema="$(pub_kv SCHEMA "$_handshake")"
@@ -288,7 +290,7 @@ publish_cc() {
     echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=3"; echo "ACTUATORS=6"
     echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "APPLIED_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
     echo "__CONTROL_CENTER_SYNC__"
-    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "MODULE_VERSION_CODE=203"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=104"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
+    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=104"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
     echo "PAIR_VERIFIED=$_pair"; echo "HANDSHAKE_SCHEMA=${_hand_schema:-UNVERIFIED}"; echo "HANDSHAKE_ACK_ID=${_ack_id:-NONE}"; echo "HANDSHAKE_AGE_SEC=$_hand_age"
     echo "SNAPSHOT_GENERATION=$_generation"; echo "SNAPSHOT_FRESH=YES"
     echo "SHARED_INTELLIGENCE=MEASURED_DEVICE_CONTEXT_V2"; echo "GEMINI_INTELLIGENCE_SCOPE=PROPOSE_DEVICE_BOUNDED"; echo "HERMES_INTELLIGENCE_SCOPE=LOCAL_VALIDATE_PLUS_CLOUD_REVIEW"
