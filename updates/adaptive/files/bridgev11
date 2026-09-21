@@ -1,0 +1,195 @@
+#!/system/bin/sh
+# DJAEGER AI Adaptive Railway bridge + non-destructive credential recovery.
+ROOT="$1"
+CFG="$ROOT/config/railway.env"
+SNAP="$ROOT/runtime/snapshot.env"
+STATE="$ROOT/runtime/railway.env"
+RECOVERY="$ROOT/runtime/credential_recovery.env"
+NEURON="$ROOT/config/hermes_neuron_legacy.env"
+LEGACY=/data/adb/djaeger_ai
+DEFAULT_URL="https://djaeger-ai-core-production-736f.up.railway.app"
+
+kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
+exact(){
+  _k="$1"; _f="$2"
+  [ -r "$_f" ] || return 0
+  awk -v k="$_k" 'index($0,k"=")==1{v=substr($0,length(k)+2);gsub(/^[[:space:]]+|[[:space:]]+$/,"",v);gsub(/^\047|\047$/,"",v);gsub(/^\042|\042$/,"",v);print v;exit}' "$_f" 2>/dev/null
+}
+valid_key(){
+  _v="$1"; _n=$(printf '%s' "$_v"|wc -c|tr -d ' ')
+  case "$_n" in ''|*[!0-9]*) return 1;; esac
+  [ "$_n" -ge 20 ] && [ "$_n" -le 256 ] || return 1
+  printf '%s' "$_v" | grep -Eq '^[A-Za-z0-9._-]+$'
+}
+yn(){ [ -n "$1" ] && echo YES || echo NO; }
+num_or_blank(){ case "$1" in ''|*[!0-9]*) echo "";; *) echo "$1";; esac; }
+
+recover_gemini(){
+  _vault="$ROOT/config/gemini_vault.env"; _vals="$ROOT/runtime/.cred_keys.$$"
+  : >"$_vals"; chmod 600 "$_vals"
+  sed -n 's/^KEY_[1-4]=//p' "$_vault" 2>/dev/null | while IFS= read -r _k; do valid_key "$_k" && printf '%s\n' "$_k"; done >>"$_vals"
+  if [ -r "$LEGACY/gemini_keys.vault" ]; then
+    while IFS= read -r _k; do
+      _k=$(printf '%s' "$_k"|tr -d '\r\n'|sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+      valid_key "$_k" && printf '%s\n' "$_k"
+    done <"$LEGACY/gemini_keys.vault" >>"$_vals"
+  fi
+  _active=$(exact GEMINI_API_KEY "$LEGACY/gemini.conf")
+  valid_key "$_active" && printf '%s\n' "$_active" >>"$_vals"
+  awk 'NF&&!seen[$0]++{n++;if(n<=4)print "KEY_"n"="$0}' "$_vals" >"$_vault.tmp.$$"
+  rm -f "$_vals"
+  if [ -s "$_vault.tmp.$$" ]; then chmod 600 "$_vault.tmp.$$"; mv -f "$_vault.tmp.$$" "$_vault"; else rm -f "$_vault.tmp.$$"; fi
+
+  _count=$(sed -n 's/^KEY_[1-4]=//p' "$_vault" 2>/dev/null|awk 'NF{n++}END{print n+0}')
+  _slot=0
+  if [ -n "$_active" ]; then
+    _slot=$(awk -F= -v k="$_active" '$2==k{sub(/^KEY_/,"",$1);print $1;exit}' "$_vault" 2>/dev/null)
+  fi
+  case "$_slot" in 1|2|3|4) echo "$_slot" >"$ROOT/config/gemini_slot"; chmod 600 "$ROOT/config/gemini_slot";; esac
+
+  _oldcd="$LEGACY/gemini_key_cooldowns"; _newcd="$ROOT/config/gemini_cooldown.env"
+  if [ -r "$_oldcd" ]; then
+    grep -E '^KEY_[1-4]_UNTIL=[0-9]+$' "$_newcd" 2>/dev/null >"$_newcd.tmp.$$" || :
+    while IFS='|' read -r _s _until _reason; do
+      case "$_s" in 1|2|3|4) :;; *) continue;; esac
+      case "$_until" in ''|*[!0-9]*) continue;; esac
+      grep -v "^KEY_$_s""_UNTIL=" "$_newcd.tmp.$$" >"$_newcd.tmp2.$$" 2>/dev/null || :
+      mv -f "$_newcd.tmp2.$$" "$_newcd.tmp.$$"
+      echo "KEY_$_s""_UNTIL=$_until" >>"$_newcd.tmp.$$"
+    done <"$_oldcd"
+    if [ -s "$_newcd.tmp.$$" ]; then chmod 600 "$_newcd.tmp.$$"; mv -f "$_newcd.tmp.$$" "$_newcd"; else rm -f "$_newcd.tmp.$$"; fi
+  fi
+  unset _active
+  GEMINI_COUNT="$_count"
+}
+
+recover_hermes(){
+  _dst="$ROOT/config/hermes_cloud.env"
+  H_ACCESS=$(exact HERMES_ACCESS_KEY "$_dst")
+  H_ENDPOINT=$(exact HERMES_ENDPOINT "$_dst")
+  H_ID=$(exact HERMES_CLOUD_ID "$_dst")
+  _base=""; _path=""
+  for _f in "$LEGACY/hermes_cloud.conf" "$LEGACY/HERMES_CLOUD_CREDENTIALS.txt" /data/user/0/com.termoneplus/app_HOME/hermes-cloud-deploy/hermes-cloud-djaeger/HERMES_CLOUD_CREDENTIALS.txt /data/media/0/Download/HERMES_CLOUD_CREDENTIALS.txt /sdcard/Download/HERMES_CLOUD_CREDENTIALS.txt; do
+    [ -r "$_f" ] || continue
+    [ -n "$H_ACCESS" ] || H_ACCESS=$(exact HERMES_ACCESS_KEY "$_f")
+    [ -n "$H_ACCESS" ] || H_ACCESS=$(exact HERMES_SHARED_TOKEN "$_f")
+    [ -n "$H_ID" ] || H_ID=$(exact HERMES_CLOUD_ID "$_f")
+    _x=$(exact HERMES_ENDPOINT "$_f")
+    case "$_x" in https://*) [ -n "$H_ENDPOINT" ] || H_ENDPOINT="$_x";; /*) [ -n "$_path" ] || _path="$_x";; esac
+    _x=$(exact ENDPOINT "$_f")
+    case "$_x" in https://*) [ -n "$_base" ] || _base="$_x";; esac
+  done
+  case "$H_ENDPOINT" in https://*) :;; *)
+    if [ -n "$_base" ]; then
+      _base=$(printf '%s' "$_base"|sed 's:/*$::')
+      case "$_path" in /*) H_ENDPOINT="$_base$_path";; *) H_ENDPOINT="$_base";; esac
+    fi
+  ;; esac
+  {
+    [ -n "$H_ACCESS" ] && printf 'HERMES_ACCESS_KEY=%s\n' "$H_ACCESS"
+    [ -n "$H_ENDPOINT" ] && printf 'HERMES_ENDPOINT=%s\n' "$H_ENDPOINT"
+    [ -n "$H_ID" ] && printf 'HERMES_CLOUD_ID=%s\n' "$H_ID"
+  } >"$_dst.tmp.$$"
+  if [ -s "$_dst.tmp.$$" ]; then chmod 600 "$_dst.tmp.$$"; mv -f "$_dst.tmp.$$" "$_dst"; else rm -f "$_dst.tmp.$$"; fi
+}
+
+recover_neurons(){
+  _src="$LEGACY/hermes/neuron_budget.env"
+  N_PRESENT=NO; N_USED=""; N_LIMIT=""; N_DAY=""
+  [ -r "$_src" ] || { rm -f "$NEURON"; return 0; }
+  N_USED=$(num_or_blank "$(exact USED_EST "$_src")")
+  N_LIMIT=$(num_or_blank "$(exact LIMIT "$_src")")
+  N_DAY=$(num_or_blank "$(exact EPOCH_DAY "$_src")")
+  _fast=$(num_or_blank "$(exact FAST_CALLS "$_src")")
+  _smart=$(num_or_blank "$(exact SMART_CALLS "$_src")")
+  _deep=$(num_or_blank "$(exact DEEP_CALLS "$_src")")
+  if [ -n "$N_USED" ] && [ -n "$N_LIMIT" ]; then
+    {
+      echo "SOURCE=LEGACY_LOCAL_ACCOUNTING"
+      echo "ESTIMATED=YES"
+      echo "USED_EST=$N_USED"
+      echo "LIMIT=$N_LIMIT"
+      [ -n "$N_DAY" ] && echo "EPOCH_DAY=$N_DAY"
+      [ -n "$_fast" ] && echo "FAST_CALLS=$_fast"
+      [ -n "$_smart" ] && echo "SMART_CALLS=$_smart"
+      [ -n "$_deep" ] && echo "DEEP_CALLS=$_deep"
+      echo "IMPORTED_AT=$(date +%s)"
+    } >"$NEURON.tmp.$$"
+    chmod 600 "$NEURON.tmp.$$"; mv -f "$NEURON.tmp.$$" "$NEURON"; N_PRESENT=YES
+  fi
+}
+
+recover_credentials(){
+  mkdir -p "$ROOT/config" "$ROOT/runtime" 2>/dev/null
+  chmod 700 "$ROOT/config" 2>/dev/null
+  recover_gemini
+  recover_hermes
+  recover_neurons
+  _hp=$(yn "$H_ACCESS"); _ep=$(yn "$H_ENDPOINT"); _ip=$(yn "$H_ID")
+  _state=PARTIAL
+  [ "$GEMINI_COUNT" -eq 4 ] 2>/dev/null && [ "$_hp" = YES ] && [ "$_ep" = YES ] && _state=RECOVERED
+  [ "$GEMINI_COUNT" -eq 0 ] 2>/dev/null && [ "$_hp" = NO ] && [ "$_ep" = NO ] && _state=NOT_FOUND
+  {
+    echo "RECOVERY_STATE=$_state"
+    echo "GEMINI_KEY_COUNT=$GEMINI_COUNT"
+    echo "HERMES_ACCESS_KEY_PRESENT=$_hp"
+    echo "HERMES_ENDPOINT_PRESENT=$_ep"
+    echo "HERMES_CLOUD_ID_PRESENT=$_ip"
+    echo "NEURON_LOCAL_ESTIMATE_PRESENT=$N_PRESENT"
+    [ -n "$N_USED" ] && echo "NEURON_USED_EST=$N_USED"
+    [ -n "$N_LIMIT" ] && echo "NEURON_LIMIT=$N_LIMIT"
+    [ -n "$N_DAY" ] && echo "NEURON_EPOCH_DAY=$N_DAY"
+    echo "SECRET_VALUES=HIDDEN"
+    echo "UPDATED_AT=$(date +%s)"
+  } >"$RECOVERY.tmp.$$"
+  chmod 600 "$RECOVERY.tmp.$$"; mv -f "$RECOVERY.tmp.$$" "$RECOVERY"
+  unset H_ACCESS
+}
+
+recover_legacy_railway(){
+  _token=$(kv DJAEGER_ACCESS_TOKEN "$CFG"); _url=$(kv DJAEGER_RAILWAY_URL "$CFG")
+  [ -n "$_token" ] && [ -n "$_url" ] && return 0
+  for _rf in "$LEGACY/railway.conf" /data/adb/modules/djaeger_game_stabilizer/system/etc/djaeger/railway/railway.conf; do
+    [ -r "$_rf" ] || continue
+    [ -n "$_token" ] || _token=$(exact DJAEGER_ACCESS_TOKEN "$_rf")
+    [ -n "$_token" ] || _token=$(exact ACCESS_TOKEN "$_rf")
+    [ -n "$_url" ] || _url=$(exact DJAEGER_RAILWAY_URL "$_rf")
+    [ -n "$_url" ] || _url=$(exact ENDPOINT "$_rf")
+  done
+  [ -n "$_token" ] || return 1
+  [ -n "$_url" ] || _url="$DEFAULT_URL"
+  {
+    printf 'DJAEGER_ACCESS_TOKEN=%s\n' "$_token"
+    printf 'DJAEGER_RAILWAY_URL=%s\n' "$_url"
+  } >"$CFG.tmp.$$" || return 1
+  chmod 600 "$CFG.tmp.$$"; mv -f "$CFG.tmp.$$" "$CFG"
+}
+clean(){ printf '%s' "$1" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/%=,@ -' | cut -c1-160; }
+publish(){ _t="$STATE.tmp.$$"; { echo "RAILWAY_STATE=$1"; echo "RAILWAY_HTTP=$2"; echo "UPDATED_AT=$(date +%s)"; } >"$_t"; chmod 600 "$_t"; mv -f "$_t" "$STATE"; }
+
+send_once(){
+  recover_credentials >/dev/null 2>&1 || true
+  [ -r "$SNAP" ] || { publish WAITING NA; return 0; }
+  TOKEN=$(kv DJAEGER_ACCESS_TOKEN "$CFG")
+  if [ -z "$TOKEN" ]; then recover_legacy_railway >/dev/null 2>&1 || true; TOKEN=$(kv DJAEGER_ACCESS_TOKEN "$CFG"); fi
+  [ -n "$TOKEN" ] || { publish NO_TOKEN NA; return 0; }
+  URL=$(kv DJAEGER_RAILWAY_URL "$CFG"); [ -n "$URL" ] || URL="$DEFAULT_URL"
+  case "$URL" in https://*) :;; *) publish INVALID_URL NA; return 1;; esac
+  body="$ROOT/runtime/.railway_payload.$$"
+  printf '{"schema":"DJAEGER_AI_TELEMETRY_V1","device_id":"%s","at":%s,"package":"%s","cpu_little_khz":"%s","cpu_big_khz":"%s","gpu_hz":"%s","skin_temp_c":"%s","battery_temp_c":"%s","cpu_temp_c":"%s","gpu_temp_c":"%s","power_mw":"%s","fps":"%s","jank_pct":"%s","credential_recovery_state":"%s","gemini_key_count":"%s","hermes_access_key_present":"%s","hermes_endpoint_present":"%s","hermes_cloud_id_present":"%s","neuron_local_estimate_present":"%s","neuron_used_est":"%s","neuron_limit":"%s","neuron_epoch_day":"%s","source":"LOCAL_OBSERVER"}'     "$(clean "$(kv DEVICE_ID "$ROOT/config/identity.env")")" "$(date +%s)" "$(clean "$(kv ACTIVE_PACKAGE "$SNAP")")"     "$(clean "$(kv LITTLE_CUR_KHZ "$SNAP")")" "$(clean "$(kv BIG_CUR_KHZ "$SNAP")")" "$(clean "$(kv GPU_CUR_HZ "$SNAP")")"     "$(clean "$(kv SKIN_TEMP_C "$SNAP")")" "$(clean "$(kv BATTERY_TEMP_C "$SNAP")")" "$(clean "$(kv CPU_TEMP_C "$SNAP")")" "$(clean "$(kv GPU_TEMP_C "$SNAP")")"     "$(clean "$(kv POWER_MW "$SNAP")")" "$(clean "$(kv FPS_EST "$SNAP")")" "$(clean "$(kv JANK_PCT "$SNAP")")"     "$(clean "$(kv RECOVERY_STATE "$RECOVERY")")" "$(clean "$(kv GEMINI_KEY_COUNT "$RECOVERY")")"     "$(clean "$(kv HERMES_ACCESS_KEY_PRESENT "$RECOVERY")")" "$(clean "$(kv HERMES_ENDPOINT_PRESENT "$RECOVERY")")" "$(clean "$(kv HERMES_CLOUD_ID_PRESENT "$RECOVERY")")"     "$(clean "$(kv NEURON_LOCAL_ESTIMATE_PRESENT "$RECOVERY")")" "$(clean "$(kv NEURON_USED_EST "$RECOVERY")")" "$(clean "$(kv NEURON_LIMIT "$RECOVERY")")" "$(clean "$(kv NEURON_EPOCH_DAY "$RECOVERY")")" >"$body"
+  curlcfg=$(mktemp "$ROOT/runtime/.railway_curl.XXXXXX" 2>/dev/null)
+  [ -n "$curlcfg" ] || { rm -f "$body"; unset TOKEN; publish TEMPFILE_ERROR NA; return 1; }
+  printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" >"$curlcfg"; chmod 600 "$curlcfg"
+  BASE_URL=$(printf '%s' "$URL"|sed 's:/*$::')
+  HTTP=$(curl -4 --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -w '%{http_code}' -K "$curlcfg" -H 'Content-Type: application/json' --data-binary "@$body" "$BASE_URL/v1/device/telemetry" 2>/dev/null); _rc=$?
+  if [ "$_rc" -ne 0 ]; then HTTP=$(curl --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -w '%{http_code}' -K "$curlcfg" -H 'Content-Type: application/json' --data-binary "@$body" "$BASE_URL/v1/device/telemetry" 2>/dev/null); fi
+  rm -f "$curlcfg" "$body"; unset TOKEN
+  [ "$HTTP" = 200 ] && publish CONNECTED "$HTTP" || publish OFFLINE "$HTTP"
+}
+
+MODE="$2"; [ -n "$MODE" ] || MODE=once
+case "$MODE" in
+  once) send_once;;
+  daemon) while :; do send_once >/dev/null 2>&1 || true; sleep 30; done;;
+  *) exit 2;;
+esac
