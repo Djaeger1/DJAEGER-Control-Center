@@ -11,6 +11,14 @@ chmod 600 "$ROOT/config/game_registry.tsv" "$ROOT/config/app_registry.tsv" "$ROO
 # every module service start. Never inherit a stale MATCHED claim.
 rm -f "$ROOT/runtime/handshake.env"
 
+# Never reuse a learned model or AI approval from an older evidence schema.
+# Credentials, identity, registries and human feedback remain persistent.
+if [ -r "$ROOT/history/learned_envelope.env" ] && ! grep -Fqx 'SCHEMA=DJAEGER_LEARNED_ENVELOPE_V3' "$ROOT/history/learned_envelope.env" 2>/dev/null; then
+  mv -f "$ROOT/history/learned_envelope.env" "$ROOT/recovery/learned_envelope.pre-v3.$(date +%s).env" 2>/dev/null || rm -f "$ROOT/history/learned_envelope.env"
+fi
+rm -f "$ROOT/policy/gemini_proposal.env" "$ROOT/policy/hermes_local_vote.env" "$ROOT/policy/hermes_cloud_vote.env" "$ROOT/policy/candidate.env" "$ROOT/policy/approved.env"
+rm -f "$ROOT/runtime/shadow.env" "$ROOT/runtime/consensus.env" "$ROOT/runtime/gemini_reasoner.env" "$ROOT/runtime/hermes_adapter.env"
+
 sh "$MODDIR/bin/migrate.sh" "$ROOT" "$MODDIR"
 
 for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow executor railway_bridge; do
