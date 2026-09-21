@@ -155,11 +155,12 @@ apply_all(){
   APPLIED_LITTLE="$LMIN-$LMAX"; APPLIED_BIG="$BMIN-$BMAX"; APPLIED_GPU="$GMIN-$GMAX"
   READBACK=VERIFIED; ROLLBACK_STATE=ARMED
   APPLIED_AT=$(date +%s); MONITOR_BAD_COUNT=0; MONITOR_SAMPLES=0
+  _mtmp="$(mktemp "${MONITOR}.tmp.XXXXXX" 2>/dev/null)"; [ -n "$_mtmp" ] || _mtmp="${MONITOR}.tmp.$(date +%s).0"
   {
     echo "DIGEST=$ACTIVE_DIGEST"
     echo "BAD_COUNT=0"
     echo "SAMPLES=0"
-  } > "$MONITOR.tmp.$"; chmod 600 "$MONITOR.tmp.$"; mv -f "$MONITOR.tmp.$" "$MONITOR"
+  } > "$_mtmp"; chmod 600 "$_mtmp"; mv -f "$_mtmp" "$MONITOR"
   return 0
 }
 
@@ -205,12 +206,13 @@ post_apply_monitor(){
   [ "$_rc" -eq 2 ] && return 0
   MONITOR_SAMPLES=$((MONITOR_SAMPLES+1))
   if [ "$_rc" -eq 1 ]; then MONITOR_BAD_COUNT=$((MONITOR_BAD_COUNT+1)); else MONITOR_BAD_COUNT=0; fi
+  _mtmp="$(mktemp "${MONITOR}.tmp.XXXXXX" 2>/dev/null)"; [ -n "$_mtmp" ] || _mtmp="${MONITOR}.tmp.${_now}.${MONITOR_SAMPLES}"
   {
     echo "DIGEST=$ACTIVE_DIGEST"
     echo "BAD_COUNT=$MONITOR_BAD_COUNT"
     echo "SAMPLES=$MONITOR_SAMPLES"
     echo "UPDATED_AT=$_now"
-  } > "$MONITOR.tmp.$"; chmod 600 "$MONITOR.tmp.$"; mv -f "$MONITOR.tmp.$" "$MONITOR"
+  } > "$_mtmp"; chmod 600 "$_mtmp"; mv -f "$_mtmp" "$MONITOR"
   [ "$MONITOR_BAD_COUNT" -lt 3 ] || return 1
   return 0
 }
