@@ -416,7 +416,7 @@ publish_cc() {
   _tmp="$_out.tmp.$$"
   {
     echo "__INSTALLED__"; echo 1
-    echo "__VERSION__"; echo "1.1.1-33fix"
+    echo "__VERSION__"; echo "1.1.2-credrestore"
     echo "__RUNTIME__"
     echo "UPDATED_AT=$_epoch"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
     echo "CONTROLLER_PID=${OBSERVER_PID:-UNKNOWN}"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
@@ -482,7 +482,7 @@ publish_cc() {
     echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=$_cap_count"; echo "ACTUATORS=$_actuator_truth"
     echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$_action_count"; echo "APPLIED_COUNT=$_action_count"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
     echo "__CONTROL_CENTER_SYNC__"
-    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=105"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
+    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=106"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
     echo "PAIR_VERIFIED=$_pair"; echo "HANDSHAKE_SCHEMA=${_hand_schema:-UNVERIFIED}"; echo "HANDSHAKE_ACK_ID=${_ack_id:-NONE}"; echo "HANDSHAKE_AGE_SEC=$_hand_age"
     echo "SNAPSHOT_GENERATION=$_generation"; echo "SNAPSHOT_FRESH=YES"
     echo "SHARED_INTELLIGENCE=MEASURED_DEVICE_CONTEXT_V2"; echo "GEMINI_INTELLIGENCE_SCOPE=PROPOSE_DEVICE_BOUNDED"; echo "HERMES_INTELLIGENCE_SCOPE=LOCAL_VALIDATE_PLUS_CLOUD_REVIEW"
