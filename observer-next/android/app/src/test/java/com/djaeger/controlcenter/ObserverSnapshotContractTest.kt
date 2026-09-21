@@ -12,7 +12,7 @@ class ObserverSnapshotContractTest {
             __INSTALLED__
             1
             __VERSION__
-            1.0.0-adaptive-clean
+            1.1.0-rc1-sync
             __RUNTIME__
             UPDATED_AT=1789970000
             ACTIVE=1
@@ -22,9 +22,10 @@ class ObserverSnapshotContractTest {
             __TEL__
             1789970000,54,50,39,37,1000000,1800000,600000000,ADAPTIVE_LEARNED,16.67,60.0,1.0,17.0,20.0,0,Discharging,500000,4200000,2100,VALID,MEASURED_DISCHARGE,sts.al,FOREGROUND
             __CONTROL_CENTER_SYNC__
-            CONTRACT=DJAEGER_AI_ADAPTIVE_V1
-            MODULE_VERSION_CODE=202
-            CONTROL_CENTER_VERSION_CODE=103
+            CONTRACT=DJAEGER_AI_ADAPTIVE_V2
+            MODULE_VERSION_CODE=203
+            CONTROL_CENTER_VERSION_CODE=104
+            PAIR_VERIFIED=YES
             __AUTHORITY__
             STATE=LOCAL_GATED
             SYSFS_WRITES=EXECUTOR_ONLY
@@ -44,9 +45,9 @@ class ObserverSnapshotContractTest {
         ))
 
         assertTrue(mapped.installed)
-        assertEquals("1.0.0-adaptive-clean", mapped.moduleVersion)
+        assertEquals("1.1.0-rc1-sync", mapped.moduleVersion)
         assertEquals("sts.al", mapped.runtime["GAME"])
-        assertEquals("DJAEGER_AI_ADAPTIVE_V1", AtomicSnapshot.keyValues(mapped.controlCenterSync)["CONTRACT"])
+        assertEquals("DJAEGER_AI_ADAPTIVE_V2", AtomicSnapshot.keyValues(mapped.controlCenterSync)["CONTRACT"])
         assertEquals("EXECUTOR_ONLY", AtomicSnapshot.keyValues(mapped.authority)["SYSFS_WRITES"])
         assertEquals("APPLIED", AtomicSnapshot.keyValues(mapped.authority)["EXECUTOR"])
     }
