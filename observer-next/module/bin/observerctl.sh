@@ -1,7 +1,7 @@
 #!/system/bin/sh
 
-# Small, typed bridge used by the Observer APK. This bridge owns only
-# DJAEGER Observer files. It cannot invoke a hardware executor or write sysfs.
+# Small typed bridge used by the DJAEGER AI APK.
+# Hardware writes remain owned exclusively by the local gated executor daemon.
 
 ROOT=${DJAEGER_OBSERVER_ROOT:-/data/adb/djaeger_observer}
 CONFIG="$ROOT/config"
@@ -175,26 +175,45 @@ case "$1" in
     echo "HERMES_CHAT_UNAVAILABLE=OBSERVER_VALIDATION_BUILD"; echo "REASON=HERMES_CLOUD_IS_CANDIDATE_REVIEW_ONLY"; exit 2 ;;
   hermes-chat-clear) echo "HERMES_CHAT_HISTORY=NO_STORED_HISTORY" ;;
   authority-status)
-    echo "AUTHORITY=STOCK_KERNEL"
+    _es="$(kv EXECUTOR_STATE "$RUNTIME/execution.env")"; [ -n "$_es" ] || _es=IDLE
+    echo "AUTHORITY=LOCAL_VALIDATED_EXECUTOR"
     echo "OBSERVER=READ_ONLY"
-    echo "SYSFS_WRITES=DISABLED"
-    echo "EXECUTOR=NOT_PACKAGED" ;;
+    echo "CLOUD_HARDWARE_AUTHORITY=NONE"
+    echo "SYSFS_WRITES=EXECUTOR_ONLY"
+    echo "EXECUTOR=$_es" ;;
   kernel-status)
     snap="$RUNTIME/snapshot.env"
-    echo "CAPABILITY=READ_ONLY_TELEMETRY"
-    echo "LITTLE_POLICY=$([ -n "$(kv LITTLE_POLICY_PATH "$snap")" ] && echo DETECTED || echo UNAVAILABLE)"
-    echo "BIG_POLICY=$([ -n "$(kv BIG_POLICY_PATH "$snap")" ] && echo DETECTED || echo UNAVAILABLE)"
-    echo "GPU_DEVFREQ=$([ -n "$(kv GPU_DEVFREQ_PATH "$snap")" ] && echo DETECTED || echo UNAVAILABLE)"
-    echo "WRITABLE_ACTUATORS=0" ;;
+    lp="$(kv LITTLE_POLICY_PATH "$snap")"; bp="$(kv BIG_POLICY_PATH "$snap")"; gp="$(kv GPU_DEVFREQ_PATH "$snap")"
+    echo "CAPABILITY=OBSERVE_AND_GATED_EXECUTE"
+    echo "LITTLE_POLICY=$([ -n "$lp" ] && echo DETECTED || echo UNAVAILABLE)"
+    echo "BIG_POLICY=$([ -n "$bp" ] && echo DETECTED || echo UNAVAILABLE)"
+    echo "GPU_DEVFREQ=$([ -n "$gp" ] && echo DETECTED || echo UNAVAILABLE)"
+    _a=0
+    [ -n "$lp" ] && [ -w "$lp/scaling_min_freq" ] && [ -w "$lp/scaling_max_freq" ] && _a=$((_a+2))
+    [ -n "$bp" ] && [ -w "$bp/scaling_min_freq" ] && [ -w "$bp/scaling_max_freq" ] && _a=$((_a+2))
+    [ -n "$gp" ] && [ -w "$gp/min_freq" ] && [ -w "$gp/max_freq" ] && _a=$((_a+2))
+    echo "WRITABLE_ACTUATORS=$_a" ;;
   maturity-audit)
-    learn="$HISTORY/learned_envelope.env"; shadow="$RUNTIME/shadow.env"
+    learn="$HISTORY/learned_envelope.env"; shadow="$RUNTIME/shadow.env"; exec="$RUNTIME/execution.env"
     echo "PACKAGE=$(kv PACKAGE "$learn")"
     echo "LEARNING_STATE=$(kv STATE "$learn")"
     echo "SAMPLES=$(kv SAMPLES "$learn")"
     echo "FRAME_WINDOWS=$(kv FRAME_WINDOWS "$learn")"
     echo "CONFIDENCE=$(kv CONFIDENCE "$learn")"
     echo "SHADOW_STATE=$(kv SHADOW_STATE "$shadow")"
-    echo "EXECUTOR_ENABLED=0" ;;
+    echo "EXECUTION_MODE=$(cat "$CONFIG/execution_mode" 2>/dev/null)"
+    echo "EXECUTOR_STATE=$(kv EXECUTOR_STATE "$exec")" ;;
+  execution-status)
+    echo "EXECUTION_MODE=$(cat "$CONFIG/execution_mode" 2>/dev/null)"
+    [ -r "$RUNTIME/execution.env" ] && cat "$RUNTIME/execution.env" || echo "EXECUTOR_STATE=IDLE" ;;
+  execution-auto)
+    echo AUTO > "$CONFIG/execution_mode"; chmod 600 "$CONFIG/execution_mode"
+    echo "EXECUTION_MODE=AUTO" ;;
+  execution-off)
+    echo OFF > "$CONFIG/execution_mode"; chmod 600 "$CONFIG/execution_mode"
+    rm -f "$ROOT/policy/approved.env"
+    sh "$ROOT/../modules/djaeger_ai_observer/bin/executor.sh" "$ROOT" once >/dev/null 2>&1 || true
+    echo "EXECUTION_MODE=OFF" ;;
   migration-status)
     if [ -r "$RECOVERY/migration.env" ]; then cat "$RECOVERY/migration.env"; else echo "MIGRATION_STATE=UNAVAILABLE"; fi ;;
   snapshot-status)
