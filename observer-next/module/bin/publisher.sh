@@ -220,7 +220,9 @@ publish_cc() {
   [ "$_pair" = YES ] && [ "$_hand_schema" = DJAEGER_AI_ADAPTIVE_V2 ] && [ "$_hand_age" -le 86400 ] 2>/dev/null || _pair=NO
   _generation=$(cat "$_genfile" 2>/dev/null | head -n1); case "$_generation" in ''|*[!0-9]*) _generation=0;; esac
   _generation=$((_generation+1))
-  printf '%s\n' "$_generation" > "$_genfile.tmp.$"; chmod 600 "$_genfile.tmp.$" 2>/dev/null; mv -f "$_genfile.tmp.$" "$_genfile"
+  _gen_tmp="$(mktemp "${_genfile}.tmp.XXXXXX" 2>/dev/null)"
+  [ -n "$_gen_tmp" ] || _gen_tmp="${_genfile}.tmp.${_now}.${_generation}"
+  printf '%s\n' "$_generation" > "$_gen_tmp"; chmod 600 "$_gen_tmp" 2>/dev/null; mv -f "$_gen_tmp" "$_genfile"
 
   _cloud_connection="GEMINI_$_gem_connection|HERMES_$_hermes_connection"
   _plan_provider=NONE; [ -r "$_gem_prop" ] && _plan_provider=GEMINI
@@ -256,7 +258,7 @@ publish_cc() {
     echo "__VERSION__"; echo "1.1.0-rc1-sync"
     echo "__RUNTIME__"
     echo "UPDATED_AT=$_epoch"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
-    echo "CONTROLLER_PID=$"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
+    echo "CONTROLLER_PID=${OBSERVER_PID:-UNKNOWN}"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
     echo "TOP_PACKAGE=$_top_pkg"; echo "PACKAGE_SOURCE=$_pkg_source"; echo "VISIBLE_GAME=$_visible_game"; echo "SNAPSHOT_GENERATION=$_generation"
     echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
     echo "__TEL__"; echo "$_tel"
