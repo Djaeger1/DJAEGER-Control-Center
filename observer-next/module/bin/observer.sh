@@ -3,6 +3,7 @@ ROOT="$1"
 RUNTIME="$ROOT/runtime"
 HISTORY="$ROOT/history/telemetry.csv"
 SNAP="$RUNTIME/snapshot.env"
+FRAMEFILE="$RUNTIME/frame.env"
 SEQ=0
 PKG=UNKNOWN
 
@@ -43,11 +44,13 @@ gpu_path() {
   echo ""
 }
 
+fv(){ sed -n "s/^$1=//p" "$FRAMEFILE" 2>/dev/null | head -n1; }
+
 mkdir -p "$RUNTIME" "$ROOT/history"
-if [ -f "$HISTORY" ] && ! head -n1 "$HISTORY" 2>/dev/null | grep -q 'little_cur_khz'; then
-  mv -f "$HISTORY" "$ROOT/history/telemetry.v1.$(date +%s).csv" 2>/dev/null
+if [ -f "$HISTORY" ] && ! head -n1 "$HISTORY" 2>/dev/null | grep -q 'frame_at'; then
+  mv -f "$HISTORY" "$ROOT/history/telemetry.preframe.$(date +%s).csv" 2>/dev/null
 fi
-[ -f "$HISTORY" ] || echo "epoch,seq,package,cpu_avg_khz,cpu_min_cur_khz,cpu_max_cur_khz,little_cur_khz,big_cur_khz,gpu_cur_hz,skin_c,battery_c,current_ua,voltage_uv,power_mw,battery_pct" > "$HISTORY"
+[ -f "$HISTORY" ] || echo "epoch,seq,package,cpu_avg_khz,cpu_min_cur_khz,cpu_max_cur_khz,little_cur_khz,big_cur_khz,gpu_cur_hz,skin_c,battery_c,current_ua,voltage_uv,power_mw,battery_pct,fps,jank_pct,p95_ms,p99_ms,frame_n,frame_at,battery_status" > "$HISTORY"
 
 LOW_POLICY=""
 HIGH_POLICY=""
@@ -86,16 +89,39 @@ while true; do
   CUR=$(read_one /sys/class/power_supply/battery/current_now)
   VOLT=$(read_one /sys/class/power_supply/battery/voltage_now)
   PCT=$(read_one /sys/class/power_supply/battery/capacity)
+  BSTAT=$(read_one /sys/class/power_supply/battery/status)
 
   POWER=NA
-  case "$CUR:$VOLT" in
-    *[!0-9:-]*|NA:*|*:NA) ;;
-    *) POWER=$(awk -v a="$CUR" -v v="$VOLT" 'BEGIN{if(a<0)a=-a; printf "%.0f",(a*v)/1000000000}') ;;
+  case "$CUR:$VOLT:$BSTAT" in
+    *[!0-9:A-Za-z_-]*|NA:*|*:NA:*|*:*:NA) ;;
+    *)
+      if [ "$BSTAT" = Discharging ]; then
+        POWER=$(awk -v a="$CUR" -v v="$VOLT" 'BEGIN{
+          if(a<0)a=-a
+          p=(a*v)/1000000000
+          if(p>=100&&p<=15000){printf "%.0f",p;exit}
+          if(a>=20&&a<=5000){p=(a*1000*v)/1000000000;if(p>=100&&p<=15000){printf "%.0f",p;exit}}
+          print "NA"
+        }')
+      fi
+    ;;
   esac
 
   if [ $((SEQ % 5)) -eq 1 ]; then
     PKG=$(dumpsys activity activities 2>/dev/null | grep -m1 'mResumedActivity' | sed -n 's/.* u[0-9]* \([^/ ]*\)\/.*/\1/p')
     [ -n "$PKG" ] || PKG=UNKNOWN
+  fi
+
+  FE=UNAVAILABLE; FPS=NA; JANK=NA; P95=NA; P99=NA; FN=0; FAT=0
+  if [ -r "$FRAMEFILE" ] && [ "$(fv FRAME_PACKAGE)" = "$PKG" ]; then
+    FAT=$(fv FRAME_AT); case "$FAT" in ''|*[!0-9]*) FAT=0;; esac
+    FAGE=$((EPOCH-FAT))
+    if [ "$FAGE" -ge 0 ] && [ "$FAGE" -le 10 ]; then
+      FE=$(fv FRAME_EVIDENCE)
+      FPS=$(fv FPS_EST); JANK=$(fv JANK_PCT); P95=$(fv P95_MS); P99=$(fv P99_MS); FN=$(fv FRAME_N)
+      [ -n "$FPS" ] || FPS=NA; [ -n "$JANK" ] || JANK=NA; [ -n "$P95" ] || P95=NA; [ -n "$P99" ] || P99=NA
+      case "$FN" in ''|*[!0-9]*) FN=0;; esac
+    fi
   fi
 
   MIGRATION_STATE=$(grep '^MIGRATION_STATE=' "$ROOT/recovery/migration.env" 2>/dev/null | cut -d= -f2-)
@@ -104,16 +130,16 @@ while true; do
   [ -n "$LEGACY_CONFIG_PRESENT" ] || LEGACY_CONFIG_PRESENT=NO
 
   PKG_SAMPLES=$(awk -F, -v p="$PKG" 'NR>1&&$3==p{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
-  if [ "$PKG_SAMPLES" -ge 600 ]; then LEARN=BASELINE_MATURE
-  elif [ "$PKG_SAMPLES" -ge 120 ]; then LEARN=BASELINE_READY
+  if [ "$PKG_SAMPLES" -ge 600 ]; then LEARN=BASELINE_CPU_MATURE
+  elif [ "$PKG_SAMPLES" -ge 120 ]; then LEARN=BASELINE_CPU_READY
   else LEARN=LEARNING
   fi
 
   TMP="$SNAP.tmp.$$"
   {
-    echo "SCHEMA=DJAEGER_OBSERVER_V2"
+    echo "SCHEMA=DJAEGER_OBSERVER_V3"
     echo "ENGINE=OBSERVER_FIRST"
-    echo "MODULE_VERSION=0.2.0-observer"
+    echo "MODULE_VERSION=0.2.0-observer-ai"
     echo "SAMPLE_SEQ=$SEQ"
     echo "PACKAGE_SAMPLES=$PKG_SAMPLES"
     echo "EPOCH=$EPOCH"
@@ -135,9 +161,16 @@ while true; do
     echo "BATTERY_TEMP_C=$BATC"
     echo "BATTERY_CURRENT_UA=$CUR"
     echo "BATTERY_VOLTAGE_UV=$VOLT"
+    echo "BATTERY_STATUS=$BSTAT"
     echo "POWER_MW=$POWER"
     echo "BATTERY_PCT=$PCT"
-    echo "FRAME_EVIDENCE=UNAVAILABLE"
+    echo "FRAME_EVIDENCE=$FE"
+    echo "FPS_EST=$FPS"
+    echo "JANK_PCT=$JANK"
+    echo "P95_MS=$P95"
+    echo "P99_MS=$P99"
+    echo "FRAME_N=$FN"
+    echo "FRAME_AT=$FAT"
     echo "LEARNING_STATE=$LEARN"
     echo "MIGRATION_STATE=$MIGRATION_STATE"
     echo "LEGACY_CONFIG_PRESENT=$LEGACY_CONFIG_PRESENT"
@@ -147,12 +180,12 @@ while true; do
   chmod 644 "$TMP"
   mv -f "$TMP" "$SNAP"
 
-  echo "$EPOCH,$SEQ,$PKG,$AVG,$MIN,$MAX,$LITTLE,$BIG,$GPU,$SKIN,$BATC,$CUR,$VOLT,$POWER,$PCT" >> "$HISTORY"
+  echo "$EPOCH,$SEQ,$PKG,$AVG,$MIN,$MAX,$LITTLE,$BIG,$GPU,$SKIN,$BATC,$CUR,$VOLT,$POWER,$PCT,$FPS,$JANK,$P95,$P99,$FN,$FAT,$BSTAT" >> "$HISTORY"
 
   SIZE=$(wc -c < "$HISTORY" 2>/dev/null)
   case "$SIZE" in ''|*[!0-9]*) SIZE=0;; esac
-  if [ "$SIZE" -gt 2097152 ]; then
-    { head -n1 "$HISTORY"; tail -n 5000 "$HISTORY"; } > "$HISTORY.trim"
+  if [ "$SIZE" -gt 3145728 ]; then
+    { head -n1 "$HISTORY"; tail -n 7500 "$HISTORY"; } > "$HISTORY.trim"
     mv -f "$HISTORY.trim" "$HISTORY"
   fi
   sleep 2
