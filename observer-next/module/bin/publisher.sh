@@ -67,6 +67,7 @@ publish_cc() {
 
   _epoch="$(pub_kv EPOCH "$_snap")"; case "$_epoch" in ''|*[!0-9]*) _epoch="$(date +%s)";; esac
   _pkg="$(pub_kv ACTIVE_PACKAGE "$_snap")"; [ -n "$_pkg" ] || _pkg=UNKNOWN
+  _seq="$(pub_kv SAMPLE_SEQ "$_snap")"; case "$_seq" in ''|*[!0-9]*) _seq=0;; esac
   _top_pkg="$(pub_kv TOP_PACKAGE "$_snap")"; [ -n "$_top_pkg" ] || _top_pkg="$_pkg"
   _visible_game="$(pub_kv VISIBLE_GAME "$_snap")"; [ -n "$_visible_game" ] || _visible_game=NONE
   _pkg_source="$(pub_kv PACKAGE_SOURCE "$_snap")"; [ -n "$_pkg_source" ] || _pkg_source=LEGACY_FOREGROUND
@@ -226,6 +227,33 @@ publish_cc() {
 
   _cloud_connection="GEMINI_$_gem_connection|HERMES_$_hermes_connection"
   _plan_provider=NONE; [ -r "$_gem_prop" ] && _plan_provider=GEMINI
+
+  _cap_count=0
+  for _path_key in LITTLE_POLICY_PATH BIG_POLICY_PATH GPU_DEVFREQ_PATH; do
+    _cap_path="$(pub_kv "$_path_key" "$_snap")"
+    [ -n "$_cap_path" ] && [ "$_cap_path" != NA ] && _cap_count=$((_cap_count+1))
+  done
+  _actuator_truth=UNVERIFIED
+  _action_count=0
+  if [ "$_exec_state" = APPLIED ] && [ "$_readback" = VERIFIED ]; then _actuator_truth=6; _action_count=6; fi
+
+  _bug_health=OK; _bug_open=NO; _bug_severity=INFO; _bug_component=NONE; _bug_code=NONE
+  _bug_summary="No open verified runtime fault"
+  _bug_facts="executor=$_exec_state readback=$_readback rollback=$_rollback"
+  _bug_action=NONE; _bug_recovery=$_rollback
+  if [ "$_rollback" = RESTORE_FAILED ]; then
+    _bug_health=DEGRADED; _bug_open=YES; _bug_severity=CRITICAL; _bug_component=LOCAL_EXECUTOR; _bug_code=RESTORE_FAILED
+    _bug_summary="Pre-apply CPU/GPU bounds could not be fully restored"
+    _bug_action="Keep execution fail-closed and preserve backup for recovery"
+  elif [ "$_seq" -gt 10 ] 2>/dev/null && [ "$_exec_age" -gt 10 ] 2>/dev/null; then
+    _bug_health=DEGRADED; _bug_open=YES; _bug_severity=HIGH; _bug_component=LOCAL_EXECUTOR; _bug_code=EXECUTOR_STALE
+    _bug_summary="Local executor state is stale while observer is alive"
+    _bug_action="Block adaptive execution until executor state is fresh"
+  elif [ "$_exec_state" = ROLLED_BACK ]; then
+    _bug_health=RECOVERED; _bug_open=NO; _bug_severity=INFO; _bug_component=LOCAL_EXECUTOR; _bug_code=ROLLBACK_COMPLETE
+    _bug_summary="Adaptive execution was rolled back by a local gate"
+    _bug_action="Continue observing before any new approval"
+  fi
   _thought_source=OBSERVER_LOCAL
   [ "$_gem" = CANDIDATE ] && _thought_source=GEMINI
   case "$_hcloud" in APPROVED|REJECTED) _thought_source=HERMES_H2;; esac
@@ -311,15 +339,15 @@ publish_cc() {
     echo "__HERMES_COGNITION_STATUS__"; echo "STATE=$_hlocal"; echo "MODE=OBSERVER_VNEXT"
     echo "__HERMES_MEMORY_VNEXT__"; echo "STATE=$_learning"; echo "SAMPLES=$_samples"; echo "SOURCE=STOCK_HISTORY"
     echo "__HERMES_REASONING_V2__"; echo "STATE=$_cons_state"; echo "CONTRACT=STRUCTURED_ENVELOPE_ONLY"
-    echo "__HERMES_SKILLS_VNEXT__"; echo "STATE=READY"; echo "SKILLS=VALIDATE_OPP,THERMAL_GUARD,FRAME_GUARD,POWER_GUARD"
+    echo "__HERMES_SKILLS_VNEXT__"; echo "STATE=$([ "$_hermes_age" -le 180 ] 2>/dev/null && echo AVAILABLE || echo STALE)"; echo "SKILLS=VALIDATE_OPP,THERMAL_GUARD,FRAME_GUARD,POWER_GUARD"
     echo "__HERMES_LEARNING_V2__"; echo "STATE=$_learning"; echo "PACKAGE=$_pkg"; echo "SAMPLES=$_samples"
     echo "__HERMES_RESEARCH_V2__"; echo "STATE=$_shadow_state"; echo "SHADOW_WINDOWS=$_shadow_n"
-    echo "__HERMES_HUMAN_COMFORT__"; echo "COMFORT_PRESET=LEARNED"; echo "STATE=LEARNING_FROM_FEEDBACK"; echo "FIXED_PRESET=DISABLED"
+    echo "__HERMES_HUMAN_COMFORT__"; echo "COMFORT_PRESET=LEARNED"; echo "STATE=FEEDBACK_RECORDED_AS_EVIDENCE"; echo "DIRECT_CLOCK_EFFECT=NONE"; echo "FIXED_PRESET=DISABLED"
     echo "__HERMES_LANGUAGE__"; echo "STATE=STRUCTURED_ONLY"
-    echo "__HERMES_MATH__"; echo "STATE=$_learning"; echo "VERIFY=$_shadow_state"; echo "INPUT_SANITY=MEASURED"; echo "TARGET_FRAME_MS=16.67"
-    echo "__HERMES_KERNEL1__"; echo "STATE=GATED"; echo "STRATEGY=MEASURED_ADAPTIVE"; echo "BOTTLENECK=$_exec_reason"; echo "CAPABILITIES_TOTAL=3"; echo "ACTUATORS_TOTAL=6"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "ROOT_AUTHORITY_OWNER=LOCAL_EXECUTOR"; echo "SYSFS_OWNER=LOCAL_EXECUTOR"
-    echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=3"; echo "ACTUATORS=6"
-    echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "APPLIED_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
+    echo "__HERMES_MATH__"; echo "STATE=$_learning"; echo "VERIFY=$_shadow_state"; echo "INPUT_SANITY=MEASURED"; echo "TARGET_FRAME_MS=UNSPECIFIED_DEVICE_LEARNED"
+    echo "__HERMES_KERNEL1__"; echo "STATE=GATED"; echo "STRATEGY=MEASURED_ADAPTIVE"; echo "BOTTLENECK=$_exec_reason"; echo "CAPABILITIES_TOTAL=$_cap_count"; echo "ACTUATORS_TOTAL=$_actuator_truth"; echo "ACTION_COUNT=$_action_count"; echo "ROOT_AUTHORITY_OWNER=LOCAL_EXECUTOR"; echo "SYSFS_OWNER=LOCAL_EXECUTOR"
+    echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=$_cap_count"; echo "ACTUATORS=$_actuator_truth"
+    echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$_action_count"; echo "APPLIED_COUNT=$_action_count"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
     echo "__CONTROL_CENTER_SYNC__"
     echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=104"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
     echo "PAIR_VERIFIED=$_pair"; echo "HANDSHAKE_SCHEMA=${_hand_schema:-UNVERIFIED}"; echo "HANDSHAKE_ACK_ID=${_ack_id:-NONE}"; echo "HANDSHAKE_AGE_SEC=$_hand_age"
@@ -329,7 +357,7 @@ publish_cc() {
     echo "GEMINI_CONNECTION=$_gem_connection"; echo "HERMES_CONNECTION=$_hermes_connection"
     echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"; echo "HERMES_AUTH=$_hauth"
     echo "HERMES_CLOUD=ADVISORY_REVIEW"; echo "HERMES_CLOUD_ROLE=ONE_HERMES_REVIEWER"; echo "HERMES_BACKEND_PRIORITY=LOCAL_GUARD_THEN_CLOUD_REVIEW"; echo "WORKLOAD_FINAL=ADAPTIVE_CLASSIFIER_V2"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=ACTIVE_LOCAL_GATED"
-    echo "__STRATEGY_RESULT__"; echo "VALIDATION=$_cons_state"; echo "READBACK=STOCK"; echo "OUTCOME=$_shadow_state"
+    echo "__STRATEGY_RESULT__"; echo "VALIDATION=$_cons_state"; echo "READBACK=$_readback"; echo "OUTCOME=$_shadow_state"
     echo "__ENV__"; [ -r "$_learn" ] && cat "$_learn"
     echo "__HTTP__"; [ -r "$_gem_state" ] && cat "$_gem_state" || true
     echo "__SERVER__"; [ -r "$_hermes_state" ] && cat "$_hermes_state" || true
@@ -350,8 +378,8 @@ publish_cc() {
     echo "__WORKLOAD_EXEC_GUARD__"; echo "DECISION=$([ "$_exec_state" = APPLIED ] && echo ALLOW || echo BLOCK)"; echo "REASON=$_exec_reason"
     echo "__APP_REGISTRY__"; [ -r "$_root/config/app_registry.tsv" ] && cat "$_root/config/app_registry.tsv" || true
     echo "__GAME_REGISTRY_MANUAL__"; [ -r "$_root/config/game_registry.tsv" ] && cat "$_root/config/game_registry.tsv" || true
-    echo "__BUG_HEALTH__"; echo "STATE=OK"
-    echo "__BUG_EVENTS__"
+    echo "__BUG_HEALTH__"; echo "HEALTH=$_bug_health"; echo "STATE=$_bug_health"; echo "OPEN_BUG=$_bug_open"; echo "SEVERITY=$_bug_severity"; echo "COMPONENT=$_bug_component"; echo "CODE=$_bug_code"; echo "SUMMARY=$(pub_clean "$_bug_summary")"; echo "FACTS=$(pub_clean "$_bug_facts")"; echo "ACTION=$(pub_clean "$_bug_action")"; echo "RECOVERY=$_bug_recovery"; echo "UPDATED_AT=$_epoch"
+    echo "__BUG_EVENTS__"; [ "$_bug_code" != NONE ] && echo "$_epoch|$_bug_severity|$_bug_component|$_bug_code|$(pub_clean "$_bug_summary")" || true
   } > "$_tmp"
   chmod 644 "$_tmp" 2>/dev/null
   mv -f "$_tmp" "$_out"
