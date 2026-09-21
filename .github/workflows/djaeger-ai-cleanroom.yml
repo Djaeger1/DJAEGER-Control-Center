@@ -2,7 +2,7 @@ name: DJAEGER AI Clean Build
 
 on:
   push:
-    branches: [djaeger-ai-cleanroom-v1, djaeger-ai-adaptive-sync-v2]
+    branches: [djaeger-ai-cleanroom-v1, djaeger-ai-adaptive-sync-v2, djaeger-ai-adaptive-33fix-v1]
   pull_request:
     branches: [djaeger-ai-cleanroom-base]
   workflow_dispatch:
@@ -81,7 +81,7 @@ jobs:
           set -euo pipefail
           mkdir -p out
           cd observer-next/module
-          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.0-rc1.zip .
+          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip .
           cd ../..
 
           UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
@@ -95,7 +95,7 @@ jobs:
           keytool -genkeypair -noprompt -storetype PKCS12             -keystore "$SIGN_DIR/djaeger-ai.p12"             -storepass "$PASS" -keypass "$PASS"             -alias djaegerai -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER AI, O=DJAEGER, C=ID'
 
           ALIGNED="$RUNNER_TEMP/djaeger-ai-aligned.apk"
-          APK="out/DJAEGER-AI-Adaptive-v1.1.0-rc1.apk"
+          APK="out/DJAEGER-AI-Adaptive-v1.1.1-33fix.apk"
           "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
           "$BUILD_TOOLS/apksigner" sign             --ks "$SIGN_DIR/djaeger-ai.p12" --ks-type PKCS12             --ks-key-alias djaegerai             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$ALIGNED"
 
@@ -103,17 +103,17 @@ jobs:
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
           "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
           unzip -t "$APK" > out/APK_ZIP_TEST.txt
-          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.0-rc1.zip > out/MODULE_ZIP_TEST.txt
-          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.0-rc1.zip > out/MODULE_CONTENTS.txt
+          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip > out/MODULE_ZIP_TEST.txt
+          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip > out/MODULE_CONTENTS.txt
 
-          grep -q "package: name='com.djaeger.observer' versionCode='104' versionName='1.1.0-rc1-sync'" out/AAPT_BADGING.txt
+          grep -q "package: name='com.djaeger.observer' versionCode='105' versionName='1.1.1-33fix'" out/AAPT_BADGING.txt
           grep -qx 'false' out/APK_DEBUGGABLE.txt
           grep -Eq 'bin/executor\.sh' out/MODULE_CONTENTS.txt
           grep -Eq 'bin/railway_bridge\.sh' out/MODULE_CONTENTS.txt
           ! grep -Eq 'agent_bus\.sh' out/MODULE_CONTENTS.txt
 
           mkdir -p "$RUNNER_TEMP/module-audit" "$RUNNER_TEMP/apk-audit"
-          unzip -q out/DJAEGER-AI-Adaptive-Module-v1.1.0-rc1.zip -d "$RUNNER_TEMP/module-audit"
+          unzip -q out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip -d "$RUNNER_TEMP/module-audit"
           unzip -q "$APK" -d "$RUNNER_TEMP/apk-audit"
 
           A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
@@ -128,21 +128,26 @@ jobs:
           grep -Fq 'thermal_safe' "$RUNNER_TEMP/module-audit/bin/executor.sh"
           grep -Fq 'DIGEST_MISMATCH' "$RUNNER_TEMP/module-audit/bin/executor.sh"
           grep -Fq 'ROLLBACK_STATE' "$RUNNER_TEMP/module-audit/bin/executor.sh"
+          grep -Fq 'ROLLBACK_FAILED' "$RUNNER_TEMP/module-audit/bin/executor.sh"
+          grep -Fq 'record_outcome' "$RUNNER_TEMP/module-audit/bin/executor.sh"
+          grep -Fq 'CONTEXT_PACKAGE' "$RUNNER_TEMP/module-audit/bin/publisher.sh"
+          grep -Fq 'THOUGHT_FRESH=$_thought_fresh' "$RUNNER_TEMP/module-audit/bin/publisher.sh"
+          ! grep -Fq 'CPU/GPU, thermal, power, and frame behavior is being learned from the device' "$RUNNER_TEMP/module-audit/bin/publisher.sh"
           if find "$RUNNER_TEMP/module-audit" -type f ! -path '*/bin/executor.sh' -print0 | xargs -0 grep -El 'tee[[:space:]]+/sys/|>[[:space:]]*/sys/' | grep -q .; then
             echo "NON_EXECUTOR_SYSFS_WRITE_PATTERN=1" >&2
             exit 1
           fi
 
           cd out
-          sha256sum DJAEGER-AI-Adaptive-v1.1.0-rc1.apk DJAEGER-AI-Adaptive-Module-v1.1.0-rc1.zip > SHA256SUMS.txt
-          printf '%s\n'             'STATUS=RC_NOT_RELEASED'             'RUNTIME_DEVICE_VALIDATION=REQUIRED_BEFORE_RELEASE'             'SOURCE_LINEAGE=CLEANROOM_PRECONTAMINATION_BASE'             'FOREIGN_PROJECT_RESIDUE=0'             'RUNTIME_MIGRATION=EXPLICIT_KEY_ALLOWLIST_ONLY'             'RAW_LEGACY_FILES_IMPORTED=0'             'ENGINE=OBSERVE_LEARN_PROPOSE_VALIDATE_SHADOW_EXECUTE_READBACK_LEARN'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=LOCAL_GATED_EXECUTOR_ONLY'             'ROLLBACK=MANDATORY'             'EXECUTOR_PACKAGED=YES'             > BUILD_REPORT.txt
+          sha256sum DJAEGER-AI-Adaptive-v1.1.1-33fix.apk DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip > SHA256SUMS.txt
+          printf '%s\n'             'STATUS=33FIX_BUILD_DEVICE_VALIDATION_REQUIRED'             'RUNTIME_DEVICE_VALIDATION=REQUIRED_BEFORE_RELEASE'             'SOURCE_LINEAGE=CLEANROOM_PRECONTAMINATION_BASE'             'FOREIGN_PROJECT_RESIDUE=0'             'RUNTIME_MIGRATION=EXPLICIT_KEY_ALLOWLIST_ONLY'             'RAW_LEGACY_FILES_IMPORTED=0'             'ENGINE=OBSERVE_LEARN_PROPOSE_VALIDATE_SHADOW_EXECUTE_READBACK_MONITOR_KEEP_ROLLBACK_LEARN'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=LOCAL_GATED_EXECUTOR_ONLY'             'ROLLBACK=MANDATORY'             'EXECUTOR_PACKAGED=YES'             > BUILD_REPORT.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-AI-Adaptive-Sync-RC1
+          name: DJAEGER-AI-Adaptive-33FIX-v1.1.1
           path: |
-            out/DJAEGER-AI-Adaptive-v1.1.0-rc1.apk
-            out/DJAEGER-AI-Adaptive-Module-v1.1.0-rc1.zip
+            out/DJAEGER-AI-Adaptive-v1.1.1-33fix.apk
+            out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip
             out/SHA256SUMS.txt
             out/BUILD_REPORT.txt
             out/APKSIGNER_VERIFY.txt
