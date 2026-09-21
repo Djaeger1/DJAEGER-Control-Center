@@ -3,4 +3,4 @@ SEQ='1'
 RELEASE='ADAPTIVE_TRANSPORT_BOOTSTRAP1'
 TARGET_VC='202,203'
 FILE_COUNT='1'
-FILE|adaptive-railway-bridge-v1|bin/railway_bridge.sh|SERVER_REHASH|755
+FILE|adaptive_bridge_v1|bin/railway_bridge.sh|SERVER_REHASH|755
