@@ -1,6 +1,6 @@
 id=djaeger_ai_observer
 name=DJAEGER AI Adaptive
-version=1.1.0-rc1-sync
-versionCode=203
+version=1.1.1-33fix
+versionCode=204
 author=DJAEGER
-description=Device-first adaptive AI RC1: verified APK-module handshake, single runtime credential truth, 4-key per-slot rotation, ONE HERMES health/review, multi-window game detection, gated sysfs readback and rollback.
+description=Device-first adaptive AI 33fix: dynamic contextual THOUGHT, atomic APK-module sync, real outcomes, 4-key rotation, multi-window game detection, exact sysfs readback, fail-closed rollback and learning feedback.
