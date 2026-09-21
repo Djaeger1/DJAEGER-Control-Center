@@ -210,20 +210,6 @@ class DjaegerRepository {
     suspend fun deleteGeminiKey():Pair<Boolean,String> = withContext(Dispatchers.IO){
         val (rc,out)=su("$module/bin/observerctl.sh gemini-key-delete",5000); Pair(rc==0,out.trim())
     }
-    suspend fun syncGeminiKeyPool(keys: List<String>, preferredSlot: Int): String = withContext(Dispatchers.IO) {
-        val clean = keys.map { it.trim() }.filter { it.isNotEmpty() }.take(4)
-        if (clean.isEmpty()) return@withContext "NO_KEYS"
-        val (clearRc, _) = su("$module/bin/observerctl.sh gemini-key-delete", 5000)
-        if (clearRc != 0) return@withContext "CLEAR_FAILED"
-        for (key in clean) {
-            val (addRc, _) = suStdin("$module/bin/observerctl.sh gemini-key-add-stdin", key)
-            if (addRc != 0) return@withContext "SYNC_FAILED"
-        }
-        val selected = preferredSlot.coerceIn(1, clean.size)
-        val (selectRc, _) = su("$module/bin/observerctl.sh gemini-key-select $selected", 5000)
-        if (selectRc != 0) "SELECT_FAILED" else "SYNCED ${clean.size}/4 • ACTIVE $selected"
-    }
-
     suspend fun geminiKeyVaultStatus():Pair<Boolean,String> = withContext(Dispatchers.IO){
         val (rc,out)=su("$module/bin/observerctl.sh gemini-key-vault-status",5000); Pair(rc==0,out.trim())
     }
