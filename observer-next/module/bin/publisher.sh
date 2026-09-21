@@ -160,7 +160,10 @@ publish_cc() {
   _plan_line=""
   if [ -r "$_candidate" ]; then
     _pc="$(pub_kv CONFIDENCE "$_candidate")"; [ -n "$_pc" ] || _pc=0
-    _plan_line="$_epoch,PENDING_SHADOW,$_pc,AI_CONSENSUS_MEASURED_ENVELOPE,OBSERVE,LEARNED,$_lmin,$_lmax,$_bmin,$_bmax,$_gmin,$_gmax"
+    _plmin="$(pub_kv LITTLE_MIN_KHZ "$_candidate")"; _plmax="$(pub_kv LITTLE_MAX_KHZ "$_candidate")"
+    _pbmin="$(pub_kv BIG_MIN_KHZ "$_candidate")"; _pbmax="$(pub_kv BIG_MAX_KHZ "$_candidate")"
+    _pgmin="$(pub_kv GPU_MIN_HZ "$_candidate")"; _pgmax="$(pub_kv GPU_MAX_HZ "$_candidate")"
+    _plan_line="$_epoch,$_shadow_state,$_pc,AI_CONSENSUS_MEASURED_ENVELOPE,ADAPTIVE,LEARNED,$_plmin,$_plmax,$_pbmin,$_pbmax,$_pgmin,$_pgmax"
   fi
 
   _tmp="$_out.tmp.$$"
@@ -185,7 +188,7 @@ publish_cc() {
     echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=GEMINI"
     echo "CLOUD_CONTROL_PROVIDER=NONE"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
     echo "CLOUD_PLAN_STATE=$_cons_state"; echo "CLOUD_PLAN_SCORE=$_gem_conf"; echo "CLOUD_PLAN_REASON=$(pub_clean "$_gem_reason")"
-    echo "HERMES_PROPOSAL_STATE=$_hlocal"; echo "HERMES_PROPOSAL_CONFIDENCE=$_hconf"; echo "HERMES_PROFILE=OBSERVER_NO_FIXED_PROFILE"
+    echo "HERMES_PROPOSAL_STATE=$_hlocal"; echo "HERMES_PROPOSAL_CONFIDENCE=$_hconf"; echo "HERMES_PROFILE=ADAPTIVE_NO_FIXED_PROFILE"
     echo "HERMES_REASON=$(pub_clean "$_hreason")"; echo "HERMES_BACKEND=$([ "$_hroute" = LOCAL ] && echo LOCAL || echo CLOUD)"
     echo "HERMES_CLOUD_STATE=$_hcloud"; echo "HERMES_CLOUD_AUTH=$_hauth"
     echo "HERMES_CLOUD_ROUTE=$_hroute"; echo "HERMES_CLOUD_MODEL=$_hmodel"; echo "HERMES_CLOUD_HTTP_CODE=$_hhttp"
@@ -214,13 +217,13 @@ publish_cc() {
     echo "__HERMES_SKILLS_VNEXT__"; echo "STATE=READY"; echo "SKILLS=VALIDATE_OPP,THERMAL_GUARD,FRAME_GUARD,POWER_GUARD"
     echo "__HERMES_LEARNING_V2__"; echo "STATE=$_learning"; echo "PACKAGE=$_pkg"; echo "SAMPLES=$_samples"
     echo "__HERMES_RESEARCH_V2__"; echo "STATE=$_shadow_state"; echo "SHADOW_WINDOWS=$_shadow_n"
-    echo "__HERMES_HUMAN_COMFORT__"; echo "COMFORT_PRESET=OBSERVER"; echo "STATE=LEARNING_FROM_FEEDBACK"; echo "FIXED_PRESET=DISABLED"
+    echo "__HERMES_HUMAN_COMFORT__"; echo "COMFORT_PRESET=LEARNED"; echo "STATE=LEARNING_FROM_FEEDBACK"; echo "FIXED_PRESET=DISABLED"
     echo "__HERMES_LANGUAGE__"; echo "STATE=STRUCTURED_ONLY"
     echo "__HERMES_MATH__"; echo "STATE=$_learning"; echo "VERIFY=$_shadow_state"; echo "INPUT_SANITY=MEASURED"; echo "TARGET_FRAME_MS=16.67"
     echo "__HERMES_KERNEL1__"; echo "STATE=GATED"; echo "STRATEGY=MEASURED_ADAPTIVE"; echo "BOTTLENECK=$_exec_reason"; echo "CAPABILITIES_TOTAL=3"; echo "ACTUATORS_TOTAL=6"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "ROOT_AUTHORITY_OWNER=LOCAL_EXECUTOR"; echo "SYSFS_OWNER=LOCAL_EXECUTOR"
     echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=3"; echo "ACTUATORS=6"
     echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "APPLIED_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
-    echo "__CONTROL_CENTER_SYNC__"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V1"; echo "MODULE_VERSION_CODE=202"; echo "CONTROL_CENTER_VERSION_CODE=103"; echo "HERMES_CLOUD=ADVISORY_REVIEW"; echo "HERMES_CLOUD_ROLE=ONE_HERMES_REVIEWER"; echo "HERMES_BACKEND_PRIORITY=LOCAL_GUARD_THEN_CLOUD_REVIEW"; echo "WORKLOAD_FINAL=OBSERVER_CLASSIFIER"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=DISABLED_NO_EXECUTOR"
+    echo "__CONTROL_CENTER_SYNC__"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V1"; echo "MODULE_VERSION_CODE=202"; echo "CONTROL_CENTER_VERSION_CODE=103"; echo "HERMES_CLOUD=ADVISORY_REVIEW"; echo "HERMES_CLOUD_ROLE=ONE_HERMES_REVIEWER"; echo "HERMES_BACKEND_PRIORITY=LOCAL_GUARD_THEN_CLOUD_REVIEW"; echo "WORKLOAD_FINAL=ADAPTIVE_CLASSIFIER"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=ACTIVE_LOCAL_GATED"
     echo "__STRATEGY_RESULT__"; echo "VALIDATION=$_cons_state"; echo "READBACK=STOCK"; echo "OUTCOME=$_shadow_state"
     echo "__ENV__"; [ -r "$_learn" ] && cat "$_learn"
     echo "__HTTP__"; [ -r "$_gem_state" ] && cat "$_gem_state" || true
@@ -236,9 +239,9 @@ publish_cc() {
     echo "__POLICY_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "BASELINE=$_learning"
     echo "__ATTRIBUTION__"; echo "SOURCE=MEASURED_STOCK"
     echo "__WORKLOAD_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD_CLASS=$_workload"; echo "WORKLOAD_PROFILE=STOCK_OBSERVER"; echo "SUBJECT_CLASS=$_workload"; echo "REASONING_DOMAIN=$_workload"; echo "GAME_SEMANTICS=REGISTRY_ONLY"; echo "FRAME_SEMANTICS=EVIDENCE_ONLY"; echo "SOURCE=$_workload_source"; echo "CONFIDENCE=$([ "$_workload_source" = GAME_REGISTRY ] && echo 100 || echo 60)"; echo "GAME_REGISTRY_AUTHORITY=MANUAL_PLUS_BUILTIN"
-    echo "__WORKLOAD_GATE__"; echo "GAME_ONLY=OBSERVE"; echo "APP_ONLY=OBSERVE"; echo "SYSTEM_ONLY=OBSERVE"
-    echo "__PROPOSAL_BINDING__"; echo "LATEST_PROPOSAL_SOURCE=$_plan_provider"; echo "LATEST_SUBJECT_PACKAGE=$_pkg"; echo "LATEST_SUBJECT_CLASS=$_workload"; echo "LATEST_BINDING_DECISION=$_cons_state"; echo "LATEST_BINDING_REASON=NO_EXECUTOR"
-    echo "__WORKLOAD_FINAL__"; echo "STATUS=ACTIVE"; echo "DUAL_REGISTRY=SEPARATE"; echo "REGISTRY_CONFLICTS=0"; echo "EXECUTION_SCOPE=NONE"; echo "APP_GAME_POLICY=NEVER_PROMOTE"; echo "SYSTEM_GAME_POLICY=NEVER_PROMOTE"; echo "UNKNOWN_GAME_POLICY=OBSERVE_ONLY"; echo "STALE_POLICY=FAIL_CLOSED"; echo "LEARNING_ISOLATION=PER_PACKAGE"; echo "ROOT_AUTHORITY_CHANGED=NO"; echo "SYSFS_AUTHORITY_CHANGED=NO"; echo "RESCUE_PATH_CHANGED=NO"
+    echo "__WORKLOAD_GATE__"; echo "GAME_ONLY=ADAPTIVE_GATED"; echo "APP_ONLY=OBSERVE"; echo "SYSTEM_ONLY=OBSERVE"
+    echo "__PROPOSAL_BINDING__"; echo "LATEST_PROPOSAL_SOURCE=$_plan_provider"; echo "LATEST_SUBJECT_PACKAGE=$_pkg"; echo "LATEST_SUBJECT_CLASS=$_workload"; echo "LATEST_BINDING_DECISION=$_cons_state"; echo "LATEST_BINDING_REASON=$_exec_reason"
+    echo "__WORKLOAD_FINAL__"; echo "STATUS=ACTIVE"; echo "DUAL_REGISTRY=SEPARATE"; echo "REGISTRY_CONFLICTS=0"; echo "EXECUTION_SCOPE=GAME_ONLY_LOCAL_GATED"; echo "APP_GAME_POLICY=NEVER_PROMOTE"; echo "SYSTEM_GAME_POLICY=NEVER_PROMOTE"; echo "UNKNOWN_GAME_POLICY=OBSERVE_ONLY"; echo "STALE_POLICY=FAIL_CLOSED"; echo "LEARNING_ISOLATION=PER_PACKAGE"; echo "ROOT_AUTHORITY_CHANGED=LOCAL_EXECUTOR_ONLY"; echo "SYSFS_AUTHORITY_CHANGED=LOCAL_EXECUTOR_ONLY"; echo "RESCUE_PATH_CHANGED=NO"
     echo "__WORKLOAD_EXEC_GUARD__"; echo "DECISION=$([ "$_exec_state" = APPLIED ] && echo ALLOW || echo BLOCK)"; echo "REASON=$_exec_reason"
     echo "__APP_REGISTRY__"; [ -r "$_root/config/app_registry.tsv" ] && cat "$_root/config/app_registry.tsv" || true
     echo "__GAME_REGISTRY_MANUAL__"; [ -r "$_root/config/game_registry.tsv" ] && cat "$_root/config/game_registry.tsv" || true
