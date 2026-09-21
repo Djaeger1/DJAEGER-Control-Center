@@ -15,7 +15,7 @@ data class AppRegistryEntry(val type:String,val packageName:String,val displayNa
 data class StrategyTruth(val source:String="UNAVAILABLE",val proposal:String="UNAVAILABLE",val validation:String="UNAVAILABLE",val applied:String="UNAVAILABLE",val readback:String="UNAVAILABLE",val outcome:String="UNAVAILABLE",val cpuLittleMin:String="—",val cpuLittleMax:String="—",val cpuBigMin:String="—",val cpuBigMax:String="—",val gpuMin:String="—",val gpuMax:String="—",val cpuGovernor:String="—",val gpuGovernor:String="—",val powerBias:String="—",val burstLease:String="—",val comfortCeiling:String="—",val confidence:String="—",val rationale:String="Not published by current DJAEGER module",val fpsOutcome:String="—",val frameOutcome:String="—",val thermalOutcome:String="—",val powerOutcome:String="—",val learningSamples:String="—",val learningConfidence:String="—",val learningPromotion:String="—")
 
 data class R16Plan(val epoch:String,val state:String,val score:String,val reason:String,val mode:String,val profile:String,val lmin:String,val lmax:String,val bmin:String,val bmax:String,val gmin:String,val gmax:String)
-fun parseR16Plan(raw:String):R16Plan?=raw.lineSequence().map{it.trim()}.filter{it.isNotBlank()}.mapNotNull{line->val p=line.split(',');if(p.size>=12&&p[0].toLongOrNull()!=null)R16Plan(p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8],p[9],p[10],p[11])else null}.lastOrNull{it.state in setOf("PROMOTED","PASS","APPLIED")}
+fun parseR16Plan(raw:String):R16Plan?=raw.lineSequence().map{it.trim()}.filter{it.isNotBlank()}.mapNotNull{line->val p=line.split(',');if(p.size>=12&&p[0].toLongOrNull()!=null)R16Plan(p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],p[8],p[9],p[10],p[11])else null}.lastOrNull{it.state=="PROMOTED"}
 
 data class RuntimeState(val root:Boolean=false,val sampleFresh:Boolean=false,val installed:Boolean=false,val active:String="0",val game:String="NA",val window:String="INACTIVE",val controllerPid:String="",val predictorPid:String="",val updated:Long=0,val userMode:String="AUTO",val moduleVersion:String="unknown",val telemetry:Telemetry=Telemetry(),val brain:String="",val thoughts:String="",val memoryStatus:String="",val strategyResult:String="",val execution:String="",val authority:String="",val sessionSafety:String="",val supervisor:String="",val hermesCtx1Status:String="",val hermesCtx1Runtime:String="",val hermesCtx1Safety:String="",val hermesCtx1Hardware:String="",val hermesCtx1Memory:String="",val hermesCtx1Learning:String="",val hermesCognitionStatus:String="",val hermesMemoryVNext:String="",val hermesReasoningV2:String="",val hermesSkillsVNext:String="",val hermesLearningV2:String="",val hermesResearchV2:String="",val hermesHumanComfort:String="",val hermesLanguage:String="",val hermesMath:String="",val hermesKernel1:String="",val agentSysfs1Capability:String="",val agentSysfs1Execution:String="",val controlCenterSync:String="",val workloadContext:String="",val workloadGate:String="",val proposalBinding:String="",val workloadFinal:String="",val workloadExecGuard:String="",val appRegistry:String="",val gameRegistryManual:String="",val envelope:String="",val geminiHttp:String="",val geminiServer:String="",val decisions:String="",val plans:String="",val frameIntel:String="",val log:String="",val latestDecision:DecisionRecord?=null,val latestPlan:PlanRecord?=null,val error:String="",val network:NetworkState=NetworkState(),val bugHealth:BugHealthState=BugHealthState(),val strategy:StrategyTruth=StrategyTruth())
 
@@ -23,7 +23,7 @@ class DjaegerRepository {
     private var lastGoodNetwork:NetworkState?=null
     private var lastGoodNetworkAt:Long=0L
     private val module="/data/adb/modules/djaeger_ai_observer"; private val persistent="/data/adb/djaeger_observer"
-    private val apkVersionCode=104
+    private val apkVersionCode=105
     private val syncSchema="DJAEGER_AI_ADAPTIVE_V2"
     private fun su(command:String,timeoutMs:Long=2500):Pair<Int,String> {
         val readerExecutor=Executors.newSingleThreadExecutor()
@@ -109,7 +109,7 @@ class DjaegerRepository {
             validation=plan?.let{"${it.state} score=${it.score}: ${it.reason}"}?:"UNAVAILABLE",
             applied=execKv["STATUS"] ?: "IDLE",
             readback=execKv["READBACK"] ?: "UNAVAILABLE",
-            outcome=dec?.outcome?:"UNAVAILABLE",
+            outcome=AtomicSnapshot.keyValues(mapped.memoryStatus)["LAST_OUTCOME"] ?: dec?.outcome ?: "UNAVAILABLE",
             cpuLittleMin=plan?.lmin?:"—",cpuLittleMax=plan?.lmax?:"—",cpuBigMin=plan?.bmin?:"—",cpuBigMax=plan?.bmax?:"—",gpuMin=plan?.gmin?:"—",gpuMax=plan?.gmax?:"—",
             confidence=plan?.score?:rv("STRATEGY_CONFIDENCE","CONFIDENCE"),
             rationale=plan?.reason?:rv("STRATEGY_RATIONALE","RATIONALE"),
@@ -152,7 +152,11 @@ class DjaegerRepository {
     suspend fun synchronizeLocal():Pair<Boolean,String> = withContext(Dispatchers.IO) {
         val requestId="cc-"+System.currentTimeMillis().toString()
         val (rc,out)=su("$module/bin/observerctl.sh sync-request $apkVersionCode $syncSchema $requestId",7000)
-        Pair(rc==0,out.trim().ifBlank{if(rc==0)"SYNC_STATUS=EMPTY_ACK" else "SYNC_STATUS=FAILED"})
+        val body=out.trim()
+        val ack=body.lineSequence().any{it=="ACK_ID=$requestId"}
+        val paired=body.lineSequence().any{it=="PAIR_VERIFIED=YES"}
+        val verified=body.lineSequence().any{it=="SYNC_STATUS=VERIFIED"}
+        Pair(rc==0&&ack&&paired&&verified,body.ifBlank{if(rc==0)"SYNC_STATUS=EMPTY_ACK" else "SYNC_STATUS=FAILED"})
     }
 
     suspend fun credentialStatus():Pair<Boolean,String> = withContext(Dispatchers.IO) {
