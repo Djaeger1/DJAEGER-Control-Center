@@ -1,6 +1,6 @@
 id=djaeger_ai_observer
-name=DJAEGER AI Observer
-version=0.2.1-observer-next
-versionCode=201
+name=DJAEGER AI Adaptive
+version=1.0.0-adaptive-clean
+versionCode=202
 author=DJAEGER
-description=Read-only validation: stock learning, Gemini + ONE HERMES review, counterfactual shadow evidence, legacy credential migration, and no sysfs execution.
+description=Device-first adaptive AI: CPU/GPU/frame/thermal/power learning, Gemini plus ONE HERMES consensus, shadow validation, local-only gated sysfs execution, rollback, and clean credential migration.
