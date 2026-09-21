@@ -122,8 +122,8 @@ sync_request() {
   [ -n "$req" ] || { echo "SYNC_STATUS=REJECTED"; echo "REASON=INVALID_REQUEST_ID"; return 2; }
   module_code=$(sed -n 's/^versionCode=//p' "$MODDIR/module.prop" 2>/dev/null | head -n1)
   [ -n "$module_code" ] || module_code=0
-  expected_apk=104
-  pair=NO; [ "$apk" = "$expected_apk" ] && [ "$module_code" = 203 ] && pair=YES
+  expected_apk=105
+  pair=NO; [ "$apk" = "$expected_apk" ] && [ "$module_code" = 204 ] && pair=YES
   now=$(date +%s)
   tmp="$(mktemp "${HANDSHAKE}.tmp.XXXXXX" 2>/dev/null)"; [ -n "$tmp" ] || tmp="${HANDSHAKE}.tmp.${now}"
   {
@@ -302,6 +302,9 @@ case "$1" in
       echo "SNAPSHOT=AVAILABLE"
       echo "CONTRACT=$(sed -n '/^__CONTROL_CENTER_SYNC__$/,/^__/s/^CONTRACT=//p' "$snap" | head -n1)"
       echo "UPDATED_AT=$(sed -n '/^__RUNTIME__$/,/^__/s/^UPDATED_AT=//p' "$snap" | head -n1)"
+      echo "SNAPSHOT_GENERATION=$(sed -n '/^__CONTROL_CENTER_SYNC__$/,/^__/s/^SNAPSHOT_GENERATION=//p' "$snap" | head -n1)"
+      echo "PAIR_VERIFIED=$(sed -n '/^__CONTROL_CENTER_SYNC__$/,/^__/s/^PAIR_VERIFIED=//p' "$snap" | head -n1)"
+      echo "HANDSHAKE_ACK_ID=$(sed -n '/^__CONTROL_CENTER_SYNC__$/,/^__/s/^HANDSHAKE_ACK_ID=//p' "$snap" | head -n1)"
       echo "ATOMIC_PUBLISH=YES"
     else echo "SNAPSHOT=UNAVAILABLE"; exit 2; fi ;;
   game-registry-list) registry_list game ;;
