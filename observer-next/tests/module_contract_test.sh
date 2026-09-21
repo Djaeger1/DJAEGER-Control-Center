@@ -199,18 +199,74 @@ grep -Fqx '2400000' "$BP/scaling_max_freq"
 grep -Fqx '900000000' "$GP/max_freq"
 grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
 
+# Re-apply the same approved candidate and prove active sysfs drift is detected.
+cat > "$TEST_ROOT/policy/approved.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_V1
+AT=$NOW
+EXPIRES_AT=$((NOW+180))
+EXECUTOR_ALLOWED=YES
+PACKAGE=sts.al
+CANDIDATE_DIGEST=abc123
+LITTLE_MIN_KHZ=600000
+LITTLE_MAX_KHZ=1400000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=1800000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=600000000
+EOF
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+printf '1800000\n' > "$LP/scaling_max_freq"
+if DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once; then
+  echo "expected SYSFS drift reconciliation to return non-zero" >&2
+  exit 1
+fi
+grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=SYSFS_DRIFT' "$TEST_ROOT/runtime/execution.env"
+test ! -e "$TEST_ROOT/runtime/execution_backup.env"
+
+# Prove failed restore is fail-closed and preserves the recovery backup.
+cat > "$TEST_ROOT/policy/approved.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_V1
+AT=$NOW
+EXPIRES_AT=$((NOW+180))
+EXECUTOR_ALLOWED=YES
+PACKAGE=sts.al
+CANDIDATE_DIGEST=abc123
+LITTLE_MIN_KHZ=600000
+LITTLE_MAX_KHZ=1400000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=1800000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=600000000
+EOF
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+rm -f "$TEST_ROOT/policy/approved.env"
+chmod 444 "$GP/max_freq"
+if DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once; then
+  echo "expected failed restore to return non-zero" >&2
+  exit 1
+fi
+grep -Fqx 'EXECUTOR_STATE=ROLLBACK_FAILED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'ROLLBACK_STATE=RESTORE_FAILED' "$TEST_ROOT/runtime/execution.env"
+test -r "$TEST_ROOT/runtime/execution_backup.env"
+grep -Fq ',ROLLBACK_FAILED,' "$TEST_ROOT/history/outcomes.csv"
+chmod 666 "$GP/max_freq"
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once || true
+grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
+test ! -e "$TEST_ROOT/runtime/execution_backup.env"
+
 cat > "$TEST_ROOT/recovery/migration.env" <<EOF
 MIGRATION_STATE=CLEAN_IMPORT_CREATED
 CREDENTIAL_FILE_COUNT=4
 EOF
 
-SYNC_OUT=$(run_ctl sync-request 104 DJAEGER_AI_ADAPTIVE_V2 contract-test-1)
+SYNC_OUT=$(run_ctl sync-request 105 DJAEGER_AI_ADAPTIVE_V2 contract-test-1)
 grep -Fqx 'SYNC_STATUS=VERIFIED' <<<"$SYNC_OUT"
 grep -Fqx 'PAIR_VERIFIED=YES' <<<"$SYNC_OUT"
 SNAPSHOT="$TEST_ROOT/cc_snapshot"
 grep -Fqx 'CONTRACT=DJAEGER_AI_ADAPTIVE_V2' "$SNAPSHOT"
-grep -Fqx 'MODULE_VERSION_CODE=203' "$SNAPSHOT"
-grep -Fqx 'CONTROL_CENTER_VERSION_CODE=104' "$SNAPSHOT"
+grep -Fqx 'MODULE_VERSION_CODE=204' "$SNAPSHOT"
+grep -Fqx 'CONTROL_CENTER_VERSION_CODE=105' "$SNAPSHOT"
 grep -Fqx 'PAIR_VERIFIED=YES' "$SNAPSHOT"
 grep -Fqx 'HANDSHAKE_SCHEMA=DJAEGER_AI_ADAPTIVE_V2' "$SNAPSHOT"
 grep -Fq 'SNAPSHOT_GENERATION=' "$SNAPSHOT"
@@ -221,6 +277,22 @@ grep -Fqx 'CLOUD_HARDWARE_AUTHORITY=NONE' "$SNAPSHOT"
 grep -Fqx 'SHARED_INTELLIGENCE=MEASURED_DEVICE_CONTEXT_V2' "$SNAPSHOT"
 grep -Fqx 'GEMINI_INTELLIGENCE_SCOPE=PROPOSE_DEVICE_BOUNDED' "$SNAPSHOT"
 grep -Fqx 'HERMES_INTELLIGENCE_SCOPE=LOCAL_VALIDATE_PLUS_CLOUD_REVIEW' "$SNAPSHOT"
+grep -Fqx 'SOURCE=LOCAL_EXECUTOR' "$SNAPSHOT"
+grep -Fqx 'CONTEXT_PACKAGE=sts.al' "$SNAPSHOT"
+grep -Fqx 'CONTEXT_CLASS=GAME' "$SNAPSHOT"
+grep -Fq 'TEXT=Range adaptive sts.al dibatalkan' "$SNAPSHOT"
+grep -Eq '^HARDWARE_OUTCOME_ROWS=[1-9][0-9]*
+grep -Fq 'GEMINI_KEY_COUNT=1' <<<"$CRED"
+grep -Fq 'HERMES_ACCESS_KEY_PRESENT=YES' <<<"$CRED"
+! grep -Fq "$FAKE_KEY" <<<"$CRED"
+! grep -Fq 'hermes-clean-token' <<<"$CRED"
+
+echo 'module-contract-tests=PASS'
+ "$SNAPSHOT"
+grep -Fqx 'LAST_OUTCOME=ROLLED_BACK' "$SNAPSHOT"
+! grep -Fq 'CPU/GPU, thermal, power, and frame behavior is being learned' "$SNAPSHOT"
+grep -Fq 'WCLASS\" != GAME' "$MODULE/bin/frame_observer.sh"
+grep -Fq 'WCLASS\" != APP' "$MODULE/bin/frame_observer.sh"
 
 CRED=$(run_ctl credential-status)
 grep -Fq 'GEMINI_KEY_COUNT=1' <<<"$CRED"
