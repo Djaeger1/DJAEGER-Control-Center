@@ -41,6 +41,8 @@ const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'htt
    const vc=str(u.searchParams.get('vc'),32),rootDir=updateRootForVc(vc),channel=rootDir===ADAPTIVE_UPDATE_ROOT?'adaptive':'stable';
    console.log(JSON.stringify({event:'DJAEGER_UPDATE_POLL',vc,channel,device_id_hash:deviceHash(u.searchParams.get('device_id')),update_poll_count:updatePolls,at:now()}));
    const raw=renderManifest(rootDir); if(raw==null)return send(res,404,{ok:false,error:'update_manifest_missing',channel});
+   const fileLines=raw.split(/\r?\n/).filter(line=>line.startsWith('FILE|'));
+   console.log(JSON.stringify({event:'DJAEGER_UPDATE_MANIFEST_SERVED',vc,channel,file_line_count:fileLines.length,file_ids:fileLines.map(line=>line.split('|')[1]).filter(Boolean),manifest_bytes:Buffer.byteLength(raw),at:now()}));
    return sendRaw(res,200,raw,'text/plain; charset=utf-8');
  }
  if(req.method==='GET'&&u.pathname.startsWith('/v1/device/update/file/')){
