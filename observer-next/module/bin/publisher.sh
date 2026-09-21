@@ -155,6 +155,7 @@ publish_cc() {
   else _history_bytes=0
   fi
   case "$_history_bytes" in ''|*[!0-9]*) _history_bytes=0;; esac
+  _exec_mode="$(cat "$_root/config/execution_mode" 2>/dev/null | head -n1)"; [ -n "$_exec_mode" ] || _exec_mode=AUTO
   _runtime_profile=LEARNED_PENDING; [ "$_exec_state" = APPLIED ] && _runtime_profile=ADAPTIVE_LEARNED
   _tel="$_epoch,$_cpu_t,$_gpu_t,$_skin_t,$_bat_t,$_little,$_big,$_gpu,$_runtime_profile,$_frame_ms,$_fps,$_jank,$_p95,$_p99,0,$_battery_status,$_current,$_voltage,$_power,$_power_valid,$_power_reason,$_pkg,$_window"
   _frame_line="$_epoch,$_runtime_profile,$_frame_ms,$_fps,$_jank,$_p95,$_p99"
@@ -173,7 +174,7 @@ publish_cc() {
     echo "__VERSION__"; echo "1.0.0-adaptive-clean"
     echo "__RUNTIME__"
     echo "UPDATED_AT=$_epoch"; echo "ACTIVE=$_active"; echo "GAME=$_pkg"; echo "WINDOW_MODE=$_window"
-    echo "CONTROLLER_PID=$$"; echo "PREDICTOR_PID="; echo "USER_MODE=OBSERVER"
+    echo "CONTROLLER_PID=$"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
     echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
     echo "__TEL__"; echo "$_tel"
     echo "__BRAIN__"
