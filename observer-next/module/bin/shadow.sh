@@ -1,22 +1,22 @@
 #!/system/bin/sh
-
-# Counterfactual shadow evaluator. It only compares naturally occurring stock
-# samples that already fall inside the proposed envelope. It never applies the
-# candidate and cannot enable the executor.
+# Counterfactual shadow evaluator. It compares naturally occurring stock
+# samples inside the proposed envelope. It never writes hardware.
 
 ROOT="$1"
 HISTORY="$ROOT/history/telemetry.csv"
 LEARN="$ROOT/history/learned_envelope.env"
 POLICY="$ROOT/policy/candidate.env"
 OUT="$ROOT/runtime/shadow.env"
+APPROVAL="$ROOT/policy/approved.env"
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 
 publish(){
+  _state="$1"; _reason="$2"; _now="$(date +%s)"
   t="$OUT.tmp.$$"
   {
-    echo "SHADOW_STATE=$1"
-    echo "SHADOW_REASON=$2"
+    echo "SHADOW_STATE=$_state"
+    echo "SHADOW_REASON=$_reason"
     echo "CANDIDATE_DIGEST=${DIGEST:-NA}"
     echo "SHADOW_WINDOWS=${WINDOWS:-0}"
     echo "SHADOW_FPS_AVG=${FPS_AVG:-NA}"
@@ -24,17 +24,38 @@ publish(){
     echo "SHADOW_P95_AVG=${P95_AVG:-NA}"
     echo "SHADOW_POWER_AVG_MW=${POWER_AVG:-NA}"
     echo "SHADOW_POWER_WINDOWS=${POWER_N:-0}"
-    echo "EXECUTOR_ENABLED=0"
-    echo "UPDATED_AT=$(date +%s)"
+    echo "UPDATED_AT=$_now"
   } > "$t"
   chmod 600 "$t"; mv -f "$t" "$OUT"
+
+  if [ "$_state" = PASS ] && [ -r "$POLICY" ]; then
+    _a="$APPROVAL.tmp.$$"
+    {
+      echo "SCHEMA=DJAEGER_EXEC_APPROVAL_V1"
+      echo "AT=$_now"
+      echo "EXPIRES_AT=$((_now+180))"
+      echo "EXECUTOR_ALLOWED=YES"
+      echo "PACKAGE=$(kv PACKAGE "$POLICY")"
+      echo "CANDIDATE_DIGEST=$(kv CANDIDATE_DIGEST "$POLICY")"
+      echo "LITTLE_MIN_KHZ=$(kv LITTLE_MIN_KHZ "$POLICY")"
+      echo "LITTLE_MAX_KHZ=$(kv LITTLE_MAX_KHZ "$POLICY")"
+      echo "BIG_MIN_KHZ=$(kv BIG_MIN_KHZ "$POLICY")"
+      echo "BIG_MAX_KHZ=$(kv BIG_MAX_KHZ "$POLICY")"
+      echo "GPU_MIN_HZ=$(kv GPU_MIN_HZ "$POLICY")"
+      echo "GPU_MAX_HZ=$(kv GPU_MAX_HZ "$POLICY")"
+      echo "AUTHORITY=LOCAL_EXECUTOR_ONLY"
+    } > "$_a"
+    chmod 600 "$_a"; mv -f "$_a" "$APPROVAL"
+  else
+    rm -f "$APPROVAL"
+  fi
 }
 
 while true; do
   DIGEST=NA; WINDOWS=0; FPS_AVG=NA; JANK_AVG=NA; P95_AVG=NA; POWER_AVG=NA; POWER_N=0
   [ -r "$POLICY" ] && [ -r "$HISTORY" ] && [ -r "$LEARN" ] || { publish WAITING candidate_or_history_missing; sleep 60; continue; }
   [ "$(kv VERDICT "$POLICY")" = PROPOSED ] || { publish WAITING candidate_not_proposed; sleep 60; continue; }
-  [ "$(kv EXECUTOR_ENABLED "$POLICY")" = 0 ] || { publish REJECT executor_gate_must_remain_zero; sleep 60; continue; }
+  [ "$(kv EXECUTOR_ENABLED "$POLICY")" = 0 ] || { publish REJECT candidate_must_not_self_enable; sleep 60; continue; }
 
   DIGEST=$(kv CANDIDATE_DIGEST "$POLICY"); PKG=$(kv PACKAGE "$POLICY")
   LMIN=$(kv LITTLE_MIN_KHZ "$POLICY"); LMAX=$(kv LITTLE_MAX_KHZ "$POLICY")
@@ -60,8 +81,12 @@ while true; do
 
   BASE_FPS=$(kv FPS_P50 "$LEARN"); BASE_JANK=$(kv JANK_P95 "$LEARN"); BASE_P95=$(kv FRAME_P95_P95_MS "$LEARN"); BASE_POWER=$(kv POWER_P95_MW "$LEARN")
   case "$BASE_FPS:$BASE_JANK:$BASE_P95:$BASE_POWER" in *[!0-9.:]*|:*) publish WAITING baseline_metric_missing; sleep 60; continue;; esac
-  awk -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v bw="$BASE_POWER" 'BEGIN{
+  if awk -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v bw="$BASE_POWER" 'BEGIN{
     ok=(bf>0&&bp>0&&bw>0&&f>=bf*0.98&&p<=bp*1.05&&w<=bw&&((bj<=0&&j<=1)||(bj>0&&j<=bj*1.05))); exit !ok
-  }' && publish PASS frame_and_power_not_worse || publish REJECT frame_or_power_regression
+  }'; then
+    publish PASS frame_and_power_not_worse
+  else
+    publish REJECT frame_or_power_regression
+  fi
   sleep 60
 done
