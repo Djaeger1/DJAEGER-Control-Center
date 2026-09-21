@@ -234,7 +234,7 @@ publish_cc() {
     echo "__LOG__"; [ -r "$_root/runtime/events.log" ] && tail -n 80 "$_root/runtime/events.log" || true
     echo "__NETWORK__"; echo "SESSION_ACTIVE=0"; echo "QUALITY=UNMEASURED"
     echo "__REASONING__"; echo "STATE=$_cons_state"
-    echo "__RESYNC__"; echo "STATE=MATCHED"; echo "CONTRACT=OBSERVER_NEXT_V1"
+    echo "__RESYNC__"; echo "STATE=MATCHED"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V1"
     echo "__EXECUTION__"; echo "STATUS=$_exec_state"; echo "READBACK=$_readback"; echo "ROLLBACK=$_rollback"; echo "RAILWAY=$_railway_state"
     echo "__POLICY_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "BASELINE=$_learning"
     echo "__ATTRIBUTION__"; echo "SOURCE=MEASURED_STOCK"
