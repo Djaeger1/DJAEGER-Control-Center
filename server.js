@@ -5,6 +5,7 @@ const TOKEN=String(process.env.DJAEGER_ACCESS_TOKEN||'');
 const MAX=Math.max(20,Math.min(1000,Number(process.env.MAX_TRACES||240)));
 const samples=[]; const proposals=[]; let lastDevice=null;
 let telemetryAccepted=0,lastDeviceReceivedMs=0;
+let updatePolls=0,lastUpdatePollMs=0,updateAcks=0,authRejects=0,lastAuthRejectMs=0;
 const startedAtMs=Date.now();
 const release='DJAEGER_AI_CORE_DIAG_V3_TELEMETRY_RESTORE';
 const UPDATE_ROOT=path.join(__dirname,'updates','stable');
@@ -20,11 +21,12 @@ function num(v,min,max){if(v==null||v===''||String(v).toUpperCase()==='NA')retur
 function normalize(x){if(!x||typeof x!=='object'||Array.isArray(x))throw Object.assign(new Error('invalid_payload'),{code:400});return {schema:str(x.schema,64)||'DJAEGER_AI_TELEMETRY_V1',device_id:str(x.device_id,96),at:num(x.at,0,4102444800)||Math.floor(Date.now()/1000),module_version:str(x.module_version,96),module_version_code:str(x.module_version_code,32),workload_class:str(x.workload_class,32),window_mode:str(x.window_mode,32),package:str(x.package??x.subject_package,160),cpu_little_khz:num(x.cpu_little_khz,0,5000000),cpu_big_khz:num(x.cpu_big_khz,0,5000000),gpu_hz:num(x.gpu_hz,0,3000000000),skin_temp_c:num(x.skin_temp_c,-30,150),battery_temp_c:num(x.battery_temp_c,-30,100),cpu_temp_c:num(x.cpu_temp_c,-30,150),gpu_temp_c:num(x.gpu_temp_c,-30,150),power_mw:num(x.power_mw,0,50000),fps:num(x.fps,0,1000),jank_pct:num(x.jank_pct,0,100),source:str(x.source,64)||'LOCAL_OBSERVER',server_received_at:now()};}
 function push(a,v){a.unshift(v);if(a.length>MAX)a.length=MAX;}
 const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');
- if(req.method==='GET'&&u.pathname==='/health'){const age=lastDeviceReceivedMs?Math.max(0,Math.floor((Date.now()-lastDeviceReceivedMs)/1000)):null;return send(res,200,{ok:true,service:'DJAEGER_AI_CORE',release,hardware_authority:'NONE',foreign_runtime_dependencies:0,uptime_sec:Math.floor((Date.now()-startedAtMs)/1000),telemetry_seen:lastDeviceReceivedMs>0,telemetry_accepted:telemetryAccepted,last_telemetry_age_sec:age});}
+ if(req.method==='GET'&&u.pathname==='/health'){const age=lastDeviceReceivedMs?Math.max(0,Math.floor((Date.now()-lastDeviceReceivedMs)/1000)):null;const pollAge=lastUpdatePollMs?Math.max(0,Math.floor((Date.now()-lastUpdatePollMs)/1000)):null;const authAge=lastAuthRejectMs?Math.max(0,Math.floor((Date.now()-lastAuthRejectMs)/1000)):null;return send(res,200,{ok:true,service:'DJAEGER_AI_CORE',release,hardware_authority:'NONE',foreign_runtime_dependencies:0,uptime_sec:Math.floor((Date.now()-startedAtMs)/1000),telemetry_seen:lastDeviceReceivedMs>0,telemetry_accepted:telemetryAccepted,last_telemetry_age_sec:age,update_poll_seen:lastUpdatePollMs>0,update_poll_count:updatePolls,last_update_poll_age_sec:pollAge,update_ack_count:updateAcks,auth_reject_count:authRejects,last_auth_reject_age_sec:authAge});}
  if(req.method==='GET'&&u.pathname==='/ready')return send(res,200,{ok:true,ready:true,release});
- if(!auth(req)){console.warn(JSON.stringify({event:'DJAEGER_AUTH_REJECT',method:req.method,path:u.pathname,at:now()}));return send(res,401,{ok:false,error:'unauthorized'});}
+ if(!auth(req)){authRejects++;lastAuthRejectMs=Date.now();console.warn(JSON.stringify({event:'DJAEGER_AUTH_REJECT',method:req.method,path:u.pathname,auth_reject_count:authRejects,at:now()}));return send(res,401,{ok:false,error:'unauthorized'});}
  if(req.method==='GET'&&u.pathname==='/v1/device/update/manifest.txt'){
-   console.log(JSON.stringify({event:'DJAEGER_UPDATE_POLL',vc:str(u.searchParams.get('vc'),32),device_id_hash:deviceHash(u.searchParams.get('device_id')),at:now()}));
+   updatePolls++;lastUpdatePollMs=Date.now();
+   console.log(JSON.stringify({event:'DJAEGER_UPDATE_POLL',vc:str(u.searchParams.get('vc'),32),device_id_hash:deviceHash(u.searchParams.get('device_id')),update_poll_count:updatePolls,at:now()}));
    const mf=path.join(UPDATE_ROOT,'manifest.txt'); if(!fs.existsSync(mf))return send(res,404,{ok:false,error:'update_manifest_missing'});
    const root=path.join(UPDATE_ROOT,'files')+path.sep;
    const raw=fs.readFileSync(mf,'utf8').split(/\r?\n/).map(line=>{if(!line.startsWith('FILE|'))return line;const p=line.split('|');if(p.length!==5||!/^[A-Za-z0-9._-]+$/.test(p[1]))return line;const fp=path.join(UPDATE_ROOT,'files',p[1]);if(!fp.startsWith(root)||!fs.existsSync(fp))return line;p[3]=crypto.createHash('sha256').update(fs.readFileSync(fp)).digest('hex');return p.join('|');}).join('\n');
@@ -37,6 +39,7 @@ const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'htt
    return sendRaw(res,200,fs.readFileSync(fp));
  }
  if(req.method==='POST'&&u.pathname==='/v1/device/update/ack'){
+   updateAcks++;
    const x=await readJson(req); lastUpdateAck={device_id_hash:deviceHash(x.device_id),seq:num(x.seq,0,1000000000),release:str(x.release,128),state:str(x.state,64),detail:str(x.detail,256),module_version_code:str(x.module_version_code,32),server_received_at:now()};
    console.log(JSON.stringify({event:'DJAEGER_UPDATE_ACK',ack:lastUpdateAck,at:now()})); return send(res,200,{ok:true,accepted:true});
  }
