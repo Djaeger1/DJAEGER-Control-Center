@@ -281,18 +281,13 @@ grep -Fqx 'SOURCE=LOCAL_EXECUTOR' "$SNAPSHOT"
 grep -Fqx 'CONTEXT_PACKAGE=sts.al' "$SNAPSHOT"
 grep -Fqx 'CONTEXT_CLASS=GAME' "$SNAPSHOT"
 grep -Fq 'TEXT=Range adaptive sts.al dibatalkan' "$SNAPSHOT"
-grep -Eq '^HARDWARE_OUTCOME_ROWS=[1-9][0-9]*
-grep -Fq 'GEMINI_KEY_COUNT=1' <<<"$CRED"
-grep -Fq 'HERMES_ACCESS_KEY_PRESENT=YES' <<<"$CRED"
-! grep -Fq "$FAKE_KEY" <<<"$CRED"
-! grep -Fq 'hermes-clean-token' <<<"$CRED"
-
-echo 'module-contract-tests=PASS'
- "$SNAPSHOT"
+grep -E '^HARDWARE_OUTCOME_ROWS=[1-9][0-9]*$' "$SNAPSHOT"
 grep -Fqx 'LAST_OUTCOME=ROLLED_BACK' "$SNAPSHOT"
 ! grep -Fq 'CPU/GPU, thermal, power, and frame behavior is being learned' "$SNAPSHOT"
 grep -Fq '[ "$WCLASS" != GAME ]' "$MODULE/bin/frame_observer.sh"
 grep -Fq '[ "$WCLASS" != APP ]' "$MODULE/bin/frame_observer.sh"
+test -r "$MODULE/uninstall.sh"
+grep -Fq 'UNINSTALL_RESTORE=FAILED' "$MODULE/uninstall.sh"
 
 CRED=$(run_ctl credential-status)
 grep -Fq 'GEMINI_KEY_COUNT=1' <<<"$CRED"
