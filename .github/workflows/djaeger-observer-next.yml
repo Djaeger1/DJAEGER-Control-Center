@@ -7,6 +7,7 @@ on:
       - 'observer-next/**'
       - '.github/workflows/djaeger-observer-next.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - 'observer-next/**'
