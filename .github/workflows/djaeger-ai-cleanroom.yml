@@ -32,7 +32,7 @@ jobs:
           npm test
 
           A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
-          for q in "$A-$B" "$A_$B" "$A $B" "$C-$B" "$C_$B" "$C $B" "$D-$E" "$F_$G" "$H_$I"; do
+          for q in "${A}-${B}" "${A}_${B}" "${A} ${B}" "${C}-${B}" "${C}_${B}" "${C} ${B}" "${D}-${E}" "${F}_${G}" "${H}_${I}"; do
             if grep -R -I -i -F --exclude-dir=.git --exclude=isolation-check.js "$q" observer-next; then
               echo "FOREIGN_SOURCE_RESIDUE=$q" >&2
               exit 1
