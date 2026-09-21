@@ -49,6 +49,8 @@ while true; do
               CSTATE=LOW_CONFIDENCE
             elif [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" != GAME ]; then
               CSTATE=NON_GAME_BLOCKED
+            elif [ "$(kv PACKAGE "$WORKLOAD")" != "$(kv PACKAGE "$GEM")" ]; then
+              CSTATE=ACTIVE_WORKLOAD_MISMATCH
             elif [ "$(kv PACKAGE "$GEM")" != "$(kv PACKAGE "$LEARN")" ]; then
               CSTATE=CONTEXT_MISMATCH
             elif [ "$(kv STATE "$LEARN")" != READY_HARDWARE_MODEL ] || [ "$(kv FRAME_EVIDENCE "$LEARN")" != VALID ]; then
@@ -69,7 +71,7 @@ while true; do
                 T="$OUT.tmp.$$"
                 {
                   echo "SCHEMA=DJAEGER_ADAPTIVE_POLICY_V2"
-                  echo "AT=$(date +%s)"
+                  echo "AT=$(kv AT "$GEM")"
                   echo "PACKAGE=$(kv PACKAGE "$GEM")"
                   echo "VERDICT=PROPOSED"
                   echo "CONFIDENCE=$GC"
