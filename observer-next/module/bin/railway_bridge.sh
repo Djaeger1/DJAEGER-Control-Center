@@ -4,7 +4,7 @@ ROOT="$1"
 CFG="$ROOT/config/railway.env"
 SNAP="$ROOT/runtime/snapshot.env"
 STATE="$ROOT/runtime/railway.env"
-DEFAULT_URL="__DJAEGER_CLEAN_RAILWAY_URL__"
+DEFAULT_URL="https://djaeger-ai-core-production-736f.up.railway.app"
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 clean(){ printf '%s' "$1" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/%=,@ -' | cut -c1-160; }
 publish(){ _t="$STATE.tmp.$$"; { echo "RAILWAY_STATE=$1"; echo "RAILWAY_HTTP=${2:-NA}"; echo "UPDATED_AT=$(date +%s)"; } > "$_t"; chmod 600 "$_t"; mv -f "$_t" "$STATE"; }
