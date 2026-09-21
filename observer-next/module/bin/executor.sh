@@ -12,6 +12,8 @@ APPROVAL="$ROOT/policy/approved.env"
 STATE="$ROOT/runtime/execution.env"
 BACKUP="$ROOT/runtime/execution_backup.env"
 MONITOR="$ROOT/runtime/execution_monitor.env"
+OUTCOMES="$ROOT/history/outcomes.csv"
+OUTCOME_MARK="$ROOT/runtime/execution_outcome.mark"
 LEARN="$ROOT/history/learned_envelope.env"
 MODEFILE="$ROOT/config/execution_mode"
 
@@ -23,6 +25,23 @@ writev(){ _f="$(map_path "$1")"; [ -w "$_f" ] || return 1; printf '%s\n' "$2" > 
 valid_cpu(){ case "$1" in /sys/devices/system/cpu/cpufreq/policy[0-9]|/sys/devices/system/cpu/cpufreq/policy[0-9][0-9]) return 0;; *) return 1;; esac; }
 valid_gpu(){ case "$1" in /sys/class/kgsl/kgsl-3d0/devfreq|/sys/class/devfreq/*gpu*|/sys/class/devfreq/*mali*) return 0;; *) return 1;; esac; }
 contains_freq(){ _v="$1"; _list="$2"; for _x in $_list; do [ "$_x" = "$_v" ] && return 0; done; return 1; }
+clean_csv(){ printf '%s' "$1" | tr '\r\n,' '   ' | tr -cd 'A-Za-z0-9._:+/%= @-'; }
+
+record_outcome(){
+  _result="$1"; _reason="$2"; _pkg="$3"; _digest="$4"
+  [ -n "$_pkg" ] || _pkg=NONE
+  [ -n "$_digest" ] || _digest=NONE
+  _sig="$_digest|$_result|$_reason"
+  [ "$(cat "$OUTCOME_MARK" 2>/dev/null)" = "$_sig" ] && return 0
+  mkdir -p "$ROOT/history" 2>/dev/null
+  [ -f "$OUTCOMES" ] || echo "epoch,package,digest,result,reason,fps,jank,p95_ms,power_mw,readback,little,big,gpu" > "$OUTCOMES"
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+    "$(date +%s)" "$(clean_csv "$_pkg")" "$(clean_csv "$_digest")" "$(clean_csv "$_result")" "$(clean_csv "$_reason")" \
+    "$(clean_csv "$(kv FPS_EST "$SNAP")")" "$(clean_csv "$(kv JANK_PCT "$SNAP")")" "$(clean_csv "$(kv P95_MS "$SNAP")")" "$(clean_csv "$(kv POWER_MW "$SNAP")")" \
+    "$(clean_csv "$READBACK")" "$(clean_csv "$APPLIED_LITTLE")" "$(clean_csv "$APPLIED_BIG")" "$(clean_csv "$APPLIED_GPU")" >> "$OUTCOMES"
+  chmod 600 "$OUTCOMES"
+  printf '%s\n' "$_sig" > "$OUTCOME_MARK"; chmod 600 "$OUTCOME_MARK"
+}
 
 publish(){
   _tmp="$STATE.tmp.$$"
@@ -213,8 +232,26 @@ post_apply_monitor(){
     echo "SAMPLES=$MONITOR_SAMPLES"
     echo "UPDATED_AT=$_now"
   } > "$_mtmp"; chmod 600 "$_mtmp"; mv -f "$_mtmp" "$MONITOR"
+  if [ "$MONITOR_SAMPLES" -eq 5 ] && [ "$MONITOR_BAD_COUNT" -eq 0 ]; then
+    record_outcome KEPT POST_APPLY_STABLE "$APPLIED_PACKAGE" "$ACTIVE_DIGEST"
+  fi
   [ "$MONITOR_BAD_COUNT" -lt 3 ] || return 1
   return 0
+}
+
+rollback_active(){
+  _reason="$1"
+  _pkg="$APPLIED_PACKAGE"; _digest="$ACTIVE_DIGEST"
+  if restore_all; then
+    record_outcome ROLLED_BACK "$_reason" "$_pkg" "$_digest"
+    READBACK=RESTORED
+    publish ROLLED_BACK "$_reason"
+    return 0
+  fi
+  record_outcome ROLLBACK_FAILED "$_reason" "$_pkg" "$_digest"
+  READBACK=RESTORE_FAILED
+  publish ROLLBACK_FAILED "$_reason"
+  return 1
 }
 
 reconcile(){
@@ -222,19 +259,58 @@ reconcile(){
   if gate; then
     if [ "$ACTIVE_DIGEST" = "$GATE_DIGEST" ] && [ -r "$BACKUP" ]; then
       if ! active_readback_ok; then
-        READBACK=DRIFT; restore_all || true; publish ROLLED_BACK SYSFS_DRIFT; return 1
+        READBACK=DRIFT
+        rollback_active SYSFS_DRIFT
+        return 1
       fi
       if ! post_apply_monitor; then
-        READBACK=VERIFIED; restore_all || true; publish ROLLED_BACK POST_APPLY_REGRESSION; return 1
+        READBACK=VERIFIED
+        rollback_active POST_APPLY_REGRESSION
+        return 1
       fi
-      READBACK=VERIFIED; publish APPLIED ACTIVE_APPROVAL; return 0
+      READBACK=VERIFIED
+      publish APPLIED ACTIVE_APPROVAL
+      return 0
     fi
-    [ "$ACTIVE_DIGEST" = NONE ] || restore_all
-    if apply_all; then publish APPLIED CONSENSUS_SHADOW_APPROVED; return 0; fi
-    restore_all || true; READBACK=FAILED; publish ROLLED_BACK APPLY_OR_READBACK_FAILED; return 1
+
+    if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
+      _old_pkg="$APPLIED_PACKAGE"; _old_digest="$ACTIVE_DIGEST"
+      if ! restore_all; then
+        record_outcome ROLLBACK_FAILED CANDIDATE_SWITCH "$_old_pkg" "$_old_digest"
+        READBACK=RESTORE_FAILED
+        publish ROLLBACK_FAILED CANDIDATE_SWITCH_RESTORE_FAILED
+        return 1
+      fi
+      record_outcome ROLLED_BACK CANDIDATE_SWITCH "$_old_pkg" "$_old_digest"
+    fi
+
+    if apply_all; then
+      if active_readback_ok; then
+        READBACK=VERIFIED
+        record_outcome APPLIED_VERIFIED CONSENSUS_SHADOW_APPROVED "$APPLIED_PACKAGE" "$ACTIVE_DIGEST"
+        publish APPLIED CONSENSUS_SHADOW_APPROVED
+        return 0
+      fi
+      READBACK=DRIFT
+    else
+      READBACK=FAILED
+    fi
+
+    _failed_pkg="$(kv PACKAGE "$POLICY")"; _failed_digest="$GATE_DIGEST"
+    if restore_all; then
+      record_outcome ROLLED_BACK APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest"
+      READBACK=RESTORED
+      publish ROLLED_BACK APPLY_OR_READBACK_FAILED
+    else
+      record_outcome ROLLBACK_FAILED APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest"
+      READBACK=RESTORE_FAILED
+      publish ROLLBACK_FAILED APPLY_OR_READBACK_FAILED
+    fi
+    return 1
   fi
+
   if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
-    restore_all || true; publish ROLLED_BACK "$GATE_REASON"
+    rollback_active "$GATE_REASON"
   else
     ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; READBACK=NA; ROLLBACK_STATE=STANDBY
     publish IDLE "$GATE_REASON"
