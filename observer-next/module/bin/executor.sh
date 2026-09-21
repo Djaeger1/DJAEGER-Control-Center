@@ -89,6 +89,7 @@ gate(){
   [ "$(kv SHADOW_STATE "$SHADOW")" = PASS ] || { GATE_REASON=SHADOW_NOT_PASS; return 1; }
   _d="$(kv CANDIDATE_DIGEST "$APPROVAL")"
   [ -n "$_d" ] && [ "$_d" = "$(kv CANDIDATE_DIGEST "$POLICY")" ] && [ "$_d" = "$(kv CANDIDATE_DIGEST "$SHADOW")" ] || { GATE_REASON=DIGEST_MISMATCH; return 1; }
+  [ "$(kv PACKAGE "$APPROVAL")" = "$(kv PACKAGE "$POLICY")" ] || { GATE_REASON=APPROVAL_PACKAGE_MISMATCH; return 1; }
   _exp="$(kv EXPIRES_AT "$APPROVAL")"; num "$_exp" && [ "$_exp" -ge "$(date +%s)" ] || { GATE_REASON=APPROVAL_EXPIRED; return 1; }
   [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { GATE_REASON=NON_GAME; return 1; }
   [ "$(kv PACKAGE "$WORKLOAD")" = "$(kv PACKAGE "$POLICY")" ] && [ "$(kv ACTIVE_PACKAGE "$SNAP")" = "$(kv PACKAGE "$POLICY")" ] || { GATE_REASON=PACKAGE_MISMATCH; return 1; }
@@ -102,6 +103,12 @@ gate(){
   BMIN="$(kv BIG_MIN_KHZ "$POLICY")"; BMAX="$(kv BIG_MAX_KHZ "$POLICY")"
   GMIN="$(kv GPU_MIN_HZ "$POLICY")"; GMAX="$(kv GPU_MAX_HZ "$POLICY")"
   for _v in "$LMIN" "$LMAX" "$BMIN" "$BMAX" "$GMIN" "$GMAX"; do num "$_v" || { GATE_REASON=NON_NUMERIC; return 1; }; done
+  [ "$(kv LITTLE_MIN_KHZ "$APPROVAL")" = "$LMIN" ] &&
+  [ "$(kv LITTLE_MAX_KHZ "$APPROVAL")" = "$LMAX" ] &&
+  [ "$(kv BIG_MIN_KHZ "$APPROVAL")" = "$BMIN" ] &&
+  [ "$(kv BIG_MAX_KHZ "$APPROVAL")" = "$BMAX" ] &&
+  [ "$(kv GPU_MIN_HZ "$APPROVAL")" = "$GMIN" ] &&
+  [ "$(kv GPU_MAX_HZ "$APPROVAL")" = "$GMAX" ] || { GATE_REASON=APPROVAL_POLICY_MISMATCH; return 1; }
   contains_freq "$LMIN" "$(kv LITTLE_AVAILABLE_KHZ "$SNAP")" && contains_freq "$LMAX" "$(kv LITTLE_AVAILABLE_KHZ "$SNAP")" || { GATE_REASON=LITTLE_OPP_REJECTED; return 1; }
   contains_freq "$BMIN" "$(kv BIG_AVAILABLE_KHZ "$SNAP")" && contains_freq "$BMAX" "$(kv BIG_AVAILABLE_KHZ "$SNAP")" || { GATE_REASON=BIG_OPP_REJECTED; return 1; }
   contains_freq "$GMIN" "$(kv GPU_AVAILABLE_HZ "$SNAP")" && contains_freq "$GMAX" "$(kv GPU_AVAILABLE_HZ "$SNAP")" || { GATE_REASON=GPU_OPP_REJECTED; return 1; }
