@@ -44,6 +44,8 @@ publish_cc() {
   _cons="$_root/runtime/consensus.env"
   _candidate="$_root/policy/candidate.env"
   _shadow="$_root/runtime/shadow.env"
+  _execution="$_root/runtime/execution.env"
+  _railway="$_root/runtime/railway.env"
   _migration="$_root/recovery/migration.env"
   _out="$_root/cc_snapshot"
   [ -r "$_snap" ] || return 0
@@ -126,6 +128,14 @@ publish_cc() {
   _cons_state="$(pub_kv CONSENSUS_STATE "$_cons")"; [ -n "$_cons_state" ] || _cons_state=OBSERVING
   _shadow_state="$(pub_kv SHADOW_STATE "$_shadow")"; [ -n "$_shadow_state" ] || _shadow_state=WAITING
   _shadow_n="$(pub_kv SHADOW_WINDOWS "$_shadow")"; case "$_shadow_n" in ''|*[!0-9]*) _shadow_n=0;; esac
+  _exec_state="$(pub_kv EXECUTOR_STATE "$_execution")"; [ -n "$_exec_state" ] || _exec_state=IDLE
+  _exec_reason="$(pub_kv EXECUTOR_REASON "$_execution")"; [ -n "$_exec_reason" ] || _exec_reason=WAITING
+  _exec_little="$(pub_kv APPLIED_LITTLE "$_execution")"; [ -n "$_exec_little" ] || _exec_little=NA
+  _exec_big="$(pub_kv APPLIED_BIG "$_execution")"; [ -n "$_exec_big" ] || _exec_big=NA
+  _exec_gpu="$(pub_kv APPLIED_GPU "$_execution")"; [ -n "$_exec_gpu" ] || _exec_gpu=NA
+  _readback="$(pub_kv READBACK "$_execution")"; [ -n "$_readback" ] || _readback=NA
+  _rollback="$(pub_kv ROLLBACK_STATE "$_execution")"; [ -n "$_rollback" ] || _rollback=STANDBY
+  _railway_state="$(pub_kv RAILWAY_STATE "$_railway")"; [ -n "$_railway_state" ] || _railway_state=WAITING
   _migration_state="$(pub_kv MIGRATION_STATE "$_migration")"; [ -n "$_migration_state" ] || _migration_state=UNKNOWN
   _credential_count="$(pub_kv CREDENTIAL_FILE_COUNT "$_migration")"; case "$_credential_count" in ''|*[!0-9]*) _credential_count=0;; esac
 
@@ -135,9 +145,11 @@ publish_cc() {
   _thought_source=OBSERVER_LOCAL
   [ "$_gem" = CANDIDATE ] && _thought_source=GEMINI
   case "$_hcloud" in APPROVED|REJECTED) _thought_source=HERMES_H2;; esac
-  _thought="Stock CPU/GPU, thermal, power, and frame behavior is being learned. No fixed preset or sysfs action is active."
-  [ "$_cons_state" = PENDING_SHADOW ] && _thought="A measured candidate passed AI review and is waiting for counterfactual shadow evidence. Hardware remains stock."
-  [ "$_shadow_state" = PASS ] && _thought="Shadow evidence passed. Automatic execution remains disabled in this validation build until real-device review."
+  _thought="CPU/GPU, thermal, power, and frame behavior is being learned from the device. No fixed preset is authoritative."
+  [ "$_cons_state" = PENDING_SHADOW ] && _thought="A measured candidate passed Gemini plus ONE HERMES review and is waiting for shadow evidence."
+  [ "$_shadow_state" = PASS ] && _thought="Shadow evidence passed. The local executor may apply only the validated device-specific range."
+  [ "$_exec_state" = APPLIED ] && _thought="Adaptive range is active locally after measured evidence, AI consensus, shadow pass, thermal guard, and exact sysfs readback."
+  [ "$_exec_state" = ROLLED_BACK ] && _thought="Adaptive range was rolled back locally because a safety or context gate closed."
 
   if [ -r "$_root/history/telemetry.csv" ]; then _history_bytes="$(wc -c < "$_root/history/telemetry.csv" 2>/dev/null)"
   else _history_bytes=0
@@ -154,16 +166,22 @@ publish_cc() {
   _tmp="$_out.tmp.$$"
   {
     echo "__INSTALLED__"; echo 1
-    echo "__VERSION__"; echo "0.2.1-observer-next"
+    echo "__VERSION__"; echo "1.0.0-adaptive-clean"
     echo "__RUNTIME__"
     echo "UPDATED_AT=$_epoch"; echo "ACTIVE=$_active"; echo "GAME=$_pkg"; echo "WINDOW_MODE=$_window"
     echo "CONTROLLER_PID=$$"; echo "PREDICTOR_PID="; echo "USER_MODE=OBSERVER"
     echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
     echo "__TEL__"; echo "$_tel"
     echo "__BRAIN__"
-    echo "CURRENT_BRAIN=NONE"; echo "FINAL_SOURCE=STOCK_KERNEL"; echo "BRAIN_MODE=OBSERVE"; echo "BRAIN_PROFILE=STOCK"
-    echo "FINAL_PROFILE=STOCK_OBSERVER"; echo "FINAL_ADJUSTMENT=NONE"; echo "EXEC_MODE=OBSERVE_ONLY"
-    echo "EXEC_LITTLE=$_lmin-$_lmax"; echo "EXEC_BIG=$_bmin-$_bmax"; echo "EXEC_GPU=$_gmin-$_gmax"
+    if [ "$_exec_state" = APPLIED ]; then
+      echo "CURRENT_BRAIN=AI_CONSENSUS"; echo "FINAL_SOURCE=LOCAL_VALIDATED_EXECUTOR"; echo "BRAIN_MODE=ADAPTIVE"; echo "BRAIN_PROFILE=LEARNED"
+      echo "FINAL_PROFILE=ADAPTIVE_LEARNED"; echo "FINAL_ADJUSTMENT=ACTIVE"; echo "EXEC_MODE=ADAPTIVE_AUTO"
+      echo "EXEC_LITTLE=$_exec_little"; echo "EXEC_BIG=$_exec_big"; echo "EXEC_GPU=$_exec_gpu"
+    else
+      echo "CURRENT_BRAIN=OBSERVER"; echo "FINAL_SOURCE=MEASURED_DEVICE"; echo "BRAIN_MODE=LEARN"; echo "BRAIN_PROFILE=LEARNED_PENDING"
+      echo "FINAL_PROFILE=LEARNED_PENDING"; echo "FINAL_ADJUSTMENT=NONE"; echo "EXEC_MODE=GATED_AUTO"
+      echo "EXEC_LITTLE=$_lmin-$_lmax"; echo "EXEC_BIG=$_bmin-$_bmax"; echo "EXEC_GPU=$_gmin-$_gmax"
+    fi
     echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=GEMINI"
     echo "CLOUD_CONTROL_PROVIDER=NONE"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
     echo "CLOUD_PLAN_STATE=$_cons_state"; echo "CLOUD_PLAN_SCORE=$_gem_conf"; echo "CLOUD_PLAN_REASON=$(pub_clean "$_gem_reason")"
@@ -172,21 +190,21 @@ publish_cc() {
     echo "HERMES_CLOUD_STATE=$_hcloud"; echo "HERMES_CLOUD_AUTH=$_hauth"
     echo "HERMES_CLOUD_ROUTE=$_hroute"; echo "HERMES_CLOUD_MODEL=$_hmodel"; echo "HERMES_CLOUD_HTTP_CODE=$_hhttp"
     echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=UNAVAILABLE"; echo "HERMES_NEURON_LIMIT=UNAVAILABLE"; echo "HERMES_NEURON_TIER=UNREPORTED"
-    echo "AGENT_VERSION=OBSERVER_NEXT_V1"; echo "AGENT_ROLE=MEASURE_LEARN_REVIEW_SHADOW"; echo "AGENT_STATE=$_cons_state"
-    echo "AGENT_INPUT_SOURCE=STOCK_TELEMETRY"; echo "AGENT_DECISION_AUTHORITY=NONE"; echo "AGENT_EXECUTION_OWNER=NO"
-    echo "AGENT_HARDWARE_AUTHORITY=READ_ONLY"; echo "AGENT_HARDWARE_TRUTH_SOURCE=OBSERVER_SYSFS_READBACK"
-    echo "AGENT_HARDWARE_TRUTH_AUTHORITY=MEASURED"; echo "AGENT_MUST_OBEY_ACTIVE_BRAIN=NO_ACTIVE_BRAIN"
-    echo "AGENT_CAN_CHOOSE_BRAIN=NO"; echo "AGENT_CAN_OVERRIDE_BRAIN=NO"; echo "AGENT_EXECUTION_BACKEND=DISABLED"
+    echo "AGENT_VERSION=ADAPTIVE_V1"; echo "AGENT_ROLE=MEASURE_LEARN_REVIEW_SHADOW_EXECUTE"; echo "AGENT_STATE=$_cons_state"
+    echo "AGENT_INPUT_SOURCE=DEVICE_TELEMETRY"; echo "AGENT_DECISION_AUTHORITY=LOCAL_VALIDATOR"; echo "AGENT_EXECUTION_OWNER=LOCAL_EXECUTOR"
+    echo "AGENT_HARDWARE_AUTHORITY=LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=OBSERVER_SYSFS_READBACK"
+    echo "AGENT_HARDWARE_TRUTH_AUTHORITY=MEASURED"; echo "AGENT_MUST_OBEY_ACTIVE_BRAIN=CONSENSUS_AND_SAFETY"
+    echo "AGENT_CAN_CHOOSE_BRAIN=NO"; echo "AGENT_CAN_OVERRIDE_BRAIN=NO"; echo "AGENT_EXECUTION_BACKEND=LOCAL_VALIDATED_SYSFS"
     echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=STOCK"; echo "DECISION_PRIORITY=SAFETY>MEASURED_EVIDENCE>AI_REVIEW"
     echo "THOUGHT_FRESH=1"; echo "THOUGHT_AGE_SEC=0"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_cons_state"; echo "CONFIDENCE=$_gem_conf"; echo "TEXT=$_thought"
     echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_shadow_n"
-    echo "__AUTHORITY__"; echo "STATE=READ_ONLY"; echo "HARDWARE_AUTHORITY=STOCK_KERNEL"; echo "SYSFS_WRITES=DISABLED"; echo "EXECUTOR=NOT_STARTED"
-    echo "__SESSION_SAFETY__"; echo "STATE=SAFE_OBSERVER"; echo "ROLLBACK=NOT_REQUIRED_NO_WRITES"; echo "THERMAL_AUTHORITY=NATIVE"
+    echo "__AUTHORITY__"; echo "STATE=LOCAL_GATED"; echo "HARDWARE_AUTHORITY=LOCAL_VALIDATED_EXECUTOR"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
+    echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
     echo "__SUPERVISOR__"; echo "STATE=RUNNING"; echo "PROCESS_MODEL=BOUNDED_OBSERVER_LOOPS"
     echo "__HERMES_CTX1_STATUS__"; echo "STATE=$_hlocal"; echo "MIGRATION=$_migration_state"
     echo "__HERMES_CTX1_RUNTIME__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "WINDOW=$_window"
-    echo "__HERMES_CTX1_SAFETY__"; echo "SYSFS=DISABLED"; echo "CONSENSUS=$_cons_state"; echo "SHADOW=$_shadow_state"
+    echo "__HERMES_CTX1_SAFETY__"; echo "SYSFS=LOCAL_EXECUTOR_ONLY"; echo "CONSENSUS=$_cons_state"; echo "SHADOW=$_shadow_state"; echo "EXECUTOR=$_exec_state"
     echo "__HERMES_CTX1_HARDWARE__"; echo "LITTLE=$_little"; echo "BIG=$_big"; echo "GPU=$_gpu"; echo "SKIN=$_skin_t"; echo "POWER=$_power"
     echo "__HERMES_CTX1_MEMORY__"; echo "SAMPLES=$_samples"; echo "BYTES=$_history_bytes"; echo "CREDENTIAL_FILES=$_credential_count"
     echo "__HERMES_CTX1_LEARNING__"; echo "STATE=$_learning"; echo "CONFIDENCE=$_confidence"; echo "FRAME_EVIDENCE=$_frame_evidence"
@@ -199,10 +217,10 @@ publish_cc() {
     echo "__HERMES_HUMAN_COMFORT__"; echo "COMFORT_PRESET=OBSERVER"; echo "STATE=LEARNING_FROM_FEEDBACK"; echo "FIXED_PRESET=DISABLED"
     echo "__HERMES_LANGUAGE__"; echo "STATE=STRUCTURED_ONLY"
     echo "__HERMES_MATH__"; echo "STATE=$_learning"; echo "VERIFY=$_shadow_state"; echo "INPUT_SANITY=MEASURED"; echo "TARGET_FRAME_MS=16.67"
-    echo "__HERMES_KERNEL1__"; echo "STATE=READ_ONLY"; echo "STRATEGY=OBSERVE"; echo "BOTTLENECK=LEARNING"; echo "CAPABILITIES_TOTAL=3"; echo "ACTUATORS_TOTAL=0"; echo "ACTION_COUNT=0"; echo "ROOT_AUTHORITY_OWNER=STOCK_KERNEL"; echo "SYSFS_OWNER=STOCK_KERNEL"
-    echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=3"; echo "ACTUATORS=0"
-    echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=DISABLED_OBSERVER"; echo "ACTION_COUNT=0"; echo "APPLIED_COUNT=0"; echo "FAILURE=NONE"
-    echo "__CONTROL_CENTER_SYNC__"; echo "CONTRACT=OBSERVER_NEXT_V1"; echo "MODULE_VERSION_CODE=201"; echo "CONTROL_CENTER_VERSION_CODE=102"; echo "HERMES_CLOUD=ADVISORY_REVIEW"; echo "HERMES_CLOUD_ROLE=ONE_HERMES_REVIEWER"; echo "HERMES_BACKEND_PRIORITY=LOCAL_GUARD_THEN_CLOUD_REVIEW"; echo "WORKLOAD_FINAL=OBSERVER_CLASSIFIER"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=DISABLED_NO_EXECUTOR"
+    echo "__HERMES_KERNEL1__"; echo "STATE=GATED"; echo "STRATEGY=MEASURED_ADAPTIVE"; echo "BOTTLENECK=$_exec_reason"; echo "CAPABILITIES_TOTAL=3"; echo "ACTUATORS_TOTAL=6"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "ROOT_AUTHORITY_OWNER=LOCAL_EXECUTOR"; echo "SYSFS_OWNER=LOCAL_EXECUTOR"
+    echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=3"; echo "ACTUATORS=6"
+    echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "APPLIED_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
+    echo "__CONTROL_CENTER_SYNC__"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V1"; echo "MODULE_VERSION_CODE=202"; echo "CONTROL_CENTER_VERSION_CODE=103"; echo "HERMES_CLOUD=ADVISORY_REVIEW"; echo "HERMES_CLOUD_ROLE=ONE_HERMES_REVIEWER"; echo "HERMES_BACKEND_PRIORITY=LOCAL_GUARD_THEN_CLOUD_REVIEW"; echo "WORKLOAD_FINAL=OBSERVER_CLASSIFIER"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=DISABLED_NO_EXECUTOR"
     echo "__STRATEGY_RESULT__"; echo "VALIDATION=$_cons_state"; echo "READBACK=STOCK"; echo "OUTCOME=$_shadow_state"
     echo "__ENV__"; [ -r "$_learn" ] && cat "$_learn"
     echo "__HTTP__"; [ -r "$_gem_state" ] && cat "$_gem_state" || true
@@ -214,14 +232,14 @@ publish_cc() {
     echo "__NETWORK__"; echo "SESSION_ACTIVE=0"; echo "QUALITY=UNMEASURED"
     echo "__REASONING__"; echo "STATE=$_cons_state"
     echo "__RESYNC__"; echo "STATE=MATCHED"; echo "CONTRACT=OBSERVER_NEXT_V1"
-    echo "__EXECUTION__"; echo "STATUS=DISABLED"; echo "READBACK=STOCK"
+    echo "__EXECUTION__"; echo "STATUS=$_exec_state"; echo "READBACK=$_readback"; echo "ROLLBACK=$_rollback"; echo "RAILWAY=$_railway_state"
     echo "__POLICY_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "BASELINE=$_learning"
     echo "__ATTRIBUTION__"; echo "SOURCE=MEASURED_STOCK"
     echo "__WORKLOAD_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD_CLASS=$_workload"; echo "WORKLOAD_PROFILE=STOCK_OBSERVER"; echo "SUBJECT_CLASS=$_workload"; echo "REASONING_DOMAIN=$_workload"; echo "GAME_SEMANTICS=REGISTRY_ONLY"; echo "FRAME_SEMANTICS=EVIDENCE_ONLY"; echo "SOURCE=$_workload_source"; echo "CONFIDENCE=$([ "$_workload_source" = GAME_REGISTRY ] && echo 100 || echo 60)"; echo "GAME_REGISTRY_AUTHORITY=MANUAL_PLUS_BUILTIN"
     echo "__WORKLOAD_GATE__"; echo "GAME_ONLY=OBSERVE"; echo "APP_ONLY=OBSERVE"; echo "SYSTEM_ONLY=OBSERVE"
     echo "__PROPOSAL_BINDING__"; echo "LATEST_PROPOSAL_SOURCE=$_plan_provider"; echo "LATEST_SUBJECT_PACKAGE=$_pkg"; echo "LATEST_SUBJECT_CLASS=$_workload"; echo "LATEST_BINDING_DECISION=$_cons_state"; echo "LATEST_BINDING_REASON=NO_EXECUTOR"
     echo "__WORKLOAD_FINAL__"; echo "STATUS=ACTIVE"; echo "DUAL_REGISTRY=SEPARATE"; echo "REGISTRY_CONFLICTS=0"; echo "EXECUTION_SCOPE=NONE"; echo "APP_GAME_POLICY=NEVER_PROMOTE"; echo "SYSTEM_GAME_POLICY=NEVER_PROMOTE"; echo "UNKNOWN_GAME_POLICY=OBSERVE_ONLY"; echo "STALE_POLICY=FAIL_CLOSED"; echo "LEARNING_ISOLATION=PER_PACKAGE"; echo "ROOT_AUTHORITY_CHANGED=NO"; echo "SYSFS_AUTHORITY_CHANGED=NO"; echo "RESCUE_PATH_CHANGED=NO"
-    echo "__WORKLOAD_EXEC_GUARD__"; echo "DECISION=BLOCK"; echo "REASON=OBSERVER_VALIDATION_BUILD"
+    echo "__WORKLOAD_EXEC_GUARD__"; echo "DECISION=$([ "$_exec_state" = APPLIED ] && echo ALLOW || echo BLOCK)"; echo "REASON=$_exec_reason"
     echo "__APP_REGISTRY__"; [ -r "$_root/config/app_registry.tsv" ] && cat "$_root/config/app_registry.tsv" || true
     echo "__GAME_REGISTRY_MANUAL__"; [ -r "$_root/config/game_registry.tsv" ] && cat "$_root/config/game_registry.tsv" || true
     echo "__BUG_HEALTH__"; echo "STATE=OK"
