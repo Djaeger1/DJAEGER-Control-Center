@@ -85,7 +85,7 @@ while true; do
 
   T="$OUT.tmp.$$"
   {
-    echo "SCHEMA=DJAEGER_LEARNED_ENVELOPE_V2"
+    echo "SCHEMA=DJAEGER_LEARNED_ENVELOPE_V3"
     echo "AT=$(date +%s)"
     echo "PACKAGE=$PKG"
     echo "STATE=$STATE"
