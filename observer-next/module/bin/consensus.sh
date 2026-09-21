@@ -10,6 +10,16 @@ STATE="$ROOT/runtime/consensus.env"
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 
+contains_freq(){
+  value="$1"
+  list="$2"
+  case "$value:$list" in *[!0-9: ]*|*:|*:NA) return 1;; esac
+  for x in $list; do
+    [ "$x" = "$value" ] && return 0
+  done
+  return 1
+}
+
 while true; do
   GS=ABSENT; LS=ABSENT; CS=OPTIONAL
   [ -r "$GEM" ] && GS=$(kv VERDICT "$GEM")
@@ -26,11 +36,26 @@ while true; do
           PKG=$(kv PACKAGE "$GEM")
           if [ "$PKG" != "$(kv PACKAGE "$LEARN")" ]; then
             CSTATE=CONTEXT_MISMATCH
+          elif [ "$(kv STATE "$LEARN")" != READY_HARDWARE_MODEL ] || [ "$(kv FRAME_EVIDENCE "$LEARN")" != VALID ]; then
+            CSTATE=BASELINE_NOT_MATURE
           else
             LP=$(kv LITTLE_POLICY_PATH "$SNAP")
             BP=$(kv BIG_POLICY_PATH "$SNAP")
             GP=$(kv GPU_DEVFREQ_PATH "$SNAP")
-            if [ -n "$LP" ] && [ -n "$BP" ] && [ -n "$GP" ]; then
+            LAV=$(kv LITTLE_AVAILABLE_KHZ "$SNAP")
+            BAV=$(kv BIG_AVAILABLE_KHZ "$SNAP")
+            GAV=$(kv GPU_AVAILABLE_HZ "$SNAP")
+
+            GLMIN=$(kv LITTLE_MIN_KHZ "$GEM"); GLMAX=$(kv LITTLE_MAX_KHZ "$GEM")
+            GBMIN=$(kv BIG_MIN_KHZ "$GEM"); GBMAX=$(kv BIG_MAX_KHZ "$GEM")
+            GGMIN=$(kv GPU_MIN_HZ "$GEM"); GGMAX=$(kv GPU_MAX_HZ "$GEM")
+
+            if [ -z "$LP" ] || [ -z "$BP" ] || [ -z "$GP" ]; then
+              CSTATE=HARDWARE_PATH_UNAVAILABLE
+            elif ! contains_freq "$GLMIN" "$LAV" || ! contains_freq "$GLMAX" "$LAV" ||                  ! contains_freq "$GBMIN" "$BAV" || ! contains_freq "$GBMAX" "$BAV" ||                  ! contains_freq "$GGMIN" "$GAV" || ! contains_freq "$GGMAX" "$GAV"; then
+              CSTATE=UNSUPPORTED_FREQUENCY
+              rm -f "$OUT"
+            else
               T="$OUT.tmp.$$"
               {
                 echo "SCHEMA=DJAEGER_ADAPTIVE_POLICY_V1"
@@ -42,17 +67,15 @@ while true; do
                 echo "HERMES_CLOUD_VOTE=$CS"
                 echo "SHADOW_PASS=NO"
                 echo "EXECUTOR_ENABLED=0"
-                echo "SYSFS|$LP/scaling_min_freq|$(kv LITTLE_MIN_KHZ "$GEM")"
-                echo "SYSFS|$LP/scaling_max_freq|$(kv LITTLE_MAX_KHZ "$GEM")"
-                echo "SYSFS|$BP/scaling_min_freq|$(kv BIG_MIN_KHZ "$GEM")"
-                echo "SYSFS|$BP/scaling_max_freq|$(kv BIG_MAX_KHZ "$GEM")"
-                echo "SYSFS|$GP/min_freq|$(kv GPU_MIN_HZ "$GEM")"
-                echo "SYSFS|$GP/max_freq|$(kv GPU_MAX_HZ "$GEM")"
+                echo "SYSFS|$LP/scaling_min_freq|$GLMIN"
+                echo "SYSFS|$LP/scaling_max_freq|$GLMAX"
+                echo "SYSFS|$BP/scaling_min_freq|$GBMIN"
+                echo "SYSFS|$BP/scaling_max_freq|$GBMAX"
+                echo "SYSFS|$GP/min_freq|$GGMIN"
+                echo "SYSFS|$GP/max_freq|$GGMAX"
               } > "$T"
               chmod 600 "$T"; mv -f "$T" "$OUT"
               CSTATE=PENDING_SHADOW
-            else
-              CSTATE=HARDWARE_PATH_UNAVAILABLE
             fi
           fi
         else
