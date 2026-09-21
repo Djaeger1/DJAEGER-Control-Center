@@ -291,8 +291,8 @@ echo 'module-contract-tests=PASS'
  "$SNAPSHOT"
 grep -Fqx 'LAST_OUTCOME=ROLLED_BACK' "$SNAPSHOT"
 ! grep -Fq 'CPU/GPU, thermal, power, and frame behavior is being learned' "$SNAPSHOT"
-grep -Fq 'WCLASS\" != GAME' "$MODULE/bin/frame_observer.sh"
-grep -Fq 'WCLASS\" != APP' "$MODULE/bin/frame_observer.sh"
+grep -Fq '[ "$WCLASS" != GAME ]' "$MODULE/bin/frame_observer.sh"
+grep -Fq '[ "$WCLASS" != APP ]' "$MODULE/bin/frame_observer.sh"
 
 CRED=$(run_ctl credential-status)
 grep -Fq 'GEMINI_KEY_COUNT=1' <<<"$CRED"
