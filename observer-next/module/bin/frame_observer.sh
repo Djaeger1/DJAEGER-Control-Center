@@ -34,8 +34,10 @@ while true; do
   PKG=$(sed -n 's/^ACTIVE_PACKAGE=//p' "$SNAP" | head -n1)
   WPKG=$(sed -n 's/^PACKAGE=//p' "$WORKLOAD" 2>/dev/null | head -n1)
   WCLASS=$(sed -n 's/^WORKLOAD_CLASS=//p' "$WORKLOAD" 2>/dev/null | head -n1)
-  if [ "$WCLASS" != GAME ] || [ "$WPKG" != "$PKG" ]; then
-    publish_unavailable NON_GAME_WORKLOAD "${PKG:-UNKNOWN}"
+  # Frame telemetry is useful for both foreground APP and GAME workloads.
+  # Hardware execution remains GAME-only in executor.sh.
+  if [ "$WPKG" != "$PKG" ] || { [ "$WCLASS" != GAME ] && [ "$WCLASS" != APP ]; }; then
+    publish_unavailable WORKLOAD_NOT_FRAME_ELIGIBLE "${PKG:-UNKNOWN}"
     sleep 15
     continue
   fi
