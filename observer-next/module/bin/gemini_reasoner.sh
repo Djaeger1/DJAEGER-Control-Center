@@ -75,11 +75,23 @@ while true; do
   BMIN=$(safe_num "$(kv BIG_MIN_KHZ "$LEARN")"); BMAX=$(safe_num "$(kv BIG_MAX_KHZ "$LEARN")")
   GMIN=$(safe_num "$(kv GPU_MIN_HZ "$LEARN")"); GMAX=$(safe_num "$(kv GPU_MAX_HZ "$LEARN")")
   SAMPLES=$(safe_num "$(kv SAMPLES "$LEARN")")
+  FRAME_WINDOWS=$(safe_num "$(kv FRAME_WINDOWS "$LEARN")")
+  FPS50=$(safe_num "$(kv FPS_P50 "$LEARN")")
+  JANK95=$(safe_num "$(kv JANK_P95 "$LEARN")")
+  FP95=$(safe_num "$(kv FRAME_P95_P95_MS "$LEARN")")
+  FP99=$(safe_num "$(kv FRAME_P99_P95_MS "$LEARN")")
+  CFPS=$(safe_num "$(kv FPS_EST "$SNAP")")
+  CJANK=$(safe_num "$(kv JANK_PCT "$SNAP")")
+  CP95=$(safe_num "$(kv P95_MS "$SNAP")")
+  CP99=$(safe_num "$(kv P99_MS "$SNAP")")
+  LAV=$(kv LITTLE_AVAILABLE_KHZ "$SNAP" | tr -cd '0-9 ')
+  BAV=$(kv BIG_AVAILABLE_KHZ "$SNAP" | tr -cd '0-9 ')
+  GAV=$(kv GPU_AVAILABLE_HZ "$SNAP" | tr -cd '0-9 ')
 
-  PAY="$ROOT/runtime/.gemini_request.$$"
+  PAY="$ROOT/runtime/.gemini_request.$"
   RESP="$ROOT/runtime/.gemini_response.$$"
   cat > "$PAY" <<EOF
-{"contents":[{"parts":[{"text":"You are one reasoning member of DJAEGER Observer. Analyze only measured stock behavior. Package=$PKG samples=$SAMPLES. Stock learned envelope: little=$LMIN-$LMAX kHz big=$BMIN-$BMAX kHz gpu=$GMIN-$GMAX Hz. Current: little=$LCUR big=$BCUR gpu=$GCUR skin=$SKIN C cpu=$CPU C gpuTemp=$GPUC C power=$POWER mW. Frame evidence=$FRAME. Goal: frame stability first, then lower power/temperature. Never output shell commands or paths. If frame evidence is unavailable or evidence is insufficient, choose OBSERVE. Otherwise a CANDIDATE must remain inside the learned stock envelope. Return exactly nine lines: VERDICT=OBSERVE_or_CANDIDATE, CONFIDENCE=0_to_100, LITTLE_MIN_KHZ=integer, LITTLE_MAX_KHZ=integer, BIG_MIN_KHZ=integer, BIG_MAX_KHZ=integer, GPU_MIN_HZ=integer, GPU_MAX_HZ=integer, REASON=short_token."}]}],"generationConfig":{"temperature":0.1,"maxOutputTokens":256}}
+{"contents":[{"parts":[{"text":"You are one reasoning member of DJAEGER Observer. Analyze only measured stock behavior. Package=$PKG samples=$SAMPLES independent_frame_windows=$FRAME_WINDOWS. Stock envelope: little=$LMIN-$LMAX kHz big=$BMIN-$BMAX kHz gpu=$GMIN-$GMAX Hz. Kernel supported little frequencies=[$LAV], big frequencies=[$BAV], gpu frequencies=[$GAV]. Stock frame baseline: fps_p50=$FPS50 jank_p95=$JANK95 frame_p95_p95_ms=$FP95 frame_p99_p95_ms=$FP99. Current: little=$LCUR big=$BCUR gpu=$GCUR skin=$SKIN C cpu=$CPU C gpuTemp=$GPUC C power=$POWER mW fps=$CFPS jank=$CJANK p95=$CP95 p99=$CP99. Goal: frame stability first, then lower power and temperature. Never output shell commands or paths. Choose OBSERVE when evidence does not justify a change. A CANDIDATE must stay inside learned stock envelope and every selected frequency must be an exact member of its kernel-supported list. Return exactly nine lines: VERDICT=OBSERVE_or_CANDIDATE, CONFIDENCE=0_to_100, LITTLE_MIN_KHZ=integer, LITTLE_MAX_KHZ=integer, BIG_MIN_KHZ=integer, BIG_MAX_KHZ=integer, GPU_MIN_HZ=integer, GPU_MAX_HZ=integer, REASON=short_token."}]}],"generationConfig":{"temperature":0.1,"maxOutputTokens":256}}
 EOF
 
   HTTP=$(curl -sS --connect-timeout 5 --max-time 15 -o "$RESP" -w '%{http_code}'     -H 'Content-Type: application/json'     -H "x-goog-api-key: $KEY"     -X POST "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"     --data-binary "@$PAY" 2>/dev/null)
