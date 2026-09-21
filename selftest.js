@@ -8,6 +8,7 @@ async function req(port,path,opt={}){const r=await fetch('http://127.0.0.1:'+por
  r=await req(port,'/v1/state');ok(r.status===401,'auth');
  const h={'content-type':'application/json','authorization':'Bearer '+TOKEN};
  r=await req(port,'/v1/device/telemetry',{method:'POST',headers:h,body:JSON.stringify({device_id:'TEST',at:1,package:'sts.al',cpu_little_khz:1000000,cpu_big_khz:1800000,gpu_hz:600000000,skin_temp_c:39,battery_temp_c:37,cpu_temp_c:55,gpu_temp_c:52,power_mw:2200,fps:60,jank_pct:1.2})});ok(r.status===200&&r.body.hardware_action===false,'telemetry');
+ r=await req(port,'/health');ok(r.body.telemetry_seen===true&&r.body.telemetry_accepted===1&&r.body.last_telemetry_age_sec!==null,'telemetry diagnostics');
  r=await req(port,'/v1/agent/proposal',{method:'POST',headers:h,body:JSON.stringify({source:'GEMINI',intent:'ADJUST',confidence:.9,payload:{gpu_max_hz:650000000}})});ok(r.status===200&&r.body.proposal.authority==='ADVISORY_ONLY','proposal');
  r=await req(port,'/v1/config',{headers:h});ok(r.body.remote_hardware_commands===false&&r.body.device_executor_authority==='LOCAL_VALIDATED_ONLY','authority');
  console.log('PASS|DJAEGER_AI_CLEAN_CORE_SELFTEST');
