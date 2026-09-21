@@ -200,7 +200,7 @@ private fun planRange(a:String,b:String,unit:String):String{
 }
 
 @Composable fun KernelAgentSyncCard(s:RuntimeState){
-    val adaptiveContract=envField(s.controlCenterSync,"CONTRACT")=="OBSERVER_NEXT_V1"
+    val adaptiveContract=envField(s.controlCenterSync,"CONTRACT")=="DJAEGER_AI_ADAPTIVE_V1"
     val kState=envField(s.hermesKernel1,"STATE").ifBlank{"UNAVAILABLE"}
     val kStrategy=envField(s.hermesKernel1,"STRATEGY").ifBlank{"—"}
     val kBottleneck=envField(s.hermesKernel1,"BOTTLENECK").ifBlank{"—"}
@@ -245,7 +245,7 @@ private fun planRange(a:String,b:String,unit:String):String{
 }
 
 @Composable fun HermesCloudCard(s:RuntimeState){
-    val adaptiveContract=envField(s.controlCenterSync,"CONTRACT")=="OBSERVER_NEXT_V1"
+    val adaptiveContract=envField(s.controlCenterSync,"CONTRACT")=="DJAEGER_AI_ADAPTIVE_V1"
     val backend=envField(s.brain,"HERMES_BACKEND").ifBlank{"LOCAL"}
     val state=envField(s.brain,"HERMES_CLOUD_STATE").ifBlank{"UNAVAILABLE"}
     val auth=envField(s.brain,"HERMES_CLOUD_AUTH").ifBlank{"UNKNOWN"}
