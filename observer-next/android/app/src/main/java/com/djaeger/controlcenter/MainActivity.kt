@@ -769,20 +769,23 @@ private fun humanDecision(s:RuntimeState):String{
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
             Button(onClick={bridgeOp="SAVE"},enabled=bridgeOp==null&&keyInput.isNotBlank(),modifier=Modifier.weight(1f)){Text("ADD TO MODULE VAULT")}
             Button(onClick={bridgeOp="STATUS"},enabled=bridgeOp==null,modifier=Modifier.weight(1f)){Text("REFRESH")}
-            Button(onClick={bridgeOp="DELETE"},enabled=bridgeOp==null,modifier=Modifier.weight(1f)){Text("DELETE")}
         }
-        OutlinedTextField(value=chatInput,onValueChange={chatInput=it.take(8000)},label={Text("Ask DJAEGER Gemini")},minLines=2,maxLines=5,modifier=Modifier.fillMaxWidth(),enabled=bridgeOp==null)
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            Button(onClick={bridgeOp="CHAT"},enabled=bridgeOp==null&&chatInput.isNotBlank(),modifier=Modifier.weight(1f)){Text("ASK GEMINI")}
-            Button(onClick={bridgeOp="CLEAR_CHAT"},enabled=bridgeOp==null,modifier=Modifier.weight(1f)){Text("NEW CHAT")}
+        if(!adaptive){
+            OutlinedTextField(value=chatInput,onValueChange={chatInput=it.take(8000)},label={Text("Ask DJAEGER Gemini")},minLines=2,maxLines=5,modifier=Modifier.fillMaxWidth(),enabled=bridgeOp==null)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                Button(onClick={bridgeOp="CHAT"},enabled=bridgeOp==null&&chatInput.isNotBlank(),modifier=Modifier.weight(1f)){Text("ASK GEMINI")}
+                Button(onClick={bridgeOp="CLEAR_CHAT"},enabled=bridgeOp==null,modifier=Modifier.weight(1f)){Text("NEW CHAT")}
+            }
+            BoxCard("GEMINI CONVERSATION",chatResult,true)
+            OutlinedTextField(value=hermesChatInput,onValueChange={hermesChatInput=it.take(8000)},label={Text("Ask DJAEGER Hermes")},minLines=2,maxLines=5,modifier=Modifier.fillMaxWidth(),enabled=bridgeOp==null)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                Button(onClick={bridgeOp="HERMES_CHAT"},enabled=bridgeOp==null&&hermesChatInput.isNotBlank(),modifier=Modifier.weight(1f)){Text("ASK HERMES")}
+                Button(onClick={bridgeOp="HERMES_CLEAR_CHAT"},enabled=bridgeOp==null,modifier=Modifier.weight(1f)){Text("NEW HERMES CHAT")}
+            }
+            BoxCard("HERMES CONVERSATION",hermesChatResult,true)
+        } else {
+            BoxCard("AI REASONING TRANSPORT","Adaptive Gaming uses Gemini for bounded proposals and HERMES Local/Cloud for validation/review in the background. Interactive chat is intentionally disabled in this runtime so a non-functional chat control cannot be mistaken for the gaming reasoning path.",true)
         }
-        BoxCard("GEMINI CONVERSATION",chatResult+"\n\nTransport errors affect Gemini chat only; Local AI/kernel execution remains independently observable below.",true)
-        OutlinedTextField(value=hermesChatInput,onValueChange={hermesChatInput=it.take(8000)},label={Text("Ask DJAEGER Hermes")},minLines=2,maxLines=5,modifier=Modifier.fillMaxWidth(),enabled=bridgeOp==null)
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            Button(onClick={bridgeOp="HERMES_CHAT"},enabled=bridgeOp==null&&hermesChatInput.isNotBlank(),modifier=Modifier.weight(1f)){Text("ASK HERMES")}
-            Button(onClick={bridgeOp="HERMES_CLEAR_CHAT"},enabled=bridgeOp==null,modifier=Modifier.weight(1f)){Text("NEW HERMES CHAT")}
-        }
-        BoxCard("HERMES CONVERSATION",hermesChatResult+"\n\nONE HERMES chooses LOCAL / FAST / SMART / DEEP. Cloud failure or exhausted quota falls back to HERMES LOCAL; Gemini chat is separate.",true)
         BoxCard("AI SUMMARY LIVE",aiSummary(s));BoxCard("LOCAL BRAIN LIVE",brainText,true);BoxCard("ADAPTIVE OPERATING ENVELOPE LIVE",s.envelope.ifBlank{"No envelope published yet"},true);BoxCard("GEMINI INTELLIGENCE HUMAN VIEW",retained,true);BoxCard("GEMINI HTTP STATE LIVE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE LIVE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)
     }
 }
