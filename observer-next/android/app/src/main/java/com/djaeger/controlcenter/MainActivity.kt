@@ -229,7 +229,7 @@ private fun planRange(a:String,b:String,unit:String):String{
     val cloudRoute=envField(s.brain,"HERMES_CLOUD_ROUTE").uppercase()
     val route=if(cloudRoute=="FAST"||cloudRoute=="SMART"||cloudRoute=="DEEP"||cloudRoute=="CLOUD") cloudRoute else "LOCAL"
     val cloud=envField(s.brain,"HERMES_CONNECTION_STATUS").ifBlank{
-        when(cloudState){ "ONLINE","ONLINE_IDLE","APPROVED","REJECTED"->"ONLINE";"NO_KEY"->"NOT_CONFIGURED";"AUTH_ERROR"->"AUTH_ERROR";"HTTP_ERROR","FAILED","UNAVAILABLE","OFFLINE"->"OFFLINE";else->if(cloudAuth=="CONFIGURED")"READY" else "NOT_CONFIGURED" }
+        when(cloudState){ "ONLINE","APPROVED","REJECTED"->"ONLINE";"REACHABLE_IDLE"->"REACHABLE • AUTH UNVERIFIED";"NO_KEY"->"NOT_CONFIGURED";"AUTH_ERROR"->"AUTH_ERROR";"HTTP_ERROR","FAILED","UNAVAILABLE","OFFLINE"->"OFFLINE";else->if(cloudAuth=="CONFIGURED")"READY" else if(cloudAuth=="CONFIGURED_UNVERIFIED")"REACHABLE • AUTH UNVERIFIED" else "NOT_CONFIGURED" }
     }
     val used=envField(s.brain,"HERMES_NEURON_USED_EST").ifBlank{"UNAVAILABLE"}
     val limit=envField(s.brain,"HERMES_NEURON_LIMIT").ifBlank{"UNAVAILABLE"}
