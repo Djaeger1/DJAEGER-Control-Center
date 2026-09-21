@@ -7,6 +7,9 @@ SNAP="$RUNTIME/snapshot.env"
 FRAMEFILE="$RUNTIME/frame.env"
 SEQ=0
 PKG=UNKNOWN
+TOP_PKG=UNKNOWN
+VISIBLE_GAME=NONE
+PKG_SOURCE=UNCLASSIFIED
 PKG_SAMPLES=0
 LAST_COUNT_PKG=""
 PUBLISHER_READY=0
@@ -53,6 +56,51 @@ gpu_path() {
 }
 
 fv(){ sed -n "s/^$1=//p" "$FRAMEFILE" 2>/dev/null | head -n1; }
+
+registry_is_game(){
+  [ "$1" = sts.al ] && return 0
+  awk -F'|' -v p="$1" '$2==p{found=1}END{exit !found}' "$ROOT/config/game_registry.tsv" 2>/dev/null
+}
+
+detect_workload_package(){
+  _act="$RUNTIME/.activity.$"; _win="$RUNTIME/.window.$"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 2 dumpsys activity activities > "$_act" 2>/dev/null || : > "$_act"
+    timeout 2 dumpsys window windows > "$_win" 2>/dev/null || : > "$_win"
+  else
+    dumpsys activity activities > "$_act" 2>/dev/null || : > "$_act"
+    dumpsys window windows > "$_win" 2>/dev/null || : > "$_win"
+  fi
+
+  _top=$(sed -n     -e 's/.*mResumedActivity[^ ]* .* \([^/ ]*\)\/.*/\1/p'     -e 's/.*topResumedActivity[^ ]* .* \([^/ ]*\)\/.*/\1/p'     "$_act" | head -n1)
+  [ -n "$_top" ] || _top=$(sed -n     -e 's/.*mCurrentFocus=.* \([^/ ]*\)\/.*/\1/p'     -e 's/.*mFocusedApp=.* \([^/ ]*\)\/.*/\1/p'     "$_win" | head -n1)
+  [ -n "$_top" ] || _top=UNKNOWN
+
+  _visible=NONE
+  {
+    echo sts.al
+    awk -F'|' '$2!=""{print $2}' "$ROOT/config/game_registry.tsv" 2>/dev/null
+  } | awk 'NF&&!seen[$0]++' | while IFS= read -r _g; do
+    if grep -F "$_g/" "$_act" 2>/dev/null | grep -Eq 'visible=true|state=RESUMED|mResumedActivity|topResumedActivity'; then
+      echo "$_g" > "$RUNTIME/.visible_game.$"
+      break
+    fi
+  done
+  if [ -r "$RUNTIME/.visible_game.$" ]; then
+    _visible=$(cat "$RUNTIME/.visible_game.$" 2>/dev/null | head -n1)
+    rm -f "$RUNTIME/.visible_game.$"
+  fi
+
+  if registry_is_game "$_top"; then
+    PKG="$_top"; PKG_SOURCE=TOP_GAME
+  elif [ "$_visible" != NONE ] && registry_is_game "$_visible"; then
+    PKG="$_visible"; PKG_SOURCE=VISIBLE_GAME_MULTIWINDOW
+  else
+    PKG="$_top"; PKG_SOURCE=TOP_FOREGROUND
+  fi
+  TOP_PKG="$_top"; VISIBLE_GAME="$_visible"
+  rm -f "$_act" "$_win"
+}
 
 mkdir -p "$RUNTIME" "$ROOT/history"
 if [ -f "$HISTORY" ] && ! head -n1 "$HISTORY" 2>/dev/null | grep -q 'frame_at'; then
@@ -119,8 +167,8 @@ while true; do
   esac
 
   if [ $((SEQ % 2)) -eq 1 ]; then
-    PKG=$(dumpsys activity activities 2>/dev/null | grep -m1 'mResumedActivity' | sed -n 's/.* u[0-9]* \([^/ ]*\)\/.*/\1/p')
-    [ -n "$PKG" ] || PKG=UNKNOWN
+    detect_workload_package
+    [ -n "$PKG" ] || { PKG=UNKNOWN; PKG_SOURCE=DETECTION_FAILED; }
   fi
 
   FE=UNAVAILABLE; FPS=NA; JANK=NA; P95=NA; P99=NA; FN=0; FAT=0
@@ -153,13 +201,16 @@ while true; do
 
   TMP="$SNAP.tmp.$$"
   {
-    echo "SCHEMA=DJAEGER_OBSERVER_V3"
+    echo "SCHEMA=DJAEGER_OBSERVER_V4"
     echo "ENGINE=OBSERVER_FIRST"
-    echo "MODULE_VERSION=0.2.1-observer-next"
+    echo "MODULE_VERSION=1.1.0-rc1-sync"
     echo "SAMPLE_SEQ=$SEQ"
     echo "PACKAGE_SAMPLES=$PKG_SAMPLES"
     echo "EPOCH=$EPOCH"
     echo "ACTIVE_PACKAGE=$PKG"
+    echo "TOP_PACKAGE=$TOP_PKG"
+    echo "VISIBLE_GAME=$VISIBLE_GAME"
+    echo "PACKAGE_SOURCE=$PKG_SOURCE"
     echo "CPU_AVG_KHZ=$AVG"
     echo "CPU_CUR_MIN_KHZ=$MIN"
     echo "CPU_CUR_MAX_KHZ=$MAX"
