@@ -12,7 +12,6 @@ GEM="$ROOT/policy/gemini_proposal.env"
 LOCAL_OUT="$ROOT/policy/hermes_local_vote.env"
 CLOUD_OUT="$ROOT/policy/hermes_cloud_vote.env"
 STATE="$ROOT/runtime/hermes_adapter.env"
-LEGACY="$ROOT/recovery/legacy"
 LAST="$ROOT/config/hermes_review_last.env"
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
@@ -38,8 +37,9 @@ json_escape(){
 
 config_value(){
   key="$1"
-  find "$ROOT/config" "$LEGACY" -maxdepth 8 -type f 2>/dev/null | while IFS= read -r f; do
-    sed -n "s/^[[:space:]]*$key[[:space:]]*=[[:space:]]*['\"]\{0,1\}\([^'\"[:space:]]\{4,\}\).*/\1/p" "$f" 2>/dev/null
+  for f in "$ROOT/config/hermes_cloud.env" "$ROOT/config/identity.env"; do
+    [ -r "$f" ] || continue
+    sed -n "s/^[[:space:]]*$key[[:space:]]*=[[:space:]]*['\"]\{0,1\}\([^'\"[:space:]]\{4,\}\).*/\1/p" "$f" 2>/dev/null | head -n1
   done | head -n1
 }
 
