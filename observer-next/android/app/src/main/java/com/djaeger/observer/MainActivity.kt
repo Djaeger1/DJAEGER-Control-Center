@@ -37,7 +37,15 @@ class MainActivity : Activity() {
     private val refresh = object : Runnable {
         override fun run() {
             thread {
-                val raw = root("cat /data/adb/djaeger_observer/runtime/snapshot.env 2>/dev/null; echo __BUS__; cat /data/adb/djaeger_observer/runtime/agent_bus.env 2>/dev/null; echo __EXEC__; cat /data/adb/djaeger_observer/runtime/executor.env 2>/dev/null")
+                val raw = root(
+                    "cat /data/adb/djaeger_observer/runtime/snapshot.env 2>/dev/null; " +
+                    "cat /data/adb/djaeger_observer/history/learned_envelope.env 2>/dev/null; " +
+                    "cat /data/adb/djaeger_observer/runtime/agent_bus.env 2>/dev/null; " +
+                    "cat /data/adb/djaeger_observer/runtime/consensus.env 2>/dev/null; " +
+                    "cat /data/adb/djaeger_observer/runtime/gemini_reasoner.env 2>/dev/null; " +
+                    "cat /data/adb/djaeger_observer/runtime/hermes_adapter.env 2>/dev/null; " +
+                    "cat /data/adb/djaeger_observer/runtime/executor.env 2>/dev/null"
+                )
                 val map = parse(raw)
                 handler.post { render(map) }
             }
@@ -47,7 +55,6 @@ class MainActivity : Activity() {
 
     private fun parse(raw: String): Map<String,String> =
         raw.lineSequence().mapNotNull {
-            if (it.startsWith("__")) return@mapNotNull null
             val p = it.indexOf('=')
             if (p <= 0) null else it.substring(0,p).trim() to it.substring(p+1).trim()
         }.toMap()
@@ -72,6 +79,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(2), 0, dp(16))
         })
 
+        // Overview contract is intentionally kept in the same six-card order.
         card("STATUS",
             "Engine      ${v(s,"ENGINE","OFFLINE")}\n" +
             "Package     ${v(s,"ACTIVE_PACKAGE","UNKNOWN")}\n" +
@@ -79,37 +87,38 @@ class MainActivity : Activity() {
             "Migration   ${v(s,"MIGRATION_STATE","UNKNOWN")}")
 
         card("THOUGHT",
-            "Gemini: ${v(s,"GEMINI","NOT_FOUND")}\n" +
+            "Gemini: ${v(s,"GEMINI_STATE",v(s,"GEMINI","WAITING"))}\n" +
             "Active brain: HERMES LOCAL + HERMES CLOUD + GEMINI\n" +
             "Cloud in control: CONSENSUS ONLY\n" +
             "Cloud plan: ${v(s,"POLICY_STATE","OBSERVING")}")
 
         card("HERMES",
-            "Hermes Local   ${v(s,"HERMES_LOCAL","WAITING")}\n" +
-            "Hermes Cloud   ${v(s,"HERMES_CLOUD","WAITING")}\n" +
+            "Hermes Local   ${v(s,"HERMES_LOCAL_STATE",v(s,"HERMES_LOCAL","WAITING"))}\n" +
+            "Hermes Cloud   ${v(s,"HERMES_CLOUD_STATE",v(s,"HERMES_CLOUD","STANDBY"))}\n" +
             "AI Bus         ${v(s,"AI_BUS","WAITING")}\n" +
-            "Legacy config  ${v(s,"LEGACY_CONFIG_PRESENT","NO")}")
+            "Consensus      ${v(s,"CONSENSUS_STATE","OBSERVING")}")
 
         card("HERMES CTX1 • CONTEXT VNEXT • SHADOW",
-            "CPU avg      ${v(s,"CPU_AVG_KHZ","--")} kHz\n" +
-            "CPU live     ${v(s,"CPU_CUR_MIN_KHZ","--")}–${v(s,"CPU_CUR_MAX_KHZ","--")} kHz\n" +
-            "GPU          ${v(s,"GPU_CUR_HZ","--")}\n" +
+            "CPU Little   ${v(s,"LITTLE_CUR_KHZ","--")} kHz\n" +
+            "CPU Big      ${v(s,"BIG_CUR_KHZ","--")} kHz\n" +
+            "GPU          ${v(s,"GPU_CUR_HZ","--")} Hz\n" +
             "Skin         ${v(s,"SKIN_TEMP_C","--")} °C\n" +
             "Battery      ${v(s,"BATTERY_TEMP_C","--")} °C • ${v(s,"BATTERY_PCT","--")}%\n" +
             "Power        ${v(s,"POWER_MW","--")} mW")
 
         card("STRATEGY",
             "Baseline      STOCK\n" +
-            "Legacy preset DISABLED\n" +
+            "Learned CPU   L ${v(s,"LITTLE_MIN_KHZ","--")}–${v(s,"LITTLE_MAX_KHZ","--")} • B ${v(s,"BIG_MIN_KHZ","--")}–${v(s,"BIG_MAX_KHZ","--")}\n" +
+            "Learned GPU   ${v(s,"GPU_MIN_HZ","--")}–${v(s,"GPU_MAX_HZ","--")}\n" +
             "Policy        ${v(s,"POLICY_STATE","OBSERVING")}\n" +
-            "Executor      ${v(s,"EXECUTOR_STATE","OBSERVE_ONLY")}\n" +
-            "Authority     ${v(s,"HARDWARE_AUTHORITY","VALIDATED_EXECUTOR_ONLY")}")
+            "Executor      ${v(s,"EXECUTOR_STATE","OBSERVE_ONLY")}")
 
         card("OUTCOME LEARNING",
-            "Sample        ${v(s,"SAMPLE_SEQ","0")}\n" +
-            "Learning      ${v(s,"LEARNING_STATE","WAITING")}\n" +
-            "Rule          compare against stock before apply\n" +
-            "Rollback      required for every adaptive policy")
+            "Sample        ${v(s,"PACKAGE_SAMPLES",v(s,"SAMPLE_SEQ","0"))}\n" +
+            "Learning      ${v(s,"STATE",v(s,"LEARNING_STATE","WAITING"))}\n" +
+            "Frame data    ${v(s,"FRAME_EVIDENCE","UNAVAILABLE")}\n" +
+            "Rule          stock must be beaten before apply\n" +
+            "Rollback      mandatory for every adaptive policy")
 
         val scroll = ScrollView(this)
         scroll.addView(list)
