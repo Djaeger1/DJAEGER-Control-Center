@@ -25,5 +25,11 @@ const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'htt
  if(req.method==='GET'&&u.pathname==='/v1/config')return send(res,200,{ok:true,release,cloud_hardware_authority:'NONE',device_executor_authority:'LOCAL_VALIDATED_ONLY',remote_hardware_commands:false,remote_software_updates:false});
  return send(res,404,{ok:false,error:'not_found'});
 }catch(e){return send(res,e.code||500,{ok:false,error:String(e.message||e)});}});
-if(require.main===module)server.listen(PORT,()=>console.log(JSON.stringify({event:'DJAEGER_AI_CLEAN_CORE_READY',port:PORT,release,at:now()})));
+if(require.main===module){
+  server.listen(PORT,()=>console.log(JSON.stringify({event:'DJAEGER_AI_CLEAN_CORE_READY',port:PORT,release,at:now()})));
+  setInterval(()=>{
+    const age=lastDeviceReceivedMs?Math.max(0,Math.floor((Date.now()-lastDeviceReceivedMs)/1000)):null;
+    console.log(JSON.stringify({event:'DJAEGER_AI_TELEMETRY_HEARTBEAT',release,telemetry_seen:lastDeviceReceivedMs>0,telemetry_accepted:telemetryAccepted,last_telemetry_age_sec:age,uptime_sec:Math.floor((Date.now()-startedAtMs)/1000),hardware_authority:'NONE',at:now()}));
+  },60000).unref();
+}
 module.exports={server,normalize,release};
