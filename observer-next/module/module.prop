@@ -1,6 +1,6 @@
 id=djaeger_ai_observer
 name=DJAEGER AI Observer
-version=0.2.0-observer-ai
-versionCode=200
+version=0.2.1-observer-next
+versionCode=201
 author=DJAEGER
-description=Observer-first telemetry, stock learning, Gemini + Hermes analysis, guarded consensus, safe policy execution, and legacy credential migration.
+description=Read-only validation: stock learning, Gemini + ONE HERMES review, counterfactual shadow evidence, legacy credential migration, and no sysfs execution.

@@ -1,11 +1,19 @@
 #!/system/bin/sh
 ROOT="$1"
+MODDIR="$2"
 RUNTIME="$ROOT/runtime"
 HISTORY="$ROOT/history/telemetry.csv"
 SNAP="$RUNTIME/snapshot.env"
 FRAMEFILE="$RUNTIME/frame.env"
 SEQ=0
 PKG=UNKNOWN
+PKG_SAMPLES=0
+LAST_COUNT_PKG=""
+PUBLISHER_READY=0
+if [ -r "$MODDIR/bin/publisher.sh" ]; then
+  . "$MODDIR/bin/publisher.sh"
+  PUBLISHER_READY=1
+fi
 
 read_one() {
   for p in "$@"; do
@@ -110,7 +118,7 @@ while true; do
     ;;
   esac
 
-  if [ $((SEQ % 5)) -eq 1 ]; then
+  if [ $((SEQ % 2)) -eq 1 ]; then
     PKG=$(dumpsys activity activities 2>/dev/null | grep -m1 'mResumedActivity' | sed -n 's/.* u[0-9]* \([^/ ]*\)\/.*/\1/p')
     [ -n "$PKG" ] || PKG=UNKNOWN
   fi
@@ -132,7 +140,12 @@ while true; do
   [ -n "$MIGRATION_STATE" ] || MIGRATION_STATE=UNKNOWN
   [ -n "$LEGACY_CONFIG_PRESENT" ] || LEGACY_CONFIG_PRESENT=NO
 
-  PKG_SAMPLES=$(awk -F, -v p="$PKG" 'NR>1&&$3==p{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+  if [ "$PKG" != "$LAST_COUNT_PKG" ] || [ $((SEQ % 5)) -eq 1 ]; then
+    PKG_SAMPLES=$(awk -F, -v p="$PKG" 'NR>1&&$3==p{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+    LAST_COUNT_PKG="$PKG"
+  else
+    PKG_SAMPLES=$((PKG_SAMPLES+1))
+  fi
   if [ "$PKG_SAMPLES" -ge 600 ]; then LEARN=BASELINE_CPU_MATURE
   elif [ "$PKG_SAMPLES" -ge 120 ]; then LEARN=BASELINE_CPU_READY
   else LEARN=LEARNING
@@ -142,7 +155,7 @@ while true; do
   {
     echo "SCHEMA=DJAEGER_OBSERVER_V3"
     echo "ENGINE=OBSERVER_FIRST"
-    echo "MODULE_VERSION=0.2.0-observer-ai"
+    echo "MODULE_VERSION=0.2.1-observer-next"
     echo "SAMPLE_SEQ=$SEQ"
     echo "PACKAGE_SAMPLES=$PKG_SAMPLES"
     echo "EPOCH=$EPOCH"
@@ -181,7 +194,7 @@ while true; do
     echo "MIGRATION_STATE=$MIGRATION_STATE"
     echo "LEGACY_CONFIG_PRESENT=$LEGACY_CONFIG_PRESENT"
     echo "LEGACY_PROFILES=DISABLED"
-    echo "HARDWARE_AUTHORITY=VALIDATED_EXECUTOR_ONLY"
+    echo "HARDWARE_AUTHORITY=STOCK_KERNEL_READ_ONLY"
   } > "$TMP"
   chmod 644 "$TMP"
   mv -f "$TMP" "$SNAP"
@@ -194,5 +207,7 @@ while true; do
     { head -n1 "$HISTORY"; tail -n 7500 "$HISTORY"; } > "$HISTORY.trim"
     mv -f "$HISTORY.trim" "$HISTORY"
   fi
-  sleep 2
+  [ "$PUBLISHER_READY" = 1 ] && publish_cc "$ROOT"
+  WORKLOAD_CLASS=$(sed -n 's/^WORKLOAD_CLASS=//p' "$ROOT/runtime/workload.env" 2>/dev/null | head -n1)
+  [ "$WORKLOAD_CLASS" = GAME ] && sleep 3 || sleep 10
 done

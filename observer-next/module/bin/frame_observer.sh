@@ -3,6 +3,7 @@ ROOT="$1"
 SNAP="$ROOT/runtime/snapshot.env"
 OUT="$ROOT/runtime/frame.env"
 CACHE="$ROOT/runtime/frame_layer.env"
+WORKLOAD="$ROOT/runtime/workload.env"
 
 capture(){
   if command -v timeout >/dev/null 2>&1; then
@@ -31,13 +32,13 @@ publish_unavailable(){
 while true; do
   [ -r "$SNAP" ] || { sleep 5; continue; }
   PKG=$(sed -n 's/^ACTIVE_PACKAGE=//p' "$SNAP" | head -n1)
-  case "$PKG" in
-    ''|UNKNOWN|android|com.android.*|com.google.android.*|com.miui.*|com.djaeger.observer)
-      publish_unavailable NON_GAME_OR_SYSTEM "${PKG:-UNKNOWN}"
-      sleep 5
-      continue
-    ;;
-  esac
+  WPKG=$(sed -n 's/^PACKAGE=//p' "$WORKLOAD" 2>/dev/null | head -n1)
+  WCLASS=$(sed -n 's/^WORKLOAD_CLASS=//p' "$WORKLOAD" 2>/dev/null | head -n1)
+  if [ "$WCLASS" != GAME ] || [ "$WPKG" != "$PKG" ]; then
+    publish_unavailable NON_GAME_WORKLOAD "${PKG:-UNKNOWN}"
+    sleep 15
+    continue
+  fi
 
   LAYER=""
   if [ -r "$CACHE" ] && [ "$(sed -n 's/^PACKAGE=//p' "$CACHE" | head -n1)" = "$PKG" ]; then
@@ -49,7 +50,7 @@ while true; do
     capture dumpsys SurfaceFlinger --list > "$LIST" 2>/dev/null || {
       rm -f "$LIST"
       publish_unavailable SURFACEFLINGER_LIST_TIMEOUT "$PKG"
-      sleep 5
+      sleep 10
       continue
     }
     LAYER=$(grep -F "$PKG" "$LIST" | grep -F "SurfaceView[" | grep -F "(BLAST)" | head -n1)
@@ -59,7 +60,7 @@ while true; do
     if [ -z "$LAYER" ]; then
       rm -f "$CACHE"
       publish_unavailable LAYER_NOT_FOUND "$PKG"
-      sleep 5
+      sleep 10
       continue
     fi
     {
@@ -73,7 +74,7 @@ while true; do
   capture dumpsys SurfaceFlinger --latency "$LAYER" > "$RAW" 2>/dev/null || {
     rm -f "$RAW" "$CACHE"
     publish_unavailable SURFACEFLINGER_LATENCY_TIMEOUT "$PKG"
-    sleep 5
+    sleep 10
     continue
   }
 
@@ -104,7 +105,7 @@ while true; do
   if [ -z "$RES" ]; then
     rm -f "$CACHE"
     publish_unavailable PARSER_NO_FRAMES "$PKG"
-    sleep 5
+    sleep 10
     continue
   fi
 
@@ -131,5 +132,5 @@ while true; do
     echo "JANK_THRESHOLD_MS=$THR"
   } > "$T"
   chmod 644 "$T"; mv -f "$T" "$OUT"
-  sleep 5
+  sleep 10
 done
