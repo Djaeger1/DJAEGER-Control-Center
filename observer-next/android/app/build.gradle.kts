@@ -12,8 +12,8 @@ android {
         applicationId = "com.djaeger.observer"
         minSdk = 26
         targetSdk = 33
-        versionCode = 103
-        versionName = "1.0.0-adaptive-clean"
+        versionCode = 104
+        versionName = "1.1.0-rc1-sync"
     }
 
     buildFeatures {
