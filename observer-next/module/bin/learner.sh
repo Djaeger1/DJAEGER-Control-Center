@@ -10,7 +10,7 @@ LAST_N=0
 
 qcol() {
   pkg="$1"; col="$2"; pct="$3"; tmp="$TMPBASE.i.$col.$pct"
-  awk -F, -v p="$pkg" -v c="$col" 'NR>1 && $3==p && $c ~ /^[0-9]+$/ && $c>0 {print $c}' "$HISTORY" 2>/dev/null | sort -n > "$tmp"
+  awk -F, -v p="$pkg" -v c="$col" 'NR>1 && $3==p && $23=="STOCK_BASELINE" && $c ~ /^[0-9]+$/ && $c>0 {print $c}' "$HISTORY" 2>/dev/null | sort -n > "$tmp"
   n=$(wc -l < "$tmp" 2>/dev/null)
   case "$n" in ''|0) rm -f "$tmp"; echo 0; return;; esac
   idx=$(( (n*pct + 99) / 100 ))
@@ -23,7 +23,7 @@ qcol() {
 qframe() {
   pkg="$1"; col="$2"; pct="$3"; tmp="$TMPBASE.f.$col.$pct"
   awk -F, -v p="$pkg" -v c="$col" '
-    NR>1 && $3==p && $20+0>=20 && $21 ~ /^[0-9]+$/ && !seen[$21]++ &&
+    NR>1 && $3==p && $23=="STOCK_BASELINE" && $20+0>=20 && $21 ~ /^[0-9]+$/ && !seen[$21]++ &&
     $c ~ /^[0-9]+([.][0-9]+)?$/ && $c>=0 {print $c}
   ' "$HISTORY" 2>/dev/null | sort -n > "$tmp"
   n=$(wc -l < "$tmp" 2>/dev/null)
@@ -42,14 +42,14 @@ while true; do
   WCLASS=$(sed -n 's/^WORKLOAD_CLASS=//p' "$WORKLOAD" 2>/dev/null | head -n1)
   [ "$WCLASS" = GAME ] && [ "$WPKG" = "$PKG" ] || { sleep 30; continue; }
 
-  N=$(awk -F, -v p="$PKG" 'NR>1&&$3==p{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+  N=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
   [ "$N" -ge 120 ] 2>/dev/null || { sleep 30; continue; }
   if [ "$PKG" = "$LAST_PKG" ] && [ "$N" -lt $((LAST_N+20)) ] 2>/dev/null; then
     sleep 30
     continue
   fi
 
-  FN=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$20+0>=20&&$21~/^[0-9]+$/&&!seen[$21]++{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+  FN=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"&&$20+0>=20&&$21~/^[0-9]+$/&&!seen[$21]++{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
 
   L05=$(qcol "$PKG" 7 5); L95=$(qcol "$PKG" 7 95)
   B05=$(qcol "$PKG" 8 5); B95=$(qcol "$PKG" 8 95)
@@ -105,7 +105,7 @@ while true; do
     echo "JANK_P95=$JANK95"
     echo "FRAME_P95_P95_MS=$FP95"
     echo "FRAME_P99_P95_MS=$FP99"
-    echo "SOURCE=STOCK_OBSERVATION_P05_P95_PLUS_SURFACEFLINGER"
+    echo "SOURCE=STOCK_BASELINE_ONLY_P05_P95_PLUS_SURFACEFLINGER"
   } > "$T"
   chmod 600 "$T"
   mv -f "$T" "$OUT"
