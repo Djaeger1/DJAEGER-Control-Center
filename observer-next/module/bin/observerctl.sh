@@ -125,7 +125,7 @@ sync_request() {
   expected_apk=104
   pair=NO; [ "$apk" = "$expected_apk" ] && [ "$module_code" = 203 ] && pair=YES
   now=$(date +%s)
-  tmp="$HANDSHAKE.tmp.$"
+  tmp="$(mktemp "${HANDSHAKE}.tmp.XXXXXX" 2>/dev/null)"; [ -n "$tmp" ] || tmp="${HANDSHAKE}.tmp.${now}"
   {
     echo "APK_VERSION_CODE=$apk"
     echo "EXPECTED_APK_VERSION_CODE=$expected_apk"
