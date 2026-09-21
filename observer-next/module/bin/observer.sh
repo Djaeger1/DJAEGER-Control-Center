@@ -33,16 +33,30 @@ thermal_by_type() {
   echo "NA"
 }
 
-gpu_cur() {
-  read_one     /sys/class/kgsl/kgsl-3d0/gpuclk     /sys/class/kgsl/kgsl-3d0/devfreq/cur_freq     /sys/class/devfreq/*gpu*/cur_freq     /sys/class/devfreq/*mali*/cur_freq
-}
-
-gpu_load() {
-  read_one     /sys/class/kgsl/kgsl-3d0/gpubusy     /sys/class/kgsl/kgsl-3d0/devfreq/load     /sys/class/devfreq/*gpu*/load
+gpu_path() {
+  for p in /sys/class/kgsl/kgsl-3d0/devfreq /sys/class/devfreq/*gpu* /sys/class/devfreq/*mali*; do
+    [ -d "$p" ] || continue
+    [ -r "$p/cur_freq" ] || continue
+    echo "$p"
+    return
+  done
+  echo ""
 }
 
 mkdir -p "$RUNTIME" "$ROOT/history"
-[ -f "$HISTORY" ] || echo "epoch,seq,package,cpu_avg_khz,cpu_min_cur_khz,cpu_max_cur_khz,gpu_cur_hz,skin_c,battery_c,current_ua,voltage_uv,power_mw,battery_pct" > "$HISTORY"
+if [ -f "$HISTORY" ] && ! head -n1 "$HISTORY" 2>/dev/null | grep -q 'little_cur_khz'; then
+  mv -f "$HISTORY" "$ROOT/history/telemetry.v1.$(date +%s).csv" 2>/dev/null
+fi
+[ -f "$HISTORY" ] || echo "epoch,seq,package,cpu_avg_khz,cpu_min_cur_khz,cpu_max_cur_khz,little_cur_khz,big_cur_khz,gpu_cur_hz,skin_c,battery_c,current_ua,voltage_uv,power_mw,battery_pct" > "$HISTORY"
+
+LOW_POLICY=""
+HIGH_POLICY=""
+for p in /sys/devices/system/cpu/cpufreq/policy*; do
+  [ -d "$p" ] || continue
+  [ -z "$LOW_POLICY" ] && LOW_POLICY="$p"
+  HIGH_POLICY="$p"
+done
+GPU_PATH=$(gpu_path)
 
 while true; do
   SEQ=$((SEQ+1))
@@ -60,8 +74,11 @@ while true; do
   done
   [ "$CNT" -gt 0 ] && AVG=$((SUM/CNT)) || AVG=0
 
-  GPU=$(gpu_cur)
-  GLOAD=$(gpu_load)
+  LITTLE=$(read_one "$LOW_POLICY/scaling_cur_freq")
+  BIG=$(read_one "$HIGH_POLICY/scaling_cur_freq")
+  GPU=$(read_one "$GPU_PATH/cur_freq" /sys/class/kgsl/kgsl-3d0/gpuclk)
+  GLOAD=$(read_one /sys/class/kgsl/kgsl-3d0/gpubusy "$GPU_PATH/load")
+
   SKIN=$(temp_c "$(thermal_by_type 'skin|shell|surface|quiet')")
   CPUC=$(temp_c "$(thermal_by_type 'cpu|soc|ap|tsens')")
   GPUC=$(temp_c "$(thermal_by_type 'gpu')")
@@ -86,26 +103,32 @@ while true; do
   [ -n "$MIGRATION_STATE" ] || MIGRATION_STATE=UNKNOWN
   [ -n "$LEGACY_CONFIG_PRESENT" ] || LEGACY_CONFIG_PRESENT=NO
 
-  SAMPLES=$(tail -n +2 "$HISTORY" 2>/dev/null | wc -l)
-  if [ "$SAMPLES" -ge 600 ]; then LEARN=BASELINE_MATURE
-  elif [ "$SAMPLES" -ge 120 ]; then LEARN=BASELINE_READY
+  PKG_SAMPLES=$(awk -F, -v p="$PKG" 'NR>1&&$3==p{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+  if [ "$PKG_SAMPLES" -ge 600 ]; then LEARN=BASELINE_MATURE
+  elif [ "$PKG_SAMPLES" -ge 120 ]; then LEARN=BASELINE_READY
   else LEARN=LEARNING
   fi
 
   TMP="$SNAP.tmp.$$"
   {
-    echo "SCHEMA=DJAEGER_OBSERVER_V1"
+    echo "SCHEMA=DJAEGER_OBSERVER_V2"
     echo "ENGINE=OBSERVER_FIRST"
-    echo "MODULE_VERSION=0.1.0-observer"
+    echo "MODULE_VERSION=0.2.0-observer"
     echo "SAMPLE_SEQ=$SEQ"
+    echo "PACKAGE_SAMPLES=$PKG_SAMPLES"
     echo "EPOCH=$EPOCH"
     echo "ACTIVE_PACKAGE=$PKG"
     echo "CPU_AVG_KHZ=$AVG"
     echo "CPU_CUR_MIN_KHZ=$MIN"
     echo "CPU_CUR_MAX_KHZ=$MAX"
     echo "CPU_VECTOR_KHZ=$VECTOR"
+    echo "LITTLE_CUR_KHZ=$LITTLE"
+    echo "BIG_CUR_KHZ=$BIG"
+    echo "LITTLE_POLICY_PATH=$LOW_POLICY"
+    echo "BIG_POLICY_PATH=$HIGH_POLICY"
     echo "GPU_CUR_HZ=$GPU"
     echo "GPU_LOAD_RAW=$GLOAD"
+    echo "GPU_DEVFREQ_PATH=$GPU_PATH"
     echo "SKIN_TEMP_C=$SKIN"
     echo "CPU_TEMP_C=$CPUC"
     echo "GPU_TEMP_C=$GPUC"
@@ -114,6 +137,7 @@ while true; do
     echo "BATTERY_VOLTAGE_UV=$VOLT"
     echo "POWER_MW=$POWER"
     echo "BATTERY_PCT=$PCT"
+    echo "FRAME_EVIDENCE=UNAVAILABLE"
     echo "LEARNING_STATE=$LEARN"
     echo "MIGRATION_STATE=$MIGRATION_STATE"
     echo "LEGACY_CONFIG_PRESENT=$LEGACY_CONFIG_PRESENT"
@@ -123,13 +147,13 @@ while true; do
   chmod 644 "$TMP"
   mv -f "$TMP" "$SNAP"
 
-  echo "$EPOCH,$SEQ,$PKG,$AVG,$MIN,$MAX,$GPU,$SKIN,$BATC,$CUR,$VOLT,$POWER,$PCT" >> "$HISTORY"
+  echo "$EPOCH,$SEQ,$PKG,$AVG,$MIN,$MAX,$LITTLE,$BIG,$GPU,$SKIN,$BATC,$CUR,$VOLT,$POWER,$PCT" >> "$HISTORY"
 
   SIZE=$(wc -c < "$HISTORY" 2>/dev/null)
-  if [ "${SIZE:-0}" -gt 2097152 ]; then
+  case "$SIZE" in ''|*[!0-9]*) SIZE=0;; esac
+  if [ "$SIZE" -gt 2097152 ]; then
     { head -n1 "$HISTORY"; tail -n 5000 "$HISTORY"; } > "$HISTORY.trim"
     mv -f "$HISTORY.trim" "$HISTORY"
   fi
-
   sleep 2
 done
