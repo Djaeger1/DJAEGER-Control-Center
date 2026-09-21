@@ -11,17 +11,40 @@ run_ctl() {
 }
 
 LEGACY_ROOT="$TEST_ROOT/legacy_source"
-mkdir -p "$LEGACY_ROOT/config"
+mkdir -p "$LEGACY_ROOT/config" "$LEGACY_ROOT/djaeger_work" "$LEGACY_ROOT/studio"
 cat > "$LEGACY_ROOT/config/identity.env" <<'EOF'
 DEVICE_ID=observer-migration-test
 GEMINI_API_KEY=AIzaObserverMigrationFakeKey1234567890
+HERMES_ACCESS_KEY=hermes-cleanroom-token-1234567890
+HERMES_ENDPOINT=https://hermes.example.invalid
+EOF
+cat > "$LEGACY_ROOT/djaeger_work/foreign.env" <<'EOF'
+GEMINI_API_KEY=AIzaForeignWorkKeyMustNeverImport123456789
+HERMES_ACCESS_KEY=hermes-work-token-must-never-import
+DEVICE_ID=work-device-must-never-import
+EOF
+cat > "$LEGACY_ROOT/studio/foreign.env" <<'EOF'
+GEMINI_API_KEY=AIzaStudioKeyMustNeverImport1234567890123
 EOF
 cat > "$LEGACY_ROOT/controller.sh" <<'EOF'
 echo legacy-controller-must-not-be-imported
 EOF
 DJAEGER_LEGACY_ROOT="$LEGACY_ROOT" sh "$MODULE/bin/migrate.sh" "$TEST_ROOT" "$MODULE"
-test -r "$TEST_ROOT/recovery/legacy/dirs/config/identity.env"
-test ! -e "$TEST_ROOT/recovery/legacy/files/controller.sh"
+
+test -r "$TEST_ROOT/config/gemini_vault.env"
+test -r "$TEST_ROOT/config/hermes_cloud.env"
+test -r "$TEST_ROOT/config/identity.env"
+test ! -e "$TEST_ROOT/recovery/legacy"
+grep -Fqx 'KEY_1=AIzaObserverMigrationFakeKey1234567890' "$TEST_ROOT/config/gemini_vault.env"
+grep -Fqx 'HERMES_ACCESS_KEY=hermes-cleanroom-token-1234567890' "$TEST_ROOT/config/hermes_cloud.env"
+grep -Fqx 'HERMES_ENDPOINT=https://hermes.example.invalid' "$TEST_ROOT/config/hermes_cloud.env"
+grep -Fqx 'DEVICE_ID=observer-migration-test' "$TEST_ROOT/config/identity.env"
+! grep -R -F 'ForeignWorkKey' "$TEST_ROOT/config" "$TEST_ROOT/recovery"
+! grep -R -F 'work-device-must-never-import' "$TEST_ROOT/config" "$TEST_ROOT/recovery"
+! grep -R -F 'StudioKeyMustNeverImport' "$TEST_ROOT/config" "$TEST_ROOT/recovery"
+grep -Fqx 'RAW_LEGACY_FILES_IMPORTED=0' "$TEST_ROOT/recovery/migration.env"
+grep -Fqx 'FOREIGN_PROJECT_IMPORTS=0' "$TEST_ROOT/recovery/migration.env"
+grep -Fqx 'MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY' "$TEST_ROOT/recovery/migration.env"
 grep -Fqx 'LEGACY_HARDWARE_CONTROLLER_IMPORTED=NO' "$TEST_ROOT/recovery/migration.env"
 grep -Fqx 'LEGACY_PROFILE_MAP_IMPORTED=NO' "$TEST_ROOT/recovery/migration.env"
 
@@ -42,6 +65,7 @@ if printf 'sts.al\nWrong Class\n' | run_ctl app-registry-add-stdin >/dev/null 2>
   exit 1
 fi
 
+run_ctl gemini-key-delete >/dev/null
 FAKE_KEY='AIzaObserverContractFakeKey1234567890'
 printf '%s\n' "$FAKE_KEY" | run_ctl gemini-key-add-stdin >/dev/null
 KEY_STATUS=$(run_ctl gemini-key-status)
