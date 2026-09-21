@@ -122,8 +122,8 @@ sync_request() {
   [ -n "$req" ] || { echo "SYNC_STATUS=REJECTED"; echo "REASON=INVALID_REQUEST_ID"; return 2; }
   module_code=$(sed -n 's/^versionCode=//p' "$MODDIR/module.prop" 2>/dev/null | head -n1)
   [ -n "$module_code" ] || module_code=0
-  expected_apk=105
-  pair=NO; [ "$apk" = "$expected_apk" ] && [ "$module_code" = 204 ] && pair=YES
+  expected_apk=106
+  pair=NO; [ "$apk" = "$expected_apk" ] && [ "$module_code" = 205 ] && pair=YES
   now=$(date +%s)
   tmp="$(mktemp "${HANDSHAKE}.tmp.XXXXXX" 2>/dev/null)"; [ -n "$tmp" ] || tmp="${HANDSHAKE}.tmp.${now}"
   {
