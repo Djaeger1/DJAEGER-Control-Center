@@ -108,6 +108,7 @@ class MainActivity : Activity() {
 
         card("STRATEGY",
             "Baseline      STOCK\n" +
+            "Legacy preset DISABLED\n" +
             "Learned CPU   L ${v(s,"LITTLE_MIN_KHZ","--")}–${v(s,"LITTLE_MAX_KHZ","--")} • B ${v(s,"BIG_MIN_KHZ","--")}–${v(s,"BIG_MAX_KHZ","--")}\n" +
             "Learned GPU   ${v(s,"GPU_MIN_HZ","--")}–${v(s,"GPU_MAX_HZ","--")}\n" +
             "Policy        ${v(s,"POLICY_STATE","OBSERVING")}\n" +
