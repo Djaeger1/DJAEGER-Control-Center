@@ -2,24 +2,15 @@ name: Build DJAEGER Control Center APK
 on:
   workflow_dispatch:
   push:
+    branches: [main, ui/miui-game-turbo-phase1-dev, ui/monitoring-only-v1]
+    paths:
+      - '.github/workflows/build-apk.yml'
+      - 'scripts/*.py'
+  pull_request:
     branches: [main]
     paths:
       - '.github/workflows/build-apk.yml'
-      - 'scripts/build11_ai_bridge_patch.py'
-      - 'scripts/build12_hardening_patch.py'
-      - 'scripts/build14_profileinstaller_hardening_patch.py'
-      - 'scripts/build15_evolution_hud_patch.py'
-      - 'scripts/build16_game_turbo_experience_patch.py'
-      - 'scripts/build17_game_turbo_polish_patch.py'
-      - 'scripts/build18_game_turbo_compile_fix.py'
-      - 'scripts/build19_game_turbo_service_rewrite.py'
-      - 'scripts/build20_miui_game_turbo_authority_patch.py'
-      - 'scripts/build21_djaeger_ai_kernel_sync_patch.py'
-      - 'scripts/build22_hud_flicker_fix_patch.py'
-      - 'scripts/build23_hud_compile_fix.py'
-      - 'scripts/build24_realtime_telemetry_multiwindow_patch.py'
-      - 'scripts/build25_shell_literal_compile_fix.py'
-      - 'scripts/build26_miui_construction_rewrite.py'
+      - 'scripts/*.py'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,88 +25,45 @@ jobs:
           rm -rf project && mkdir project
           unzip -q DJAEGER_Control_Center_v0.5.3_RC_CoGo_AndroidX_Fix.zip -d project
           test -f project/DJAEGER_Control_Center/settings.gradle.kts
-      - name: Apply Build 11 AI Bridge patch
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build11_ai_bridge_patch.py
-      - name: Apply Build 12 hardening patch
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build12_hardening_patch.py
-      - name: Apply Build 14 ProfileInstaller hardening
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build14_profileinstaller_hardening_patch.py
-      - name: Apply Build 15 Evolution HUD and Game Launcher
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build15_evolution_hud_patch.py
-      - name: Apply Build 16 Game Turbo experience
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build16_game_turbo_experience_patch.py
-      - name: Apply Build 17 Game Turbo polish
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build17_game_turbo_polish_patch.py
-      - name: Apply Build 18 compile fixes
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build18_game_turbo_compile_fix.py
-      - name: Apply Build 19 clean HUD state machine
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build19_game_turbo_service_rewrite.py
-      - name: Apply Build 20 MIUI Game Turbo authority
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build20_miui_game_turbo_authority_patch.py
-      - name: Apply Build 21 DJAEGER AI + Kernel sync
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build21_djaeger_ai_kernel_sync_patch.py
-      - name: Apply Build 22 persistent HUD flicker fix
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build22_hud_flicker_fix_patch.py
-      - name: Apply Build 23 chain through Build 26
-        working-directory: project/DJAEGER_Control_Center
-        run: python3 ../../scripts/build23_hud_compile_fix.py
-      - name: Pre-build assertions
+      - name: Apply historical stable patch chain
         working-directory: project/DJAEGER_Control_Center
         run: |
-          grep -q 'v0.11.0 RC • MIUI CONSTRUCTION • REALTIME 1s' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
-          grep -q '0.11.0-rc-miui-construction' app/build.gradle.kts
-          grep -q 'authoritySyncStatus' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'kernelCapabilitySummary' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'session-recovery-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'snapshot-lifecycle-status' app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          grep -q 'runtime\["active"\]' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'TYPE_APPLICATION_OVERLAY' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'private fun updateOverlayContent()' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'private val pollRunnable: Runnable = object : Runnable' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'private enum class HudState { HANDLE, PANEL, EXTENDED }' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'launchMiuiFreeform' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'cmd activity start-activity --user 0 --windowingMode 5' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'dumpsys activity activities' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q '__DJAEGER_FREEFORM_CONFIRMED__' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q 'dumpsys SurfaceFlinger --latency' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          grep -q '/data/adb/modules/djaeger_game_stabilizer/telemetry.csv' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt').read_text()
-          apply_body=s.split('private fun applySessionState(active: Boolean)',1)[1].split('private fun isGameSessionActive',1)[0]
-          assert 'updateOverlayContent()' in apply_body
-          assert 'rebuildOverlayKeepingPosition()' not in apply_body
-          update_body=s.split('private fun updateOverlayContent()',1)[1].split('private fun buildHandle()',1)[0]
-          for forbidden in ('removeView','addView','showOverlay','rebuildOverlayKeepingPosition'):
-              assert forbidden not in update_body, forbidden
-          poll_body=s.split('private val pollRunnable',1)[1].split('private fun applySessionState',1)[0]
-          completion=poll_body.split('mainHandler.post {',1)[1]
-          assert 'mainHandler.postDelayed(' in completion
-          assert 'this,' in completion
-          assert 'pollRunnable,' not in completion
-          assert 'csvNumber(9)' in s and 'csvNumber(10)' in s
-          assert '/data/adb/djaeger_ai/telemetry.csv' not in s
-          print('Build26 state/poll/telemetry/freeform assertions PASS')
-          PY
-          grep -q 'android.permission.PACKAGE_USAGE_STATS' app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.SYSTEM_ALERT_WINDOW' app/src/main/AndroidManifest.xml
-          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' app/src/main/AndroidManifest.xml
-          grep -q '<queries>' app/src/main/AndroidManifest.xml
+          python3 ../../scripts/build11_ai_bridge_patch.py
+          python3 ../../scripts/build12_hardening_patch.py
+          python3 ../../scripts/build14_profileinstaller_hardening_patch.py
+          python3 ../../scripts/build15_evolution_hud_patch.py
+          python3 ../../scripts/build16_game_turbo_experience_patch.py
+          python3 ../../scripts/build17_game_turbo_polish_patch.py
+          python3 ../../scripts/build18_game_turbo_compile_fix.py
+          python3 ../../scripts/build19_game_turbo_service_rewrite.py
+          python3 ../../scripts/build20_miui_game_turbo_authority_patch.py
+          python3 ../../scripts/build21_djaeger_ai_kernel_sync_patch.py
+          python3 ../../scripts/build22_hud_flicker_fix_patch.py
+          python3 ../../scripts/build23_hud_compile_fix.py
+      - name: Convert to Monitoring Edition
+        working-directory: project/DJAEGER_Control_Center
+        run: |
+          python3 ../../scripts/build38_monitoring_only_redesign.py
+          python3 ../../scripts/build39_monitoring_repository_hardening.py
+          python3 ../../scripts/build40_monitoring_shell_literal_fix.py
+          python3 ../../scripts/build41_monitoring_minimal_runtime.py
+      - name: Monitoring-only source audit
+        working-directory: project/DJAEGER_Control_Center
+        run: |
+          grep -q '1.0.0-monitoring-edition' app/build.gradle.kts
+          grep -q 'Monitoring Edition • Kernel + DJAEGER telemetry' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'PROTECTED ACTUATORS • READ ONLY' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q '/sys/class/thermal/cooling_device17/cur_state' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q '/sys/class/thermal/cooling_device16/cur_state' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q '/data/adb/modules/djaeger_game_stabilizer/telemetry.csv' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -q 'djaeger-ai gemini-status' app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft |djaeger-ai mode |policy-intent |native_write_plan|TYPE_APPLICATION_OVERLAY|startForegroundService\(|startService\(' app/src/main || exit 1
+          ! grep -R -nE 'echo[[:space:]].*>[[:space:]]*/sys/|tee[[:space:]]+/sys/' app/src/main || exit 1
+          ! grep -q '<uses-permission' app/src/main/AndroidManifest.xml
+          ! grep -q '<service' app/src/main/AndroidManifest.xml
+          ! grep -q '<receiver' app/src/main/AndroidManifest.xml
+          ! grep -q '<provider' app/src/main/AndroidManifest.xml
           grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
-          grep -q 'djaeger-ai mode' app/src/main/java/com/djaeger/controlcenter/DjaegerHudService.kt
-          ! grep -R -nE 'settings put|setprop|force-stop|svc (wifi|data)|iptables|ip6tables|nft ' app/src/main || exit 1
-          ! grep -R -nE '/sys/.+([>]|tee|echo|write)' app/src/main || exit 1
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
@@ -127,22 +75,18 @@ jobs:
         run: |
           MERGED="$(find app/build/intermediates -name AndroidManifest.xml | head -1)"
           test -n "$MERGED"
-          grep -q 'android.permission.SYSTEM_ALERT_WINDOW' "$MERGED"
-          grep -q 'android.permission.PACKAGE_USAGE_STATS' "$MERGED"
-          grep -q 'android.permission.FOREGROUND_SERVICE' "$MERGED"
-          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' "$MERGED"
           grep -q 'android.intent.category.LAUNCHER' "$MERGED"
-          ! grep -nE 'android.permission.INTERNET|android.permission.DUMP|WRITE_SETTINGS|QUERY_ALL_PACKAGES|BIND_ACCESSIBILITY_SERVICE|androidx.compose.ui.tooling.PreviewActivity|androidx.profileinstaller.ProfileInstallReceiver' "$MERGED" || exit 1
+          ! grep -nE '<uses-permission|<service|<receiver|<provider|android.permission.INTERNET|android.permission.DUMP|WRITE_SETTINGS|QUERY_ALL_PACKAGES|SYSTEM_ALERT_WINDOW|PACKAGE_USAGE_STATS|RECEIVE_BOOT_COMPLETED|FOREGROUND_SERVICE' "$MERGED" || exit 1
       - name: Collect APK and hash
         run: |
           mkdir output
           APK="$(find project/DJAEGER_Control_Center/app/build/outputs/apk -type f -name '*debug*.apk' | head -1)"
           test -n "$APK"
-          cp "$APK" output/DJAEGER-Control-Center-v0.11.0-RC-MIUI-Construction.apk
+          cp "$APK" output/DJAEGER-Control-Center-v1.0-Monitoring-Edition.apk
           sha256sum output/*.apk > output/SHA256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-v0.11.0-RC-MIUI-Construction
+          name: DJAEGER-v1.0-Monitoring-Edition
           path: output/*
           if-no-files-found: error
