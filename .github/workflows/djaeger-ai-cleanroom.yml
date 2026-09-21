@@ -2,7 +2,7 @@ name: DJAEGER AI Clean Build
 
 on:
   push:
-    branches: [djaeger-ai-cleanroom-v1, djaeger-ai-adaptive-sync-v2, djaeger-ai-adaptive-33fix-v1]
+    branches: [djaeger-ai-cleanroom-v1, djaeger-ai-adaptive-sync-v2, djaeger-ai-adaptive-33fix-v1, djaeger-ai-adaptive-33fix-v2]
   pull_request:
     branches: [djaeger-ai-cleanroom-base]
   workflow_dispatch:
