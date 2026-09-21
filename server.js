@@ -34,7 +34,7 @@ function renderManifest(rootDir){
 }
 const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');
  if(req.method==='GET'&&u.pathname==='/health'){const age=lastDeviceReceivedMs?Math.max(0,Math.floor((Date.now()-lastDeviceReceivedMs)/1000)):null;const pollAge=lastUpdatePollMs?Math.max(0,Math.floor((Date.now()-lastUpdatePollMs)/1000)):null;const authAge=lastAuthRejectMs?Math.max(0,Math.floor((Date.now()-lastAuthRejectMs)/1000)):null;return send(res,200,{ok:true,service:'DJAEGER_AI_CORE',release,hardware_authority:'NONE',foreign_runtime_dependencies:0,uptime_sec:Math.floor((Date.now()-startedAtMs)/1000),telemetry_seen:lastDeviceReceivedMs>0,telemetry_accepted:telemetryAccepted,last_telemetry_age_sec:age,last_device_id_hash:lastDevice?deviceHash(lastDevice.device_id):null,last_source:lastDevice?.source||null,last_module_version_code:lastDevice?.module_version_code||null,update_poll_seen:lastUpdatePollMs>0,update_poll_count:updatePolls,last_update_poll_age_sec:pollAge,update_ack_count:updateAcks,auth_reject_count:authRejects,last_auth_reject_age_sec:authAge});}
- if(req.method==='GET'&&u.pathname==='/ready')return send(res,200,{ok:true,ready:true,release});
+ if(req.method==='GET'&&u.pathname==='/ready')return send(res,200,{ok:true,ready:true,release,adaptive_update_channel:true,adaptive_target_vc:['202','203']});
  if(!auth(req)){authRejects++;lastAuthRejectMs=Date.now();console.warn(JSON.stringify({event:'DJAEGER_AUTH_REJECT',method:req.method,path:u.pathname,auth_reject_count:authRejects,at:now()}));return send(res,401,{ok:false,error:'unauthorized'});}
  if(req.method==='GET'&&u.pathname==='/v1/device/update/manifest.txt'){
    updatePolls++;lastUpdatePollMs=Date.now();
