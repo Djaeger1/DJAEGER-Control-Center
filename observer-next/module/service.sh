@@ -7,6 +7,9 @@ chmod 700 "$ROOT" "$ROOT/config" "$ROOT/recovery" 2>/dev/null
 [ -f "$ROOT/config/app_registry.tsv" ] || : > "$ROOT/config/app_registry.tsv"
 [ -f "$ROOT/config/execution_mode" ] || echo AUTO > "$ROOT/config/execution_mode"
 chmod 600 "$ROOT/config/game_registry.tsv" "$ROOT/config/app_registry.tsv" "$ROOT/config/execution_mode" 2>/dev/null
+# A verified pair must be re-established by the currently running APK after
+# every module service start. Never inherit a stale MATCHED claim.
+rm -f "$ROOT/runtime/handshake.env"
 
 sh "$MODDIR/bin/migrate.sh" "$ROOT" "$MODDIR"
 
