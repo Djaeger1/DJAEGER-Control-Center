@@ -81,7 +81,7 @@ jobs:
           set -euo pipefail
           mkdir -p out
           cd observer-next/module
-          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip .
+          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore.zip .
           cd ../..
 
           UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
@@ -95,7 +95,7 @@ jobs:
           keytool -genkeypair -noprompt -storetype PKCS12             -keystore "$SIGN_DIR/djaeger-ai.p12"             -storepass "$PASS" -keypass "$PASS"             -alias djaegerai -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER AI, O=DJAEGER, C=ID'
 
           ALIGNED="$RUNNER_TEMP/djaeger-ai-aligned.apk"
-          APK="out/DJAEGER-AI-Adaptive-v1.1.1-33fix.apk"
+          APK="out/DJAEGER-AI-Adaptive-v1.1.2-credrestore.apk"
           "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
           "$BUILD_TOOLS/apksigner" sign             --ks "$SIGN_DIR/djaeger-ai.p12" --ks-type PKCS12             --ks-key-alias djaegerai             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$ALIGNED"
 
@@ -103,10 +103,10 @@ jobs:
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
           "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
           unzip -t "$APK" > out/APK_ZIP_TEST.txt
-          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip > out/MODULE_ZIP_TEST.txt
-          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip > out/MODULE_CONTENTS.txt
+          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore.zip > out/MODULE_ZIP_TEST.txt
+          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore.zip > out/MODULE_CONTENTS.txt
 
-          grep -q "package: name='com.djaeger.observer' versionCode='105' versionName='1.1.1-33fix'" out/AAPT_BADGING.txt
+          grep -q "package: name='com.djaeger.observer' versionCode='106' versionName='1.1.2-credrestore'" out/AAPT_BADGING.txt
           grep -qx 'false' out/APK_DEBUGGABLE.txt
           grep -Eq 'bin/executor\.sh' out/MODULE_CONTENTS.txt
           grep -Eq 'bin/railway_bridge\.sh' out/MODULE_CONTENTS.txt
@@ -114,7 +114,7 @@ jobs:
           ! grep -Eq 'agent_bus\.sh' out/MODULE_CONTENTS.txt
 
           mkdir -p "$RUNNER_TEMP/module-audit" "$RUNNER_TEMP/apk-audit"
-          unzip -q out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip -d "$RUNNER_TEMP/module-audit"
+          unzip -q out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore.zip -d "$RUNNER_TEMP/module-audit"
           unzip -q "$APK" -d "$RUNNER_TEMP/apk-audit"
 
           A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
@@ -140,15 +140,15 @@ jobs:
           fi
 
           cd out
-          sha256sum DJAEGER-AI-Adaptive-v1.1.1-33fix.apk DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip > SHA256SUMS.txt
-          printf '%s\n'             'STATUS=33FIX_BUILD_DEVICE_VALIDATION_REQUIRED'             'RUNTIME_DEVICE_VALIDATION=REQUIRED_BEFORE_RELEASE'             'SOURCE_LINEAGE=CLEANROOM_PRECONTAMINATION_BASE'             'FOREIGN_PROJECT_RESIDUE=0'             'RUNTIME_MIGRATION=EXPLICIT_KEY_ALLOWLIST_ONLY'             'RAW_LEGACY_FILES_IMPORTED=0'             'ENGINE=OBSERVE_LEARN_PROPOSE_VALIDATE_SHADOW_EXECUTE_READBACK_MONITOR_KEEP_ROLLBACK_LEARN'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=LOCAL_GATED_EXECUTOR_ONLY'             'ROLLBACK=MANDATORY'             'EXECUTOR_PACKAGED=YES'             > BUILD_REPORT.txt
+          sha256sum DJAEGER-AI-Adaptive-v1.1.2-credrestore.apk DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore.zip > SHA256SUMS.txt
+          printf '%s\n'             'STATUS=CREDENTIAL_RESTORE_BUILD_DEVICE_VALIDATION_REQUIRED'             'RUNTIME_DEVICE_VALIDATION=REQUIRED_BEFORE_RELEASE'             'SOURCE_LINEAGE=CLEANROOM_PRECONTAMINATION_BASE'             'FOREIGN_PROJECT_RESIDUE=0'             'RUNTIME_MIGRATION=EXPLICIT_KEY_ALLOWLIST_ONLY'             'RAW_LEGACY_FILES_IMPORTED=0'             'ENGINE=OBSERVE_LEARN_PROPOSE_VALIDATE_SHADOW_EXECUTE_READBACK_MONITOR_KEEP_ROLLBACK_LEARN'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=LOCAL_GATED_EXECUTOR_ONLY'             'ROLLBACK=MANDATORY'             'EXECUTOR_PACKAGED=YES'             > BUILD_REPORT.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-AI-Adaptive-33FIX-v1.1.1
+          name: DJAEGER-AI-Adaptive-CREDRESTORE-v1.1.2
           path: |
-            out/DJAEGER-AI-Adaptive-v1.1.1-33fix.apk
-            out/DJAEGER-AI-Adaptive-Module-v1.1.1-33fix.zip
+            out/DJAEGER-AI-Adaptive-v1.1.2-credrestore.apk
+            out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore.zip
             out/SHA256SUMS.txt
             out/BUILD_REPORT.txt
             out/APKSIGNER_VERIFY.txt
