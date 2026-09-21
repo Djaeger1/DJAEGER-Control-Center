@@ -119,7 +119,10 @@ jobs:
           grep -Fq 'thermal_safe' "$RUNNER_TEMP/module-audit/bin/executor.sh"
           grep -Fq 'DIGEST_MISMATCH' "$RUNNER_TEMP/module-audit/bin/executor.sh"
           grep -Fq 'ROLLBACK_STATE' "$RUNNER_TEMP/module-audit/bin/executor.sh"
-          ! find "$RUNNER_TEMP/module-audit" -type f ! -path '*/bin/executor.sh' -print0 | xargs -0 grep -El 'tee[[:space:]]+/sys/|>[[:space:]]*/sys/' || true
+          if find "$RUNNER_TEMP/module-audit" -type f ! -path '*/bin/executor.sh' -print0 | xargs -0 grep -El 'tee[[:space:]]+/sys/|>[[:space:]]*/sys/' | grep -q .; then
+            echo "NON_EXECUTOR_SYSFS_WRITE_PATTERN=1" >&2
+            exit 1
+          fi
 
           cd out
           sha256sum DJAEGER-AI-Adaptive-v1.0.0.apk DJAEGER-AI-Adaptive-Module-v1.0.0.zip > SHA256SUMS.txt
