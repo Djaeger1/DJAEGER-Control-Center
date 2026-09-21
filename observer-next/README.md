@@ -16,7 +16,7 @@ OBSERVE → LEARN → PROPOSE → VALIDATE → SHADOW → LOCAL EXECUTE → READ
 - Only the local device executor may write CPU/GPU min/max bounds. It validates path, exact OPP, workload, package, freshness, thermal limits, approval expiry and digest binding before any write.
 - The executor captures pre-apply CPU/GPU bounds and restores them on context change, approval expiry, thermal guard closure, write/readback failure or shutdown.
 - The APK remains UI/telemetry only and never writes sysfs.
-- Gemini keys, HERMES credentials/ID and the DJAEGER access token are migrated by explicit-key allowlist only. Raw legacy files, controllers and old profile maps are never imported.
+- Gemini keys, HERMES credentials/ID and the DJAEGER access token are recovered from the old DJAEGER AI state/module roots by explicit-key allowlist only. Raw legacy files, controllers and old profile maps are never imported.
 - The Control Center Overview layout remains the familiar layout while the engine behind it is adaptive and device-learned.
 - Manual GAME registry entries join the same measurement, reasoning, shadow and local execution pipeline. APP/SYSTEM/UNKNOWN workloads fail closed for hardware execution.
 
