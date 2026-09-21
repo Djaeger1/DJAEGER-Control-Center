@@ -81,7 +81,7 @@ cloud_probe(){
   command -v curl >/dev/null 2>&1 || {
     HCLOUD_STATE=UNAVAILABLE; HDETAIL=curl_missing; HTTP=NA; HROUTE=LOCAL; HMODEL=NA; unset token; return 1;
   }
-  HTTP=$(curl --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$base/health" 2>/dev/null)
+  HTTP=$(curl --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -w '%{http_code}' "$base/health" 2>/dev/null)
   unset token
   case "$HTTP" in
     200) HCLOUD_STATE=REACHABLE_IDLE; HDETAIL=cloud_health_reachable_auth_unverified; HROUTE=LOCAL; HMODEL=NA; return 0 ;;
@@ -180,9 +180,12 @@ cloud_review(){
   req="$ROOT/runtime/.hermes_request.$$"; resp="$ROOT/runtime/.hermes_response.$$"
   printf '{"mode":"SMART","task":"observer_review","message":"%s","prompt":"%s","system":"%s","fallback":false,"max_tokens":128,"temperature":0.1}' "$(json_escape "$message")" "$(json_escape "$message")" "$(json_escape "$system")" > "$req"
   chmod 600 "$req"
-  HTTP=$(curl --http1.1 --connect-timeout 5 -m 15 -sS -o "$resp" -w '%{http_code}' -H 'Content-Type: application/json' -H "Authorization: Bearer $token" --data-binary "@$req" "$url" 2>/dev/null)
+  curlcfg="$ROOT/runtime/.hermes_curl.$"
+  printf 'header = "Authorization: Bearer %s"\n' "$token" > "$curlcfg"
+  chmod 600 "$curlcfg"
+  HTTP=$(curl --http1.1 --connect-timeout 5 -m 15 -sS -o "$resp" -w '%{http_code}' -K "$curlcfg" -H 'Content-Type: application/json' --data-binary "@$req" "$url" 2>/dev/null)
   unset token
-  rm -f "$req"
+  rm -f "$curlcfg" "$req"
   {
     echo "AT=$now"
     echo "DIGEST=$d"
