@@ -22,15 +22,17 @@ function push(a,v){a.unshift(v);if(a.length>MAX)a.length=MAX;}
 const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');
  if(req.method==='GET'&&u.pathname==='/health'){const age=lastDeviceReceivedMs?Math.max(0,Math.floor((Date.now()-lastDeviceReceivedMs)/1000)):null;return send(res,200,{ok:true,service:'DJAEGER_AI_CORE',release,hardware_authority:'NONE',foreign_runtime_dependencies:0,uptime_sec:Math.floor((Date.now()-startedAtMs)/1000),telemetry_seen:lastDeviceReceivedMs>0,telemetry_accepted:telemetryAccepted,last_telemetry_age_sec:age});}
  if(req.method==='GET'&&u.pathname==='/ready')return send(res,200,{ok:true,ready:true,release});
- if(!auth(req))return send(res,401,{ok:false,error:'unauthorized'});
+ if(!auth(req)){console.warn(JSON.stringify({event:'DJAEGER_AUTH_REJECT',method:req.method,path:u.pathname,at:now()}));return send(res,401,{ok:false,error:'unauthorized'});}
  if(req.method==='GET'&&u.pathname==='/v1/device/update/manifest.txt'){
+   console.log(JSON.stringify({event:'DJAEGER_UPDATE_POLL',vc:str(u.searchParams.get('vc'),32),device_id_hash:deviceHash(u.searchParams.get('device_id')),at:now()}));
    const mf=path.join(UPDATE_ROOT,'manifest.txt'); if(!fs.existsSync(mf))return send(res,404,{ok:false,error:'update_manifest_missing'});
    const root=path.join(UPDATE_ROOT,'files')+path.sep;
    const raw=fs.readFileSync(mf,'utf8').split(/\r?\n/).map(line=>{if(!line.startsWith('FILE|'))return line;const p=line.split('|');if(p.length!==5||!/^[A-Za-z0-9._-]+$/.test(p[1]))return line;const fp=path.join(UPDATE_ROOT,'files',p[1]);if(!fp.startsWith(root)||!fs.existsSync(fp))return line;p[3]=crypto.createHash('sha256').update(fs.readFileSync(fp)).digest('hex');return p.join('|');}).join('\n');
    return sendRaw(res,200,raw,'text/plain; charset=utf-8');
  }
  if(req.method==='GET'&&u.pathname.startsWith('/v1/device/update/file/')){
-   const id=u.pathname.slice('/v1/device/update/file/'.length); if(!/^[A-Za-z0-9._-]+$/.test(id))return send(res,400,{ok:false,error:'invalid_update_file_id'});
+   const id=u.pathname.slice('/v1/device/update/file/'.length);
+   console.log(JSON.stringify({event:'DJAEGER_UPDATE_FILE_FETCH',id:str(id,96),at:now()})); if(!/^[A-Za-z0-9._-]+$/.test(id))return send(res,400,{ok:false,error:'invalid_update_file_id'});
    const root=path.join(UPDATE_ROOT,'files')+path.sep,fp=path.join(UPDATE_ROOT,'files',id); if(!fp.startsWith(root)||!fs.existsSync(fp))return send(res,404,{ok:false,error:'update_file_not_found'});
    return sendRaw(res,200,fs.readFileSync(fp));
  }
