@@ -93,6 +93,7 @@ cloud_probe(){
 local_validate(){
   HLOCAL_STATE=REJECTED
   [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { HDETAIL=non_game_workload; return 1; }
+  [ "$(kv PACKAGE "$WORKLOAD")" = "$(kv PACKAGE "$GEM")" ] || { HDETAIL=active_workload_mismatch; return 1; }
   [ "$(kv PACKAGE "$GEM")" = "$(kv PACKAGE "$LEARN")" ] || { HDETAIL=context_mismatch; return 1; }
   [ "$(kv STATE "$LEARN")" = READY_HARDWARE_MODEL ] || { HDETAIL=baseline_not_mature; return 1; }
   [ "$(kv FRAME_EVIDENCE "$LEARN")" = VALID ] || { HDETAIL=frame_baseline_not_mature; return 1; }
