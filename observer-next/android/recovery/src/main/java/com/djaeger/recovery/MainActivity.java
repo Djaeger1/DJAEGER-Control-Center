@@ -1,4 +1,4 @@
-package com.djaeger.recovery;
+package com.djaeger.recovery2;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -24,20 +24,20 @@ public final class MainActivity extends Activity {
         body.setBackgroundColor(Color.rgb(9, 11, 16));
 
         TextView title = new TextView(this);
-        title.setText("DJAEGER AI • TRANSPORT RECOVERY");
+        title.setText("DJAEGER AI • TRANSPORT RECOVERY 2");
         title.setTextColor(Color.rgb(67, 227, 138));
         title.setTextSize(20);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         body.addView(title);
 
         TextView info = new TextView(this);
-        info.setText("\nTarget: Adaptive VC202/203\nNo flash • no reboot • no CPU/GPU write\nRepairs Railway credentials, bridge and remote updater only.\n");
+        info.setText("\nTarget: Adaptive VC202/203\nNo flash • no reboot • no CPU/GPU write\nRepairs Adaptive updater FILE parser and verifies live Railway transport.\n");
         info.setTextColor(Color.LTGRAY);
         info.setTextSize(15);
         body.addView(info);
 
         recover = new Button(this);
-        recover.setText("RECOVER TRANSPORT");
+        recover.setText("FIX REMOTE UPDATER");
         recover.setOnClickListener(v -> startRecovery());
         body.addView(recover);
 
