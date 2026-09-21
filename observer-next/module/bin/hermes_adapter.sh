@@ -180,7 +180,7 @@ cloud_review(){
   req="$ROOT/runtime/.hermes_request.$$"; resp="$ROOT/runtime/.hermes_response.$$"
   printf '{"mode":"SMART","task":"observer_review","message":"%s","prompt":"%s","system":"%s","fallback":false,"max_tokens":128,"temperature":0.1}' "$(json_escape "$message")" "$(json_escape "$message")" "$(json_escape "$system")" > "$req"
   chmod 600 "$req"
-  curlcfg="$ROOT/runtime/.hermes_curl.$"
+  curlcfg="$(mktemp "$ROOT/runtime/.hermes_curl.XXXXXX" 2>/dev/null)"; [ -n "$curlcfg" ] || { unset token; rm -f "$req"; HCLOUD_STATE=UNAVAILABLE; HDETAIL=tempfile_failed; return 1; }
   printf 'header = "Authorization: Bearer %s"\n' "$token" > "$curlcfg"
   chmod 600 "$curlcfg"
   HTTP=$(curl --http1.1 --connect-timeout 5 -m 15 -sS -o "$resp" -w '%{http_code}' -K "$curlcfg" -H 'Content-Type: application/json' --data-binary "@$req" "$url" 2>/dev/null)
