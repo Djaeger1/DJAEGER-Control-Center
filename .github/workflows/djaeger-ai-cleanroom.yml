@@ -3,6 +3,8 @@ name: DJAEGER AI Cleanroom Build
 on:
   push:
     branches: [djaeger-ai-cleanroom-v1]
+  pull_request:
+    branches: [djaeger-ai-cleanroom-base]
   workflow_dispatch:
 
 permissions:
