@@ -27,6 +27,7 @@ extract_exact(){
 }
 
 STATE=NO_LEGACY
+LEGACY_PRESENT=NO
 TMP_KEYS="$ROOT/runtime/.migrate_gemini.$$"
 TMP_SOURCES="$ROOT/runtime/.migration_sources.$$"
 : > "$TMP_KEYS"
@@ -44,6 +45,7 @@ STATE=NO_LEGACY
 for _root in "$LEGACY" "$LEGACY_MODULE" $LEGACY_EXTRA; do
   [ -d "$_root" ] || continue
   STATE=LEGACY_FOUND
+  LEGACY_PRESENT=YES
   find "$_root" -maxdepth 7 -type f -size -256k 2>/dev/null | while IFS= read -r f; do
     forbidden_path "$f" && continue
     printf '%s\n' "$f"
@@ -101,7 +103,7 @@ TMP="$MARK.tmp.$$"
   echo "MIGRATION_STATE=$STATE"
   echo "LEGACY_PATH=$LEGACY"
   echo "LEGACY_MODULE_PATH=$LEGACY_MODULE"
-  echo "LEGACY_CONFIG_PRESENT=$([ "$STATE" = NO_LEGACY ] && echo NO || echo YES)"
+  echo "LEGACY_CONFIG_PRESENT=$LEGACY_PRESENT"
   echo "GEMINI_KEY_COUNT=$GCOUNT"
   echo "HERMES_FIELD_COUNT=$HCOUNT"
   echo "IDENTITY_IMPORTED=$([ "$ICOUNT" -gt 0 ] && echo YES || echo NO)"
