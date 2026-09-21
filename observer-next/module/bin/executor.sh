@@ -29,8 +29,12 @@ clean_csv(){ printf '%s' "$1" | tr '\r\n,' '   ' | tr -cd 'A-Za-z0-9._:+/%= @-';
 
 record_outcome(){
   _result="$1"; _reason="$2"; _pkg="$3"; _digest="$4"
+  _olittle="$5"; _obig="$6"; _ogpu="$7"
   [ -n "$_pkg" ] || _pkg=NONE
   [ -n "$_digest" ] || _digest=NONE
+  [ -n "$_olittle" ] || _olittle="$APPLIED_LITTLE"
+  [ -n "$_obig" ] || _obig="$APPLIED_BIG"
+  [ -n "$_ogpu" ] || _ogpu="$APPLIED_GPU"
   _sig="$_digest|$_result|$_reason"
   [ "$(cat "$OUTCOME_MARK" 2>/dev/null)" = "$_sig" ] && return 0
   mkdir -p "$ROOT/history" 2>/dev/null
@@ -38,7 +42,7 @@ record_outcome(){
   printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$(date +%s)" "$(clean_csv "$_pkg")" "$(clean_csv "$_digest")" "$(clean_csv "$_result")" "$(clean_csv "$_reason")" \
     "$(clean_csv "$(kv FPS_EST "$SNAP")")" "$(clean_csv "$(kv JANK_PCT "$SNAP")")" "$(clean_csv "$(kv P95_MS "$SNAP")")" "$(clean_csv "$(kv POWER_MW "$SNAP")")" \
-    "$(clean_csv "$READBACK")" "$(clean_csv "$APPLIED_LITTLE")" "$(clean_csv "$APPLIED_BIG")" "$(clean_csv "$APPLIED_GPU")" >> "$OUTCOMES"
+    "$(clean_csv "$READBACK")" "$(clean_csv "$_olittle")" "$(clean_csv "$_obig")" "$(clean_csv "$_ogpu")" >> "$OUTCOMES"
   chmod 600 "$OUTCOMES"
   printf '%s\n' "$_sig" > "$OUTCOME_MARK"; chmod 600 "$OUTCOME_MARK"
 }
@@ -242,14 +246,15 @@ post_apply_monitor(){
 rollback_active(){
   _reason="$1"
   _pkg="$APPLIED_PACKAGE"; _digest="$ACTIVE_DIGEST"
+  _little="$APPLIED_LITTLE"; _big="$APPLIED_BIG"; _gpu="$APPLIED_GPU"
   if restore_all; then
-    record_outcome ROLLED_BACK "$_reason" "$_pkg" "$_digest"
     READBACK=RESTORED
+    record_outcome ROLLED_BACK "$_reason" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
     publish ROLLED_BACK "$_reason"
     return 0
   fi
-  record_outcome ROLLBACK_FAILED "$_reason" "$_pkg" "$_digest"
   READBACK=RESTORE_FAILED
+  record_outcome ROLLBACK_FAILED "$_reason" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
   publish ROLLBACK_FAILED "$_reason"
   return 1
 }
@@ -274,14 +279,15 @@ reconcile(){
     fi
 
     if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
-      _old_pkg="$APPLIED_PACKAGE"; _old_digest="$ACTIVE_DIGEST"
+      _old_pkg="$APPLIED_PACKAGE"; _old_digest="$ACTIVE_DIGEST"; _old_little="$APPLIED_LITTLE"; _old_big="$APPLIED_BIG"; _old_gpu="$APPLIED_GPU"
       if ! restore_all; then
-        record_outcome ROLLBACK_FAILED CANDIDATE_SWITCH "$_old_pkg" "$_old_digest"
         READBACK=RESTORE_FAILED
+        record_outcome ROLLBACK_FAILED CANDIDATE_SWITCH "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
         publish ROLLBACK_FAILED CANDIDATE_SWITCH_RESTORE_FAILED
         return 1
       fi
-      record_outcome ROLLED_BACK CANDIDATE_SWITCH "$_old_pkg" "$_old_digest"
+      READBACK=RESTORED
+      record_outcome ROLLED_BACK CANDIDATE_SWITCH "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
     fi
 
     if apply_all; then
@@ -320,7 +326,7 @@ reconcile(){
 case "$MODE" in
   once) reconcile ;;
   daemon)
-    trap 'restore_all >/dev/null 2>&1 || true; exit 0' INT TERM EXIT
+    trap 'load_active; if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then rollback_active SERVICE_STOP >/dev/null 2>&1 || true; fi; exit 0' INT TERM
     while :; do reconcile >/dev/null 2>&1 || true; sleep 2; done
     ;;
   *) echo "usage: executor.sh ROOT {once|daemon}"; exit 2 ;;
