@@ -70,7 +70,7 @@ cloud_probe(){
     HMODEL=NA
     return 1
   fi
-  HAUTH=CONFIGURED
+  HAUTH=CONFIGURED_UNVERIFIED
   endpoint=$(config_value HERMES_ENDPOINT); [ -n "$endpoint" ] || endpoint=$(config_value ENDPOINT)
   [ -n "$endpoint" ] || endpoint=https://hermes-cloud-djaeger.moclomper.workers.dev
   case "$endpoint" in
@@ -84,9 +84,9 @@ cloud_probe(){
   HTTP=$(curl --http1.1 --connect-timeout 4 -m 8 -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$base/health" 2>/dev/null)
   unset token
   case "$HTTP" in
-    200) HCLOUD_STATE=ONLINE_IDLE; HDETAIL=cloud_health_ok; HROUTE=CLOUD; HMODEL=NA; return 0 ;;
-    401|403) HCLOUD_STATE=AUTH_ERROR; HDETAIL="cloud_auth_$HTTP"; HROUTE=CLOUD; HMODEL=NA; return 1 ;;
-    *) HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_health_${HTTP:-000}"; HROUTE=CLOUD; HMODEL=NA; return 1 ;;
+    200) HCLOUD_STATE=REACHABLE_IDLE; HDETAIL=cloud_health_reachable_auth_unverified; HROUTE=LOCAL; HMODEL=NA; return 0 ;;
+    401|403) HCLOUD_STATE=REACHABLE_IDLE; HDETAIL="health_endpoint_auth_policy_$HTTP"; HROUTE=LOCAL; HMODEL=NA; return 0 ;;
+    *) HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_health_${HTTP:-000}"; HROUTE=LOCAL; HMODEL=NA; return 1 ;;
   esac
 }
 
@@ -142,7 +142,7 @@ cloud_review(){
   d=$(digest "$GEM"); [ -n "$d" ] || return 1
   token=$(config_value HERMES_ACCESS_KEY)
   [ -n "$token" ] || { rm -f "$CLOUD_OUT"; HAUTH=NOT_CONFIGURED; HCLOUD_STATE=NO_KEY; HDETAIL=hermes_access_key_not_found; return 1; }
-  HAUTH=CONFIGURED
+  HAUTH=CONFIGURED_UNVERIFIED
   old=$(kv CANDIDATE_DIGEST "$CLOUD_OUT")
   if [ "$old" = "$d" ]; then
     cached=$(kv VERDICT "$CLOUD_OUT")
@@ -186,7 +186,9 @@ cloud_review(){
     echo "AT=$now"
     echo "DIGEST=$d"
   } > "$LAST.tmp.$$"; chmod 600 "$LAST.tmp.$$"; mv -f "$LAST.tmp.$$" "$LAST"
+  if [ "$HTTP" = 401 ] || [ "$HTTP" = 403 ]; then HAUTH=AUTH_ERROR; HCLOUD_STATE=AUTH_ERROR; HDETAIL="cloud_auth_$HTTP"; rm -f "$resp"; return 1; fi
   [ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_http_$HTTP"; rm -f "$resp"; return 1; }
+  HAUTH=CONFIGURED
 
   verdict=$(grep -o 'VERDICT=\(APPROVE\|REJECT\)' "$resp" 2>/dev/null | tail -n1 | cut -d= -f2)
   hconf=$(grep -o 'CONFIDENCE=[0-9][0-9]*' "$resp" 2>/dev/null | tail -n1 | cut -d= -f2)
