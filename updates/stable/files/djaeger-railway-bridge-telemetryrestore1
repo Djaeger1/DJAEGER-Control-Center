@@ -1,0 +1,66 @@
+#!/system/bin/sh
+# DJAEGER Railway bridge TELEMETRY-RESTORE1.
+# Software telemetry transport only. No sysfs writes, no hardware commands.
+M="${DJAEGER_MODDIR:-/data/adb/modules/djaeger_game_stabilizer}"
+P="${DJAEGER_STATE_DIR:-/data/adb/djaeger_ai}"
+DEF="$M/system/etc/djaeger/railway/railway.conf"
+CFG="$P/railway.conf"
+RDIR="$P/railway"
+STATE="$RDIR/state.env"
+PIDFILE="$RDIR/daemon.pid"
+
+qget(){ [ -r "$1" ] || return 0; awk -F= -v k="$2" '$1==k{v=substr($0,index($0,"=")+1);gsub(/^[[:space:]\047\042]+|[[:space:]\047\042]+$/,"",v);print v;exit}' "$1" 2>/dev/null; }
+conf(){ _v="$(qget "$CFG" "$1")"; [ -n "$_v" ] || _v="$(qget "$DEF" "$1")"; [ -n "$_v" ] && printf '%s' "$_v" || printf '%s' "$2"; }
+clean(){ printf '%s' "${1:-}" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/@ -' | cut -c1-160; }
+ensure(){ mkdir -p "$RDIR" 2>/dev/null || return 1; chmod 700 "$RDIR" 2>/dev/null || true; if [ ! -s "$CFG" ] && [ -r "$DEF" ]; then cp -f "$DEF" "$CFG.tmp.$$" 2>/dev/null && chmod 600 "$CFG.tmp.$$" 2>/dev/null && mv -f "$CFG.tmp.$$" "$CFG"; fi; }
+device_id(){ _f="$RDIR/device_id"; if [ ! -s "$_f" ]; then _id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null | tr -d '\r\n')"; [ -n "$_id" ] || _id="djg-$(date +%s)-$$"; umask 077; printf '%s\n' "$_id" >"$_f" 2>/dev/null; fi; cat "$_f" 2>/dev/null | head -1 | tr -d '\r\n'; }
+write_state(){ _tmp="$STATE.tmp.$$"; { echo "SCHEMA=DJAEGER_RAILWAY_TELEMETRY_RESTORE1"; echo "AT=$(date +%s)"; echo "STATE=$1"; echo "HTTP=${2:-NA}"; echo "DETAIL=${3:-NA}"; echo "REMOTE_HARDWARE_COMMANDS=DISABLED"; echo "HARDWARE_AUTHORITY=NONE"; } >"$_tmp" 2>/dev/null && { chmod 600 "$_tmp" 2>/dev/null; mv -f "$_tmp" "$STATE"; }; }
+proc_live(){ _pid="$1"; case "$_pid" in ''|*[!0-9]*) return 1;; esac; [ "$_pid" -gt 1 ] 2>/dev/null && kill -0 "$_pid" 2>/dev/null; }
+
+send_once(){
+  ensure || { write_state ERROR NA CONFIG_INIT_FAILED; return 2; }
+  _ep="$(conf ENDPOINT '')"; _tok="$(conf ACCESS_TOKEN '')"; _enabled="$(conf ENABLED 1)"
+  [ "$_enabled" = 1 ] || { write_state DISABLED NA OWNER_DISABLED; return 0; }
+  case "$_ep" in https://*) :;; *) write_state ERROR NA ENDPOINT_INVALID; return 3;; esac
+  [ -n "$_tok" ] || { write_state ERROR NA TOKEN_MISSING; return 4; }
+  command -v curl >/dev/null 2>&1 || { write_state ERROR NA CURL_MISSING; return 5; }
+
+  _ctx="$P/workload_context.env"; _truth="$P/agent_hardware_truth.env"; _mp="$M/module.prop"
+  _did="$(device_id)"; _pkg="$(qget "$_ctx" PACKAGE)"; [ -n "$_pkg" ] || _pkg="$(qget "$P/runtime_state" subject_package)"; [ -n "$_pkg" ] || _pkg=NA
+  _class="$(qget "$_ctx" WORKLOAD_CLASS)"; [ -n "$_class" ] || _class=UNKNOWN
+  _win="$(qget "$_ctx" WINDOW_MODE)"; [ -n "$_win" ] || _win=UNKNOWN
+  _ver="$(sed -n 's/^version=//p' "$_mp" 2>/dev/null | head -1)"; _vc="$(sed -n 's/^versionCode=//p' "$_mp" 2>/dev/null | head -1)"
+  _skin="$(qget "$_truth" SKIN_TEMP_C)"; _bat="$(qget "$_truth" BAT_TEMP_C)"; _cpu="$(qget "$_truth" CPU_TEMP_C)"; _gpu="$(qget "$_truth" GPU_TEMP_C)"
+  _fps="$(qget "$_truth" FPS)"; _jank="$(qget "$_truth" JANK_PCT)"
+  for _n in _skin _bat _cpu _gpu _fps _jank; do eval "_v=\${$_n}"; [ -n "$_v" ] || eval "$_n=NA"; done
+
+  _body="$RDIR/.telemetry.$$"; _cfg="$RDIR/.curl.$$"; _resp="$RDIR/.resp.$$"
+  printf '{"schema":"DJAEGER_DEVICE_TELEMETRY_V1","device_id":"%s","at":%s,"module_version":"%s","module_version_code":"%s","workload_class":"%s","window_mode":"%s","package":"%s","skin_temp_c":"%s","battery_temp_c":"%s","cpu_temp_c":"%s","gpu_temp_c":"%s","fps":"%s","jank_pct":"%s","source":"DJAEGER_RAILWAY_TELEMETRY_RESTORE1"}\n' \
+    "$(clean "$_did")" "$(date +%s)" "$(clean "$_ver")" "$(clean "$_vc")" "$(clean "$_class")" "$(clean "$_win")" "$(clean "$_pkg")" "$(clean "$_skin")" "$(clean "$_bat")" "$(clean "$_cpu")" "$(clean "$_gpu")" "$(clean "$_fps")" "$(clean "$_jank")" >"$_body"
+  printf 'header = "Authorization: Bearer %s"\n' "$_tok" >"$_cfg"; chmod 600 "$_cfg"
+  _http="$(curl -4 --http1.1 --connect-timeout 4 -m 8 -sS -o "$_resp" -w '%{http_code}' -K "$_cfg" -H 'Content-Type: application/json' --data-binary @"$_body" "${_ep%/}/v1/device/telemetry" 2>/dev/null)"; _rc=$?
+  if [ "$_rc" -ne 0 ]; then _http="$(curl --http1.1 --connect-timeout 4 -m 8 -sS -o "$_resp" -w '%{http_code}' -K "$_cfg" -H 'Content-Type: application/json' --data-binary @"$_body" "${_ep%/}/v1/device/telemetry" 2>/dev/null)"; _rc=$?; fi
+  rm -f "$_cfg" "$_body" "$_resp"; unset _tok
+  if [ "$_rc" -eq 0 ] && [ "$_http" = 200 ]; then write_state ONLINE 200 OK; return 0; fi
+  write_state OFFLINE "${_http:-000}" "CURL_RC_${_rc:-1}"; return 1
+}
+
+daemon(){
+  ensure || exit 2
+  _old="$(cat "$PIDFILE" 2>/dev/null)"; [ "$_old" = "$$" ] || { proc_live "$_old" && exit 0; }
+  printf '%s\n' "$$" >"$PIDFILE"; chmod 600 "$PIDFILE" 2>/dev/null || true
+  trap '_p="$(cat "$PIDFILE" 2>/dev/null)"; [ "$_p" = "$$" ] && rm -f "$PIDFILE" 2>/dev/null' EXIT INT TERM
+  send_once >/dev/null 2>&1 || true
+  while :; do _w="$(conf IDLE_INTERVAL_SEC 60)"; case "$_w" in ''|*[!0-9]*) _w=60;; esac; [ "$_w" -lt 30 ] 2>/dev/null && _w=30; sleep "$_w"; send_once >/dev/null 2>&1 || true; done
+}
+
+selftest(){
+  _p=0; _f=0; ok(){ echo "PASS|$1"; _p=$((_p+1)); }; bad(){ echo "FAIL|$1"; _f=$((_f+1)); }
+  grep -Fq '/v1/device/telemetry' "$0" && ok telemetry_endpoint || bad telemetry_endpoint
+  grep -Fq 'REMOTE_HARDWARE_COMMANDS=DISABLED' "$0" && ok remote_hardware_disabled || bad remote_hardware_disabled
+  if grep -Eq '>[[:space:]]*/sys/|tee[[:space:]]+/sys/|djaeger-root-authority[[:space:]].*apply' "$0" 2>/dev/null; then bad no_hardware_writes; else ok no_hardware_writes; fi
+  grep -Fq 'DJAEGER_RAILWAY_TELEMETRY_RESTORE1' "$0" && ok source_marker || bad source_marker
+  echo "PASS_COUNT=$_p"; echo "FAIL_COUNT=$_f"; [ "$_f" -eq 0 ]
+}
+status(){ [ -r "$STATE" ] && cat "$STATE" || echo "STATE=NOT_YET_SENT"; }
+case "${1:-once}" in once) send_once;; daemon) daemon;; status) status;; selftest) selftest;; *) exit 2;; esac
