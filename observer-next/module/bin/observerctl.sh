@@ -67,9 +67,27 @@ key_status() {
   count=$(vault_values | wc -l | tr -d ' '); case "$count" in ''|*[!0-9]*) count=0;; esac
   slot=$(cat "$GEMINI_SLOT" 2>/dev/null); case "$slot" in ''|*[!0-9]*) slot=1;; esac
   [ "$count" -gt 0 ] || slot=0
+  now=$(date +%s)
   echo "KEY_CONFIGURED=$([ "$count" -gt 0 ] && echo YES || echo NO)"
   echo "KEY_COUNT=$count"
   echo "ACTIVE_SLOT=$slot"
+  i=1
+  while [ "$i" -le 4 ]; do
+    if [ "$i" -gt "$count" ]; then
+      echo "KEY_${i}_STATUS=EMPTY"
+    else
+      until=$(kv "KEY_${i}_UNTIL" "$GEMINI_COOLDOWN"); case "$until" in ''|*[!0-9]*) until=0;; esac
+      if [ "$until" -gt "$now" ] 2>/dev/null; then
+        echo "KEY_${i}_STATUS=COOLDOWN"
+        echo "KEY_${i}_COOLDOWN_UNTIL=$until"
+      elif [ "$i" = "$slot" ]; then
+        echo "KEY_${i}_STATUS=ACTIVE_READY"
+      else
+        echo "KEY_${i}_STATUS=READY"
+      fi
+    fi
+    i=$((i+1))
+  done
   echo "SECRET_VALUES=HIDDEN"
 }
 
