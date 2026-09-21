@@ -1,0 +1,68 @@
+#!/system/bin/sh
+ROOT="$1"
+HISTORY="$ROOT/history/telemetry.csv"
+SNAP="$ROOT/runtime/snapshot.env"
+OUT="$ROOT/history/learned_envelope.env"
+TMPBASE="$ROOT/runtime/learner.$$"
+
+qcol() {
+  pkg="$1"; col="$2"; pct="$3"; tmp="$TMPBASE.$col.$pct"
+  awk -F, -v p="$pkg" -v c="$col" 'NR>1 && $3==p && $c ~ /^[0-9]+$/ && $c>0 {print $c}' "$HISTORY" 2>/dev/null | sort -n > "$tmp"
+  n=$(wc -l < "$tmp" 2>/dev/null)
+  case "$n" in ''|0) rm -f "$tmp"; echo 0; return;; esac
+  idx=$(( (n*pct + 99) / 100 ))
+  [ "$idx" -lt 1 ] && idx=1
+  [ "$idx" -gt "$n" ] && idx="$n"
+  sed -n "${idx}p" "$tmp"
+  rm -f "$tmp"
+}
+
+while true; do
+  [ -r "$SNAP" ] && [ -r "$HISTORY" ] || { sleep 15; continue; }
+  PKG=$(sed -n 's/^ACTIVE_PACKAGE=//p' "$SNAP" | head -n1)
+  case "$PKG" in ''|UNKNOWN|android|com.android.*|com.google.android.*|com.miui.*|com.djaeger.observer) sleep 20; continue;; esac
+
+  N=$(awk -F, -v p="$PKG" 'NR>1&&$3==p{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+  [ "$N" -ge 120 ] 2>/dev/null || { sleep 20; continue; }
+
+  L05=$(qcol "$PKG" 7 5); L95=$(qcol "$PKG" 7 95)
+  B05=$(qcol "$PKG" 8 5); B95=$(qcol "$PKG" 8 95)
+  G05=$(qcol "$PKG" 9 5); G95=$(qcol "$PKG" 9 95)
+  P50=$(qcol "$PKG" 14 50); P95=$(qcol "$PKG" 14 95)
+
+  [ "$L05" -gt 0 ] && [ "$L95" -ge "$L05" ] || { sleep 20; continue; }
+  [ "$B05" -gt 0 ] && [ "$B95" -ge "$B05" ] || { sleep 20; continue; }
+  [ "$G05" -gt 0 ] && [ "$G95" -ge "$G05" ] || { sleep 20; continue; }
+
+  if [ "$N" -ge 600 ]; then
+    STATE=READY_HARDWARE_MODEL
+    CONF=$((70 + (N-600)/40))
+    [ "$CONF" -gt 95 ] && CONF=95
+  else
+    STATE=BASELINE_READY
+    CONF=$((50 + (N-120)*20/480))
+  fi
+
+  T="$OUT.tmp.$$"
+  {
+    echo "SCHEMA=DJAEGER_LEARNED_ENVELOPE_V1"
+    echo "AT=$(date +%s)"
+    echo "PACKAGE=$PKG"
+    echo "STATE=$STATE"
+    echo "SAMPLES=$N"
+    echo "CONFIDENCE=$CONF"
+    echo "LITTLE_MIN_KHZ=$L05"
+    echo "LITTLE_MAX_KHZ=$L95"
+    echo "BIG_MIN_KHZ=$B05"
+    echo "BIG_MAX_KHZ=$B95"
+    echo "GPU_MIN_HZ=$G05"
+    echo "GPU_MAX_HZ=$G95"
+    echo "POWER_P50_MW=$P50"
+    echo "POWER_P95_MW=$P95"
+    echo "FRAME_EVIDENCE=UNAVAILABLE"
+    echo "SOURCE=STOCK_OBSERVATION_P05_P95"
+  } > "$T"
+  chmod 600 "$T"
+  mv -f "$T" "$OUT"
+  sleep 20
+done
