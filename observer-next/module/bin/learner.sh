@@ -4,7 +4,7 @@ HISTORY="$ROOT/history/telemetry.csv"
 SNAP="$ROOT/runtime/snapshot.env"
 OUT="$ROOT/history/learned_envelope.env"
 OUTCOMES="$ROOT/history/outcomes.csv"
-TMPBASE="$ROOT/runtime/learner.$"
+TMPBASE="$ROOT/runtime/learner.$$"
 WORKLOAD="$ROOT/runtime/workload.env"
 LAST_PKG=""
 LAST_N=0
@@ -99,7 +99,7 @@ while true; do
     fi
   fi
 
-  T="$OUT.tmp.$"
+  T="$OUT.tmp.$$"
   {
     echo "SCHEMA=DJAEGER_LEARNED_ENVELOPE_V3"
     echo "AT=$(date +%s)"
