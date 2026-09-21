@@ -1,0 +1,93 @@
+name: DJAEGER AI Transport Recovery APK
+
+on:
+  push:
+    branches: [djaeger-ai-adaptive-recovery-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-ai-transport-recovery
+  cancel-in-progress: true
+
+jobs:
+  build-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Static recovery safety audit
+        run: |
+          set -euo pipefail
+          R=observer-next/android/recovery/src/main/assets/recovery.sh
+          U=observer-next/android/recovery/src/main/assets/remote_updater.sh
+          B=observer-next/android/recovery/src/main/assets/railway_bridge.sh
+          bash -n "$R"
+          bash -n "$U"
+          bash -n "$B"
+          grep -Fq 'id=djaeger_ai_observer' observer-next/module/module.prop
+          grep -Fq 'case "$VC" in 202|203)' "$R"
+          grep -Fq 'DJAEGER_ADAPTIVE_REMOTE_UPDATER_V1' "$R"
+          grep -Fq 'DJAEGER_ADAPTIVE_REMOTE_UPDATER_V1' "$U"
+          grep -Fq 'DJAEGER_ADAPTIVE_REPAIR_V1' "$U"
+          grep -Fq 'LEGACY_RAILWAY_TOKEN_NOT_FOUND' "$R"
+          grep -Fq 'ACCESS_TOKEN' "$R"
+          grep -Fq 'ENDPOINT' "$R"
+          grep -Fq 'DJAEGER_ACCESS_TOKEN' "$R"
+          grep -Fq 'DJAEGER_RAILWAY_URL' "$R"
+          ! grep -Eq '(^|[[:space:]])(reboot|poweroff)([[:space:]]|$)|dd[[:space:]].*/dev/block|mkfs\.|tee[[:space:]]+/sys/|>[[:space:]]*/sys/' "$R"
+          ! grep -Eq '(^|[[:space:]])(reboot|poweroff)([[:space:]]|$)|dd[[:space:]].*/dev/block|mkfs\.|tee[[:space:]]+/sys/|>[[:space:]]*/sys/' "$U"
+          ! grep -Eq 'tee[[:space:]]+/sys/|>[[:space:]]*/sys/' "$B"
+
+      - name: Build recovery release
+        working-directory: observer-next/android
+        run: gradle :recovery:assembleRelease --stacktrace
+
+      - name: Sign and verify standalone recovery APK
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          UNSIGNED="$(find observer-next/android/recovery/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
+          test -n "$UNSIGNED"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          SIGN_DIR="$RUNNER_TEMP/djaeger-recovery-signing"
+          mkdir -p "$SIGN_DIR"
+          PASS="$(openssl rand -hex 24)"
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -noprompt -storetype PKCS12             -keystore "$SIGN_DIR/recovery.p12" -storepass "$PASS" -keypass "$PASS"             -alias recovery -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER Recovery, O=DJAEGER, C=ID'
+          ALIGNED="$RUNNER_TEMP/recovery-aligned.apk"
+          APK="out/DJAEGER-AI-Transport-Recovery-v1.0.0.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign             --ks "$SIGN_DIR/recovery.p12" --ks-type PKCS12 --ks-key-alias recovery             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee out/APKSIGNER_VERIFY.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
+          grep -q "package: name='com.djaeger.recovery' versionCode='1' versionName='1.0.0'" out/AAPT_BADGING.txt
+          unzip -l "$APK" | tee out/APK_CONTENTS.txt
+          grep -q 'assets/recovery.sh' out/APK_CONTENTS.txt
+          grep -q 'assets/railway_bridge.sh' out/APK_CONTENTS.txt
+          grep -q 'assets/remote_updater.sh' out/APK_CONTENTS.txt
+          sha256sum "$APK" > out/SHA256SUMS.txt
+          printf '%s\n'             'PURPOSE=RESTORE_ADAPTIVE_DEVICE_TRANSPORT'             'TARGET_MODULE=djaeger_ai_observer'             'TARGET_VC=202,203'             'FLASH_REQUIRED=NO'             'REBOOT_REQUIRED=NO'             'HARDWARE_WRITES=NONE'             'MAIN_CONTROL_CENTER_REPLACED=NO'             'PACKAGE=com.djaeger.recovery'             > out/BUILD_REPORT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-AI-Transport-Recovery-v1
+          path: |
+            out/DJAEGER-AI-Transport-Recovery-v1.0.0.apk
+            out/SHA256SUMS.txt
+            out/BUILD_REPORT.txt
+            out/APKSIGNER_VERIFY.txt
+            out/AAPT_BADGING.txt
+            out/APK_CONTENTS.txt
+          if-no-files-found: error
