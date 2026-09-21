@@ -18,8 +18,8 @@ num(){ case "$1" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
 map_path(){ [ -n "$SYSROOT" ] && printf '%s%s' "$SYSROOT" "$1" || printf '%s' "$1"; }
 readv(){ _f="$(map_path "$1")"; [ -r "$_f" ] && cat "$_f" 2>/dev/null | head -n1; }
 writev(){ _f="$(map_path "$1")"; [ -w "$_f" ] || return 1; printf '%s\n' "$2" > "$_f"; }
-valid_cpu(){ case "$1" in /sys/devices/system/cpu/cpufreq/policy[0-9]*) return 0;; *) return 1;; esac; }
-valid_gpu(){ case "$1" in /sys/class/kgsl/kgsl-3d0/devfreq|/sys/class/devfreq/*) return 0;; *) return 1;; esac; }
+valid_cpu(){ case "$1" in /sys/devices/system/cpu/cpufreq/policy[0-9]|/sys/devices/system/cpu/cpufreq/policy[0-9][0-9]) return 0;; *) return 1;; esac; }
+valid_gpu(){ case "$1" in /sys/class/kgsl/kgsl-3d0/devfreq|/sys/class/devfreq/*gpu*|/sys/class/devfreq/*mali*) return 0;; *) return 1;; esac; }
 contains_freq(){ _v="$1"; _list="$2"; for _x in $_list; do [ "$_x" = "$_v" ] && return 0; done; return 1; }
 
 publish(){
@@ -76,8 +76,9 @@ snapshot_fresh(){
 thermal_safe(){
   _skin="$(kv SKIN_TEMP_C "$SNAP")"; _bat="$(kv BATTERY_TEMP_C "$SNAP")"; _cpu="$(kv CPU_TEMP_C "$SNAP")"; _gpu="$(kv GPU_TEMP_C "$SNAP")"
   awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu" 'BEGIN{
-    if(s!~/^[0-9]+([.][0-9]+)?$/||b!~/^[0-9]+([.][0-9]+)?$/||c!~/^[0-9]+([.][0-9]+)?$/||g!~/^[0-9]+([.][0-9]+)?$/) exit 1;
-    exit !((s<44)&&(b<43)&&(c<75)&&(g<75))
+    if(s!~/^[0-9]+([.][0-9]+)?$/||b!~/^[0-9]+([.][0-9]+)?$/||c!~/^[0-9]+([.][0-9]+)?$/) exit 1;
+    gok=(g!~/^[0-9]+([.][0-9]+)?$/ || g<75);
+    exit !((s<44)&&(b<43)&&(c<75)&&gok)
   }'
 }
 
