@@ -66,7 +66,7 @@ private fun hccPresetFromBlock(block:String):String{
 @Composable fun App(){val repo=remember{DjaegerRepository()};val context=androidx.compose.ui.platform.LocalContext.current;val notifier=remember{BugNotifier(context)};var state by remember{mutableStateOf(RuntimeState())};var tab by remember{mutableIntStateOf(0)};val samples=remember{mutableStateListOf<Sample>()};var manualRefresh by remember{mutableIntStateOf(0)};var refreshBusy by remember{mutableStateOf(false)};var refreshStatus by remember{mutableStateOf("LOCAL AUTO 3s")}
     val lifecycleOwner=LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner){lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){var lastSyncAt=0L;while(true){var fresh=repo.snapshot();val nowSec=System.currentTimeMillis()/1000;if(envField(fresh.controlCenterSync,"PAIR_VERIFIED")!="YES"&&nowSec-lastSyncAt>=15){repo.synchronizeLocal();lastSyncAt=nowSec;fresh=repo.snapshot()};state=fresh;notifier.notifyIfNeeded(state.bugHealth);if(state.root&&state.installed&&state.active=="1"&&state.sampleFresh){with(state.telemetry){samples.add(Sample(if(fps>0)fps else Double.NaN,if(frameMs>0)frameMs else Double.NaN,sampleTemp(cpuT),sampleTemp(gpuT),sampleTemp(skinT),sampleTemp(batT)));while(samples.size>60)samples.removeAt(0)}};delay(3000)}}}
-    LaunchedEffect(manualRefresh){if(manualRefresh>0){refreshBusy=true;val beforeGen=envField(state.controlCenterSync,"SNAPSHOT_GENERATION");val sync=repo.synchronizeLocal();val fresh=repo.snapshot();state=fresh;notifier.notifyIfNeeded(fresh.bugHealth);val afterGen=envField(fresh.controlCenterSync,"SNAPSHOT_GENERATION");val now=SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(Date());refreshStatus=when{!sync.first->"LOCAL SYNC ERROR • $now";fresh.error.isNotBlank()->"LOCAL SNAPSHOT ERROR • $now";afterGen.isNotBlank()&&afterGen!=beforeGen->"LOCAL SYNCED • GEN $afterGen • $now";else->"LOCAL ACK WITHOUT NEW GEN • $now"};refreshBusy=false}}
+    LaunchedEffect(manualRefresh){if(manualRefresh>0){refreshBusy=true;val beforeGen=envField(state.controlCenterSync,"SNAPSHOT_GENERATION");val sync=repo.synchronizeLocal();var fresh=repo.snapshot();var afterGen=envField(fresh.controlCenterSync,"SNAPSHOT_GENERATION");var tries=0;while(sync.first&&afterGen==beforeGen&&tries<6){delay(150);fresh=repo.snapshot();afterGen=envField(fresh.controlCenterSync,"SNAPSHOT_GENERATION");tries++};state=fresh;notifier.notifyIfNeeded(fresh.bugHealth);val now=SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(Date());refreshStatus=when{!sync.first->"LOCAL SYNC ERROR • $now";fresh.error.isNotBlank()->"LOCAL SNAPSHOT ERROR • $now";afterGen.isNotBlank()&&afterGen!=beforeGen->"LOCAL SYNCED • GEN $afterGen • $now";else->"LOCAL ACK WITHOUT NEW GEN • $now"};refreshBusy=false}}
     MaterialTheme(colorScheme=darkColorScheme(primary=Green,background=Bg,surface=Card)){Column(Modifier.fillMaxSize().background(Bg).padding(16.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Column(Modifier.weight(1f)){Text("DJAEGER",fontWeight=FontWeight.Black,style=MaterialTheme.typography.headlineMedium,color=MaterialTheme.colorScheme.onBackground);Text("CONTROL CENTER",color=Muted);Text(refreshStatus,color=Muted,style=MaterialTheme.typography.labelSmall)};Button(onClick={if(!refreshBusy)manualRefresh++},enabled=!refreshBusy){Text(if(refreshBusy)"REFRESHING…" else "REFRESH LOCAL")}};Spacer(Modifier.height(12.dp));ScrollableTabRow(selectedTabIndex=tab,containerColor=Bg,edgePadding=0.dp){listOf("Overview","Session","Charts","AI","History","Safety","Bug & Health","Logs").forEachIndexed{i,n->Tab(selected=tab==i,onClick={tab=i},text={Text(n)})}};Spacer(Modifier.height(12.dp));when(tab){0->Overview(state);1->Session(state,samples,repo);2->Charts(state,samples);3->AI(state);4->History(state);5->Safety(state);6->BugHealth(state.bugHealth);else->Logs(state)}}}}
 
 
@@ -74,8 +74,10 @@ private fun thoughtField(raw:String,key:String):String = raw.lineSequence().firs
 private fun envField(raw:String,key:String):String = thoughtField(raw,key)
 private fun brainLabel(raw:String):String = when(raw){
     "GEMINI"->"GEMINI • ADVISORY REASONER"
-    "OBSERVER_LOCAL"->"LOCAL OBSERVER • DEVICE TRUTH"
+    "OBSERVER","OBSERVER_LOCAL"->"LOCAL OBSERVER • DEVICE TRUTH"
     "HERMES_LOCAL","HERMES_H2"->"HERMES LOCAL • VALIDATOR / REVIEWER"
+    "HERMES_CLOUD"->"HERMES CLOUD • ADVISORY REVIEWER"
+    "LOCAL_EXECUTOR","AI_CONSENSUS"->"LOCAL EXECUTOR • VERIFIED HARDWARE TRUTH"
     "NONE"->"NONE • NATIVE FAILSAFE"
     else->raw.ifBlank{"—"}
 }
@@ -112,8 +114,8 @@ private fun ageLabel(raw:String):String{
         else -> "NO"
     }
     val cloudPlan=when(cloudPlanProvider.uppercase()){
-        "GEMINI" -> "GEMINI"
-        "HERMES_CLOUD","HERMES CLOUD" -> "HERMES CLOUD"
+        "GEMINI" -> if(cloudState=="NOT_USED"||cloudState=="UNAVAILABLE") "NOT_USED" else "GEMINI • $cloudState"
+        "HERMES_CLOUD","HERMES CLOUD" -> if(cloudState=="NOT_USED"||cloudState=="UNAVAILABLE") "NOT_USED" else "HERMES CLOUD • $cloudState"
         else -> "NOT_USED"
     }
     val thoughtSrc=envField(s.thoughts,"SOURCE")
@@ -126,11 +128,13 @@ private fun ageLabel(raw:String):String{
     val thoughtTitle=when{
         thoughtSrc=="GEMINI"&&isFresh->"PEMIKIRAN GEMINI"
         thoughtSrc=="GEMINI"->"LAST GEMINI THOUGHT"
-        thoughtSrc=="HERMES_H2"->"PEMIKIRAN HERMES H2"
+        thoughtSrc=="HERMES_LOCAL"||thoughtSrc=="HERMES_H2"->"PEMIKIRAN HERMES LOCAL"
+        thoughtSrc=="HERMES_CLOUD"->"PEMIKIRAN HERMES CLOUD"
+        thoughtSrc=="LOCAL_EXECUTOR"->"PEMIKIRAN DJAEGER • LOCAL EXECUTOR"
         else->"PEMIKIRAN DJAEGER"
     }
     val statusLabel=when{
-        thoughtSrc=="GEMINI"&&!isFresh->"STALE • age ${ageLabel(thoughtAge)}"
+        !isFresh->"STALE • age ${ageLabel(thoughtAge)}"
         thoughtSrc=="GEMINI"->cloudConnection
         else->thoughtStatus
     }
