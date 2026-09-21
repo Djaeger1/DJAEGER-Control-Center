@@ -61,6 +61,8 @@ publish_cc() {
   _execution="$_root/runtime/execution.env"
   _outcomes="$_root/history/outcomes.csv"
   _railway="$_root/runtime/railway.env"
+  _recovery="$_root/runtime/credential_recovery.env"
+  _neuron="$_root/config/hermes_neuron_legacy.env"
   _migration="$_root/recovery/migration.env"
   _handshake="$_root/runtime/handshake.env"
   _gem_vault="$_root/config/gemini_vault.env"
@@ -175,6 +177,11 @@ publish_cc() {
   _railway_state="$(pub_kv RAILWAY_STATE "$_railway")"; [ -n "$_railway_state" ] || _railway_state=WAITING
   _migration_state="$(pub_kv MIGRATION_STATE "$_migration")"; [ -n "$_migration_state" ] || _migration_state=UNKNOWN
   _credential_count="$(pub_kv CREDENTIAL_FILE_COUNT "$_migration")"; case "$_credential_count" in ''|*[!0-9]*) _credential_count=0;; esac
+  _neuron_used="$(pub_kv USED_EST "$_neuron")"; _neuron_limit="$(pub_kv LIMIT "$_neuron")"
+  case "$_neuron_used:$_neuron_limit" in
+    *[!0-9:]*|:*) _neuron_used=UNAVAILABLE; _neuron_limit=UNAVAILABLE; _neuron_tier=UNREPORTED ;;
+    *) _neuron_tier=LOCAL_DEVICE_ESTIMATE ;;
+  esac
 
   _gem_count=$(sed -n 's/^KEY_[1-4]=//p' "$_gem_vault" 2>/dev/null | awk 'NF{n++}END{print n+0}')
   case "$_gem_count" in ''|*[!0-9]*) _gem_count=0;; esac
@@ -435,7 +442,7 @@ publish_cc() {
     echo "HERMES_REASON=$(pub_clean "$_hreason")"; echo "HERMES_BACKEND=$([ "$_hroute" = LOCAL ] && echo LOCAL || echo CLOUD)"
     echo "HERMES_CLOUD_STATE=$_hcloud"; echo "HERMES_CLOUD_AUTH=$_hauth"
     echo "HERMES_CLOUD_ROUTE=$_hroute"; echo "HERMES_CLOUD_MODEL=$_hmodel"; echo "HERMES_CLOUD_HTTP_CODE=$_hhttp"
-    echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=UNAVAILABLE"; echo "HERMES_NEURON_LIMIT=UNAVAILABLE"; echo "HERMES_NEURON_TIER=UNREPORTED"
+    echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=$_neuron_used"; echo "HERMES_NEURON_LIMIT=$_neuron_limit"; echo "HERMES_NEURON_TIER=$_neuron_tier"; echo "HERMES_NEURON_ACCOUNTING=DEVICE_ESTIMATE_SEPARATE_FROM_PROVIDER_QUOTA"
     echo "AGENT_VERSION=ADAPTIVE_V2"; echo "AGENT_ROLE=MEASURE_LEARN_REVIEW_SHADOW_EXECUTE"; echo "AGENT_STATE=$_cons_state"
     echo "AGENT_INPUT_SOURCE=DEVICE_TELEMETRY"; echo "AGENT_DECISION_AUTHORITY=LOCAL_VALIDATOR"; echo "AGENT_EXECUTION_OWNER=LOCAL_EXECUTOR"
     echo "AGENT_HARDWARE_AUTHORITY=LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=OBSERVER_SYSFS_READBACK"
@@ -460,7 +467,7 @@ publish_cc() {
     echo "__HERMES_CTX1_RUNTIME__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "WINDOW=$_window"
     echo "__HERMES_CTX1_SAFETY__"; echo "SYSFS=LOCAL_EXECUTOR_ONLY"; echo "CONSENSUS=$_cons_state"; echo "SHADOW=$_shadow_state"; echo "EXECUTOR=$_exec_state"
     echo "__HERMES_CTX1_HARDWARE__"; echo "LITTLE=$_little"; echo "BIG=$_big"; echo "GPU=$_gpu"; echo "SKIN=$_skin_t"; echo "POWER=$_power"
-    echo "__HERMES_CTX1_MEMORY__"; echo "SAMPLES=$_samples"; echo "BYTES=$_history_bytes"; echo "CREDENTIAL_FILES=$_credential_count"
+    echo "__HERMES_CTX1_MEMORY__"; echo "SAMPLES=$_samples"; echo "BYTES=$_history_bytes"; echo "CREDENTIAL_FILES=$_credential_count"; echo "GEMINI_KEY_COUNT=$(pub_kv GEMINI_KEY_COUNT "$_migration")"; echo "HERMES_ACCESS_KEY_PRESENT=$(pub_kv HERMES_ACCESS_KEY_PRESENT "$_migration")"; echo "NEURON_LOCAL_ESTIMATE_PRESENT=$(pub_kv NEURON_LOCAL_ESTIMATE_PRESENT "$_migration")"
     echo "__HERMES_CTX1_LEARNING__"; echo "STATE=$_learning"; echo "CONFIDENCE=$_confidence"; echo "FRAME_EVIDENCE=$_frame_evidence"
     echo "__HERMES_COGNITION_STATUS__"; echo "STATE=$_hlocal"; echo "MODE=OBSERVER_VNEXT"
     echo "__HERMES_MEMORY_VNEXT__"; echo "STATE=$_learning"; echo "SAMPLES=$_samples"; echo "SOURCE=STOCK_HISTORY"
