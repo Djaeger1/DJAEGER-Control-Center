@@ -110,6 +110,7 @@ jobs:
           grep -qx 'false' out/APK_DEBUGGABLE.txt
           grep -Eq 'bin/executor\.sh' out/MODULE_CONTENTS.txt
           grep -Eq 'bin/railway_bridge\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'uninstall\.sh' out/MODULE_CONTENTS.txt
           ! grep -Eq 'agent_bus\.sh' out/MODULE_CONTENTS.txt
 
           mkdir -p "$RUNNER_TEMP/module-audit" "$RUNNER_TEMP/apk-audit"
