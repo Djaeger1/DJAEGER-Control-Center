@@ -108,7 +108,7 @@ jobs:
           unzip -q "$APK" -d "$RUNNER_TEMP/apk-audit"
 
           A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
-          for q in "$A-$B" "$A_$B" "$A $B" "$C-$B" "$C_$B" "$C $B" "$D-$E" "$F_$G" "$H_$I"; do
+          for q in "${A}-${B}" "${A}_${B}" "${A} ${B}" "${C}-${B}" "${C}_${B}" "${C} ${B}" "${D}-${E}" "${F}_${G}" "${H}_${I}"; do
             ! grep -R -a -i -F "$q" "$RUNNER_TEMP/module-audit"
             ! grep -R -a -i -F "$q" "$RUNNER_TEMP/apk-audit"
           done
