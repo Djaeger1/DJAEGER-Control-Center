@@ -5,7 +5,6 @@ LEARN="$ROOT/history/learned_envelope.env"
 WORKLOAD="$ROOT/runtime/workload.env"
 OUT="$ROOT/policy/gemini_proposal.env"
 STATE="$ROOT/runtime/gemini_reasoner.env"
-LEGACY="$ROOT/recovery/legacy"
 SLOTFILE="$ROOT/config/gemini_slot"
 LASTFILE="$ROOT/config/gemini_last_at"
 COOLDOWN=1800
@@ -27,11 +26,9 @@ write_state(){
 }
 
 collect_keys(){
-  KF="$ROOT/runtime/.gemini_keys.$$"
+  KF="$ROOT/runtime/.gemini_keys.$"
   : > "$KF"
-  find "$ROOT/config" "$LEGACY" -maxdepth 8 -type f 2>/dev/null | while read -r f; do
-    sed -n       -e "s/^[[:space:]]*\(GEMINI_API_KEY\|API_KEY\|KEY_[1-4]\|KEY\)[[:space:]]*=[[:space:]]*['\"]\{0,1\}\([^'\"[:space:]]\{20,\}\).*/\2/p"       -e 's/.*\(AIza[0-9A-Za-z_-]\{20,\}\).*/\1/p' "$f" 2>/dev/null
-  done | awk 'NF && !seen[$0]++' | head -n 4 > "$KF"
+  sed -n 's/^KEY_[1-4]=//p' "$ROOT/config/gemini_vault.env" 2>/dev/null | awk 'NF && !seen[$0]++' | head -n 4 > "$KF"
   KEY_COUNT=$(wc -l < "$KF" 2>/dev/null)
 }
 
@@ -50,9 +47,7 @@ while true; do
   collect_keys
   [ "${KEY_COUNT:-0}" -gt 0 ] || { write_state NO_KEY "restored_gemini_key_not_found"; rm -f "$KF"; sleep 120; continue; }
 
-  MODEL=$(find "$ROOT/config" "$LEGACY" -maxdepth 8 -type f 2>/dev/null | while IFS= read -r f; do
-    sed -n -e "s/^[[:space:]]*GEMINI_MODEL[[:space:]]*=[[:space:]]*['\"]\{0,1\}\([A-Za-z0-9._-]*\).*/\1/p" -e "s/^[[:space:]]*MODEL[[:space:]]*=[[:space:]]*['\"]\{0,1\}\(gemini-[A-Za-z0-9._-]*\).*/\1/p" "$f" 2>/dev/null
-  done | head -n1)
+  MODEL=$(sed -n 's/^GEMINI_MODEL=//p' "$ROOT/config/gemini.env" 2>/dev/null | head -n1)
   [ -n "$MODEL" ] || MODEL="gemini-3.6-flash"
 
   SLOT=$(cat "$SLOTFILE" 2>/dev/null); case "$SLOT" in ''|*[!0-9]*) SLOT=1;; esac
