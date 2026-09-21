@@ -33,7 +33,7 @@ publish(){
     {
       echo "SCHEMA=DJAEGER_EXEC_APPROVAL_V1"
       echo "AT=$_now"
-      echo "EXPIRES_AT=$((_now+180))"
+      echo "EXPIRES_AT=$((_now+120))"
       echo "EXECUTOR_ALLOWED=YES"
       echo "PACKAGE=$(kv PACKAGE "$POLICY")"
       echo "CANDIDATE_DIGEST=$(kv CANDIDATE_DIGEST "$POLICY")"
@@ -58,13 +58,17 @@ while true; do
   [ "$(kv EXECUTOR_ENABLED "$POLICY")" = 0 ] || { publish REJECT candidate_must_not_self_enable; sleep 60; continue; }
 
   DIGEST=$(kv CANDIDATE_DIGEST "$POLICY"); PKG=$(kv PACKAGE "$POLICY")
+  CANDIDATE_AT=$(kv AT "$POLICY"); case "$CANDIDATE_AT" in ''|*[!0-9]*) publish REJECT candidate_time_invalid; sleep 60; continue;; esac
+  NOW=$(date +%s); AGE=$((NOW-CANDIDATE_AT))
+  [ "$AGE" -ge 0 ] && [ "$AGE" -le 900 ] || { publish REJECT candidate_stale; sleep 60; continue; }
+  CUTOFF=$((NOW-86400))
   LMIN=$(kv LITTLE_MIN_KHZ "$POLICY"); LMAX=$(kv LITTLE_MAX_KHZ "$POLICY")
   BMIN=$(kv BIG_MIN_KHZ "$POLICY"); BMAX=$(kv BIG_MAX_KHZ "$POLICY")
   GMIN=$(kv GPU_MIN_HZ "$POLICY"); GMAX=$(kv GPU_MAX_HZ "$POLICY")
   case "$LMIN:$LMAX:$BMIN:$BMAX:$GMIN:$GMAX" in *[!0-9:]*|:*) publish REJECT invalid_candidate; sleep 60; continue;; esac
 
-  METRICS=$(awk -F, -v p="$PKG" -v l0="$LMIN" -v l1="$LMAX" -v b0="$BMIN" -v b1="$BMAX" -v g0="$GMIN" -v g1="$GMAX" '
-    NR>1 && $3==p && $20+0>=20 && $21~/^[0-9]+$/ && !seen[$21]++ &&
+  METRICS=$(awk -F, -v p="$PKG" -v cutoff="$CUTOFF" -v l0="$LMIN" -v l1="$LMAX" -v b0="$BMIN" -v b1="$BMAX" -v g0="$GMIN" -v g1="$GMAX" '
+    NR>1 && $1+0>=cutoff && $3==p && $20+0>=20 && $21~/^[0-9]+$/ && !seen[$21]++ &&
     $7+0>=l0 && $7+0<=l1 && $8+0>=b0 && $8+0<=b1 && $9+0>=g0 && $9+0<=g1 &&
     $16~/^[0-9]+([.][0-9]+)?$/ && $17~/^[0-9]+([.][0-9]+)?$/ && $18~/^[0-9]+([.][0-9]+)?$/ {
       n++; fps+=$16; jank+=$17; p95+=$18
