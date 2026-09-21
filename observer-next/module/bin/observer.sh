@@ -206,7 +206,7 @@ while true; do
   {
     echo "SCHEMA=DJAEGER_OBSERVER_V4"
     echo "ENGINE=OBSERVER_FIRST"
-    echo "MODULE_VERSION=1.1.0-rc1-sync"
+    echo "MODULE_VERSION=1.1.1-33fix"
     echo "SAMPLE_SEQ=$SEQ"
     echo "PACKAGE_SAMPLES=$PKG_SAMPLES"
     echo "EPOCH=$EPOCH"
