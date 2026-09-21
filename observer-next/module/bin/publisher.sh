@@ -47,11 +47,19 @@ publish_cc() {
   _execution="$_root/runtime/execution.env"
   _railway="$_root/runtime/railway.env"
   _migration="$_root/recovery/migration.env"
+  _handshake="$_root/runtime/handshake.env"
+  _gem_vault="$_root/config/gemini_vault.env"
+  _gem_cooldown="$_root/config/gemini_cooldown.env"
+  _hermes_cfg="$_root/config/hermes_cloud.env"
+  _genfile="$_root/runtime/snapshot_generation"
   _out="$_root/cc_snapshot"
   [ -r "$_snap" ] || return 0
 
   _epoch="$(pub_kv EPOCH "$_snap")"; case "$_epoch" in ''|*[!0-9]*) _epoch="$(date +%s)";; esac
   _pkg="$(pub_kv ACTIVE_PACKAGE "$_snap")"; [ -n "$_pkg" ] || _pkg=UNKNOWN
+  _top_pkg="$(pub_kv TOP_PACKAGE "$_snap")"; [ -n "$_top_pkg" ] || _top_pkg="$_pkg"
+  _visible_game="$(pub_kv VISIBLE_GAME "$_snap")"; [ -n "$_visible_game" ] || _visible_game=NONE
+  _pkg_source="$(pub_kv PACKAGE_SOURCE "$_snap")"; [ -n "$_pkg_source" ] || _pkg_source=LEGACY_FOREGROUND
   _samples="$(pub_kv PACKAGE_SAMPLES "$_snap")"; case "$_samples" in ''|*[!0-9]*) _samples=0;; esac
   _learning="$(pub_kv STATE "$_learn")"; [ -n "$_learning" ] || _learning="$(pub_kv LEARNING_STATE "$_snap")"
   [ -n "$_learning" ] || _learning=WAITING
@@ -78,7 +86,10 @@ publish_cc() {
     ;;
   esac
   _active=0; _window=INACTIVE
-  [ "$_workload" = GAME ] && { _active=1; _window=FOREGROUND; }
+  if [ "$_workload" = GAME ]; then
+    _active=1
+    case "$_pkg_source" in *MULTIWINDOW*|*VISIBLE_GAME*) _window=MULTI_WINDOW;; *) _window=FOREGROUND;; esac
+  fi
   {
     echo "AT=$_epoch"
     echo "PACKAGE=$_pkg"
@@ -139,8 +150,56 @@ publish_cc() {
   _migration_state="$(pub_kv MIGRATION_STATE "$_migration")"; [ -n "$_migration_state" ] || _migration_state=UNKNOWN
   _credential_count="$(pub_kv CREDENTIAL_FILE_COUNT "$_migration")"; case "$_credential_count" in ''|*[!0-9]*) _credential_count=0;; esac
 
-  _cloud_connection=WAITING
-  case "$_gem" in CANDIDATE|OBSERVE) _cloud_connection=ONLINE;; COOLDOWN) _cloud_connection=COOLDOWN;; HTTP_ERROR|NO_KEY|UNAVAILABLE) _cloud_connection=OFFLINE;; esac
+  _gem_count=$(sed -n 's/^KEY_[1-4]=//p' "$_gem_vault" 2>/dev/null | awk 'NF{n++}END{print n+0}')
+  case "$_gem_count" in ''|*[!0-9]*) _gem_count=0;; esac
+  _now=$(date +%s); _gem_ready=0; _gem_cd=0; _i=1
+  while [ "$_i" -le "$_gem_count" ]; do
+    _until="$(pub_kv "KEY_${_i}_UNTIL" "$_gem_cooldown")"; case "$_until" in ''|*[!0-9]*) _until=0;; esac
+    if [ "$_until" -gt "$_now" ] 2>/dev/null; then _gem_cd=$((_gem_cd+1)); else _gem_ready=$((_gem_ready+1)); fi
+    _i=$((_i+1))
+  done
+  _gem_http="$(pub_kv GEMINI_HTTP "$_gem_state")"; [ -n "$_gem_http" ] || _gem_http=NA
+  _gem_connection=WAITING
+  if [ "$_gem_count" -eq 0 ]; then _gem_connection=NOT_CONFIGURED
+  else
+    case "$_gem_http:$_gem" in
+      200:*) _gem_connection=ONLINE ;;
+      429:*|*:COOLDOWN|*:ALL_KEYS_COOLDOWN) _gem_connection=COOLDOWN ;;
+      401:*|403:*) _gem_connection=AUTH_ERROR ;;
+      000:*|NA:HTTP_ERROR|*:UNAVAILABLE) _gem_connection=OFFLINE ;;
+      *) _gem_connection=READY ;;
+    esac
+  fi
+
+  _h_access="$(pub_kv HERMES_ACCESS_KEY "$_hermes_cfg")"
+  if [ -n "$_h_access" ]; then
+    [ "$_hauth" = UNKNOWN ] && _hauth=CONFIGURED
+  else
+    _hauth=NOT_CONFIGURED
+  fi
+  unset _h_access
+  _hermes_connection=WAITING
+  case "$_hcloud" in
+    ONLINE|ONLINE_IDLE|APPROVED|REJECTED) _hermes_connection=ONLINE ;;
+    NO_KEY) _hermes_connection=NOT_CONFIGURED ;;
+    AUTH_ERROR) _hermes_connection=AUTH_ERROR ;;
+    HTTP_ERROR|UNAVAILABLE|OFFLINE) _hermes_connection=OFFLINE ;;
+    *) [ "$_hauth" = NOT_CONFIGURED ] && _hermes_connection=NOT_CONFIGURED ;;
+  esac
+
+  _apk_ver="$(pub_kv APK_VERSION_CODE "$_handshake")"
+  _expected_apk="$(pub_kv EXPECTED_APK_VERSION_CODE "$_handshake")"; [ -n "$_expected_apk" ] || _expected_apk=104
+  _hand_schema="$(pub_kv SCHEMA "$_handshake")"
+  _ack_id="$(pub_kv ACK_ID "$_handshake")"
+  _ack_at="$(pub_kv ACK_AT "$_handshake")"; case "$_ack_at" in ''|*[!0-9]*) _ack_at=0;; esac
+  _hand_age=$((_now-_ack_at)); [ "$_hand_age" -ge 0 ] 2>/dev/null || _hand_age=999999
+  _pair="$(pub_kv PAIR_VERIFIED "$_handshake")"
+  [ "$_pair" = YES ] && [ "$_hand_schema" = DJAEGER_AI_ADAPTIVE_V2 ] && [ "$_hand_age" -le 86400 ] 2>/dev/null || _pair=NO
+  _generation=$(cat "$_genfile" 2>/dev/null | head -n1); case "$_generation" in ''|*[!0-9]*) _generation=0;; esac
+  _generation=$((_generation+1))
+  printf '%s\n' "$_generation" > "$_genfile.tmp.$"; chmod 600 "$_genfile.tmp.$" 2>/dev/null; mv -f "$_genfile.tmp.$" "$_genfile"
+
+  _cloud_connection="GEMINI_$_gem_connection|HERMES_$_hermes_connection"
   _plan_provider=NONE; [ -r "$_gem_prop" ] && _plan_provider=GEMINI
   _thought_source=OBSERVER_LOCAL
   [ "$_gem" = CANDIDATE ] && _thought_source=GEMINI
@@ -171,10 +230,11 @@ publish_cc() {
   _tmp="$_out.tmp.$$"
   {
     echo "__INSTALLED__"; echo 1
-    echo "__VERSION__"; echo "1.0.0-adaptive-clean"
+    echo "__VERSION__"; echo "1.1.0-rc1-sync"
     echo "__RUNTIME__"
-    echo "UPDATED_AT=$_epoch"; echo "ACTIVE=$_active"; echo "GAME=$_pkg"; echo "WINDOW_MODE=$_window"
+    echo "UPDATED_AT=$_epoch"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
     echo "CONTROLLER_PID=$"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
+    echo "TOP_PACKAGE=$_top_pkg"; echo "PACKAGE_SOURCE=$_pkg_source"; echo "VISIBLE_GAME=$_visible_game"; echo "SNAPSHOT_GENERATION=$_generation"
     echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
     echo "__TEL__"; echo "$_tel"
     echo "__BRAIN__"
@@ -187,7 +247,9 @@ publish_cc() {
       echo "FINAL_PROFILE=LEARNED_PENDING"; echo "FINAL_ADJUSTMENT=NONE"; echo "EXEC_MODE=GATED_AUTO"
       echo "EXEC_LITTLE=$_lmin-$_lmax"; echo "EXEC_BIG=$_bmin-$_bmax"; echo "EXEC_GPU=$_gmin-$_gmax"
     fi
-    echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=GEMINI"
+    echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=MULTI"
+    echo "GEMINI_CONNECTION_STATUS=$_gem_connection"; echo "GEMINI_HTTP_CODE=$_gem_http"; echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"
+    echo "HERMES_CONNECTION_STATUS=$_hermes_connection"
     echo "CLOUD_IN_CONTROL=NO"; echo "CLOUD_CONTROL_PROVIDER=NONE"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
     echo "CLOUD_PLAN_STATE=$_cons_state"; echo "CLOUD_PLAN_SCORE=$_gem_conf"; echo "CLOUD_PLAN_REASON=$(pub_clean "$_gem_reason")"
     echo "HERMES_PROPOSAL_STATE=$_hlocal"; echo "HERMES_PROPOSAL_CONFIDENCE=$_hconf"; echo "HERMES_PROFILE=ADAPTIVE_NO_FIXED_PROFILE"
@@ -195,12 +257,12 @@ publish_cc() {
     echo "HERMES_CLOUD_STATE=$_hcloud"; echo "HERMES_CLOUD_AUTH=$_hauth"
     echo "HERMES_CLOUD_ROUTE=$_hroute"; echo "HERMES_CLOUD_MODEL=$_hmodel"; echo "HERMES_CLOUD_HTTP_CODE=$_hhttp"
     echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=UNAVAILABLE"; echo "HERMES_NEURON_LIMIT=UNAVAILABLE"; echo "HERMES_NEURON_TIER=UNREPORTED"
-    echo "AGENT_VERSION=ADAPTIVE_V1"; echo "AGENT_ROLE=MEASURE_LEARN_REVIEW_SHADOW_EXECUTE"; echo "AGENT_STATE=$_cons_state"
+    echo "AGENT_VERSION=ADAPTIVE_V2"; echo "AGENT_ROLE=MEASURE_LEARN_REVIEW_SHADOW_EXECUTE"; echo "AGENT_STATE=$_cons_state"
     echo "AGENT_INPUT_SOURCE=DEVICE_TELEMETRY"; echo "AGENT_DECISION_AUTHORITY=LOCAL_VALIDATOR"; echo "AGENT_EXECUTION_OWNER=LOCAL_EXECUTOR"
     echo "AGENT_HARDWARE_AUTHORITY=LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=OBSERVER_SYSFS_READBACK"
     echo "AGENT_HARDWARE_TRUTH_AUTHORITY=MEASURED"; echo "AGENT_MUST_OBEY_ACTIVE_BRAIN=CONSENSUS_AND_SAFETY"
     echo "AGENT_CAN_CHOOSE_BRAIN=NO"; echo "AGENT_CAN_OVERRIDE_BRAIN=NO"; echo "AGENT_EXECUTION_BACKEND=LOCAL_VALIDATED_SYSFS"
-    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=STOCK"; echo "DECISION_PRIORITY=SAFETY>MEASURED_EVIDENCE>AI_REVIEW"
+    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "DECISION_PRIORITY=SAFETY>MEASURED_EVIDENCE>AI_REVIEW"
     echo "THOUGHT_FRESH=1"; echo "THOUGHT_AGE_SEC=0"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_cons_state"; echo "CONFIDENCE=$_gem_conf"; echo "TEXT=$_thought"
     echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_shadow_n"
@@ -225,7 +287,15 @@ publish_cc() {
     echo "__HERMES_KERNEL1__"; echo "STATE=GATED"; echo "STRATEGY=MEASURED_ADAPTIVE"; echo "BOTTLENECK=$_exec_reason"; echo "CAPABILITIES_TOTAL=3"; echo "ACTUATORS_TOTAL=6"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "ROOT_AUTHORITY_OWNER=LOCAL_EXECUTOR"; echo "SYSFS_OWNER=LOCAL_EXECUTOR"
     echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=3"; echo "ACTUATORS=6"
     echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "APPLIED_COUNT=$([ "$_exec_state" = APPLIED ] && echo 6 || echo 0)"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
-    echo "__CONTROL_CENTER_SYNC__"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V1"; echo "MODULE_VERSION_CODE=202"; echo "CONTROL_CENTER_VERSION_CODE=103"; echo "HERMES_CLOUD=ADVISORY_REVIEW"; echo "HERMES_CLOUD_ROLE=ONE_HERMES_REVIEWER"; echo "HERMES_BACKEND_PRIORITY=LOCAL_GUARD_THEN_CLOUD_REVIEW"; echo "WORKLOAD_FINAL=ADAPTIVE_CLASSIFIER"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=ACTIVE_LOCAL_GATED"
+    echo "__CONTROL_CENTER_SYNC__"
+    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "MODULE_VERSION_CODE=203"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=104"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
+    echo "PAIR_VERIFIED=$_pair"; echo "HANDSHAKE_SCHEMA=${_hand_schema:-UNVERIFIED}"; echo "HANDSHAKE_ACK_ID=${_ack_id:-NONE}"; echo "HANDSHAKE_AGE_SEC=$_hand_age"
+    echo "SNAPSHOT_GENERATION=$_generation"; echo "SNAPSHOT_FRESH=YES"
+    echo "SHARED_INTELLIGENCE=MEASURED_DEVICE_CONTEXT_V2"; echo "GEMINI_INTELLIGENCE_SCOPE=PROPOSE_DEVICE_BOUNDED"; echo "HERMES_INTELLIGENCE_SCOPE=LOCAL_VALIDATE_PLUS_CLOUD_REVIEW"
+    echo "GEMINI_REASONING_LIMIT=ADVISORY_NO_SYSFS"; echo "HERMES_TEACHER_LOOP=EVIDENCE_FEEDBACK_ONLY"
+    echo "GEMINI_CONNECTION=$_gem_connection"; echo "HERMES_CONNECTION=$_hermes_connection"
+    echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"; echo "HERMES_AUTH=$_hauth"
+    echo "HERMES_CLOUD=ADVISORY_REVIEW"; echo "HERMES_CLOUD_ROLE=ONE_HERMES_REVIEWER"; echo "HERMES_BACKEND_PRIORITY=LOCAL_GUARD_THEN_CLOUD_REVIEW"; echo "WORKLOAD_FINAL=ADAPTIVE_CLASSIFIER_V2"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=ACTIVE_LOCAL_GATED"
     echo "__STRATEGY_RESULT__"; echo "VALIDATION=$_cons_state"; echo "READBACK=STOCK"; echo "OUTCOME=$_shadow_state"
     echo "__ENV__"; [ -r "$_learn" ] && cat "$_learn"
     echo "__HTTP__"; [ -r "$_gem_state" ] && cat "$_gem_state" || true
@@ -236,11 +306,11 @@ publish_cc() {
     echo "__LOG__"; [ -r "$_root/runtime/events.log" ] && tail -n 80 "$_root/runtime/events.log" || true
     echo "__NETWORK__"; echo "SESSION_ACTIVE=0"; echo "QUALITY=UNMEASURED"
     echo "__REASONING__"; echo "STATE=$_cons_state"
-    echo "__RESYNC__"; echo "STATE=MATCHED"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V1"
+    echo "__RESYNC__"; echo "STATE=$([ "$_pair" = YES ] && echo VERIFIED || echo UNVERIFIED)"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "ACK_ID=${_ack_id:-NONE}"; echo "GENERATION=$_generation"
     echo "__EXECUTION__"; echo "STATUS=$_exec_state"; echo "READBACK=$_readback"; echo "ROLLBACK=$_rollback"; echo "RAILWAY=$_railway_state"
     echo "__POLICY_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "BASELINE=$_learning"
     echo "__ATTRIBUTION__"; echo "SOURCE=MEASURED_STOCK"
-    echo "__WORKLOAD_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD_CLASS=$_workload"; echo "WORKLOAD_PROFILE=$_runtime_profile"; echo "SUBJECT_CLASS=$_workload"; echo "REASONING_DOMAIN=$_workload"; echo "GAME_SEMANTICS=REGISTRY_ONLY"; echo "FRAME_SEMANTICS=EVIDENCE_ONLY"; echo "SOURCE=$_workload_source"; echo "CONFIDENCE=$([ "$_workload_source" = GAME_REGISTRY ] && echo 100 || echo 60)"; echo "GAME_REGISTRY_AUTHORITY=MANUAL_PLUS_BUILTIN"
+    echo "__WORKLOAD_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "TOP_PACKAGE=$_top_pkg"; echo "VISIBLE_GAME=$_visible_game"; echo "PACKAGE_SOURCE=$_pkg_source"; echo "WORKLOAD_CLASS=$_workload"; echo "WORKLOAD_PROFILE=$_runtime_profile"; echo "SUBJECT_CLASS=$_workload"; echo "REASONING_DOMAIN=$_workload"; echo "GAME_SEMANTICS=REGISTRY_PLUS_VISIBLE_WINDOW"; echo "FRAME_SEMANTICS=EVIDENCE_ONLY"; echo "SOURCE=$_workload_source"; echo "CONFIDENCE=$([ "$_workload" = GAME ] && echo 100 || echo 70)"; echo "GAME_REGISTRY_AUTHORITY=MANUAL_PLUS_BUILTIN"
     echo "__WORKLOAD_GATE__"; echo "GAME_ONLY=ADAPTIVE_GATED"; echo "APP_ONLY=OBSERVE"; echo "SYSTEM_ONLY=OBSERVE"
     echo "__PROPOSAL_BINDING__"; echo "LATEST_PROPOSAL_SOURCE=$_plan_provider"; echo "LATEST_SUBJECT_PACKAGE=$_pkg"; echo "LATEST_SUBJECT_CLASS=$_workload"; echo "LATEST_BINDING_DECISION=$_cons_state"; echo "LATEST_BINDING_REASON=$_exec_reason"
     echo "__WORKLOAD_FINAL__"; echo "STATUS=ACTIVE"; echo "DUAL_REGISTRY=SEPARATE"; echo "REGISTRY_CONFLICTS=0"; echo "EXECUTION_SCOPE=GAME_ONLY_LOCAL_GATED"; echo "APP_GAME_POLICY=NEVER_PROMOTE"; echo "SYSTEM_GAME_POLICY=NEVER_PROMOTE"; echo "UNKNOWN_GAME_POLICY=OBSERVE_ONLY"; echo "STALE_POLICY=FAIL_CLOSED"; echo "LEARNING_ISOLATION=PER_PACKAGE"; echo "ROOT_AUTHORITY_CHANGED=LOCAL_EXECUTOR_ONLY"; echo "SYSFS_AUTHORITY_CHANGED=LOCAL_EXECUTOR_ONLY"; echo "RESCUE_PATH_CHANGED=NO"
