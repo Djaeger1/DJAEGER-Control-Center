@@ -60,6 +60,9 @@ for p in /sys/devices/system/cpu/cpufreq/policy*; do
   HIGH_POLICY="$p"
 done
 GPU_PATH=$(gpu_path)
+LITTLE_AVAILABLE=$(read_one "$LOW_POLICY/scaling_available_frequencies")
+BIG_AVAILABLE=$(read_one "$HIGH_POLICY/scaling_available_frequencies")
+GPU_AVAILABLE=$(read_one "$GPU_PATH/available_frequencies" /sys/class/kgsl/kgsl-3d0/devfreq/available_frequencies)
 
 while true; do
   SEQ=$((SEQ+1))
@@ -152,9 +155,12 @@ while true; do
     echo "BIG_CUR_KHZ=$BIG"
     echo "LITTLE_POLICY_PATH=$LOW_POLICY"
     echo "BIG_POLICY_PATH=$HIGH_POLICY"
+    echo "LITTLE_AVAILABLE_KHZ=$LITTLE_AVAILABLE"
+    echo "BIG_AVAILABLE_KHZ=$BIG_AVAILABLE"
     echo "GPU_CUR_HZ=$GPU"
     echo "GPU_LOAD_RAW=$GLOAD"
     echo "GPU_DEVFREQ_PATH=$GPU_PATH"
+    echo "GPU_AVAILABLE_HZ=$GPU_AVAILABLE"
     echo "SKIN_TEMP_C=$SKIN"
     echo "CPU_TEMP_C=$CPUC"
     echo "GPU_TEMP_C=$GPUC"
