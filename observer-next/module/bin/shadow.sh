@@ -68,7 +68,7 @@ while true; do
   case "$LMIN:$LMAX:$BMIN:$BMAX:$GMIN:$GMAX" in *[!0-9:]*|:*) publish REJECT invalid_candidate; sleep 60; continue;; esac
 
   METRICS=$(awk -F, -v p="$PKG" -v cutoff="$CUTOFF" -v l0="$LMIN" -v l1="$LMAX" -v b0="$BMIN" -v b1="$BMAX" -v g0="$GMIN" -v g1="$GMAX" '
-    NR>1 && $1+0>=cutoff && $3==p && $20+0>=20 && $21~/^[0-9]+$/ && !seen[$21]++ &&
+    NR>1 && $1+0>=cutoff && $3==p && $23=="STOCK_BASELINE" && $20+0>=20 && $21~/^[0-9]+$/ && !seen[$21]++ &&
     $7+0>=l0 && $7+0<=l1 && $8+0>=b0 && $8+0<=b1 && $9+0>=g0 && $9+0<=g1 &&
     $16~/^[0-9]+([.][0-9]+)?$/ && $17~/^[0-9]+([.][0-9]+)?$/ && $18~/^[0-9]+([.][0-9]+)?$/ {
       n++; fps+=$16; jank+=$17; p95+=$18
