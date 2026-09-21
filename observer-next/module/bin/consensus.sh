@@ -13,8 +13,10 @@ kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 contains_freq(){
   value="$1"
   list="$2"
-  case "$value:$list" in *[!0-9: ]*|*:|*:NA) return 1;; esac
+  case "$value" in ''|*[!0-9]*) return 1;; esac
+  [ -n "$list" ] && [ "$list" != "NA" ] || return 1
   for x in $list; do
+    case "$x" in ''|*[!0-9]*) continue;; esac
     [ "$x" = "$value" ] && return 0
   done
   return 1
