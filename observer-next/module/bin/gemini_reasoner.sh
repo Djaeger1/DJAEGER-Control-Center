@@ -1,63 +1,104 @@
 #!/system/bin/sh
+# DJAEGER AI Gemini reasoner.
+# Four-slot vault with independent cooldowns. HTTP 429 rotates immediately to
+# the next READY key; no cloud response has direct hardware authority.
+
 ROOT="$1"
 SNAP="$ROOT/runtime/snapshot.env"
 LEARN="$ROOT/history/learned_envelope.env"
 WORKLOAD="$ROOT/runtime/workload.env"
 OUT="$ROOT/policy/gemini_proposal.env"
 STATE="$ROOT/runtime/gemini_reasoner.env"
+VAULT="$ROOT/config/gemini_vault.env"
 SLOTFILE="$ROOT/config/gemini_slot"
-LASTFILE="$ROOT/config/gemini_last_at"
-COOLDOWN=1800
+COOLDOWN_FILE="$ROOT/config/gemini_cooldown.env"
+LAST_SUCCESS="$ROOT/config/gemini_last_success"
+RATE_GUARD_SEC=300
+RATE_LIMIT_COOLDOWN=1800
+AUTH_COOLDOWN=21600
 
-kv() { sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
+kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 safe_num(){ case "$1" in ''|*[!0-9.-]*) echo 0;; *) echo "$1";; esac; }
+contains_freq(){ _v="$1"; shift; for _x in "$@"; do [ "$_x" = "$_v" ] && return 0; done; return 1; }
+
+key_count(){
+  sed -n 's/^KEY_[1-4]=//p' "$VAULT" 2>/dev/null | awk 'NF{n++}END{print n+0}'
+}
+
+cooldown_until(){
+  _u=$(kv "KEY_$1_UNTIL" "$COOLDOWN_FILE")
+  case "$_u" in ''|*[!0-9]*) echo 0;; *) echo "$_u";; esac
+}
+
+set_cooldown(){
+  _slot="$1"; _until="$2"; _tmp="$COOLDOWN_FILE.tmp.$$"
+  { grep -v "^KEY_${_slot}_UNTIL=" "$COOLDOWN_FILE" 2>/dev/null || true; echo "KEY_${_slot}_UNTIL=$_until"; } > "$_tmp"
+  chmod 600 "$_tmp"; mv -f "$_tmp" "$COOLDOWN_FILE"
+}
+
+key_stats(){
+  KEY_COUNT=$(key_count); case "$KEY_COUNT" in ''|*[!0-9]*) KEY_COUNT=0;; esac
+  NOW_STATS=$(date +%s); READY_COUNT=0; COOLDOWN_COUNT=0
+  _i=1
+  while [ "$_i" -le "$KEY_COUNT" ]; do
+    _u=$(cooldown_until "$_i")
+    if [ "$_u" -gt "$NOW_STATS" ] 2>/dev/null; then COOLDOWN_COUNT=$((COOLDOWN_COUNT+1)); else READY_COUNT=$((READY_COUNT+1)); fi
+    _i=$((_i+1))
+  done
+}
 
 write_state(){
-  t="$STATE.tmp.$$"
+  key_stats
+  _t="$STATE.tmp.$$"
   {
     echo "GEMINI_STATE=$1"
     echo "GEMINI_DETAIL=$2"
-    echo "GEMINI_KEY_COUNT=${KEY_COUNT:-0}"
-    echo "GEMINI_SLOT=${SLOT:-0}"
+    echo "GEMINI_KEY_COUNT=$KEY_COUNT"
+    echo "GEMINI_READY_COUNT=$READY_COUNT"
+    echo "GEMINI_COOLDOWN_COUNT=$COOLDOWN_COUNT"
+    echo "GEMINI_ACTIVE_SLOT=${SLOT:-0}"
     echo "GEMINI_HTTP=${HTTP:-NA}"
     echo "UPDATED_AT=$(date +%s)"
-  } > "$t"
-  chmod 600 "$t"; mv -f "$t" "$STATE"
+  } > "$_t"
+  chmod 600 "$_t"; mv -f "$_t" "$STATE"
 }
 
-collect_keys(){
-  KF="$ROOT/runtime/.gemini_keys.$"
-  : > "$KF"
-  sed -n 's/^KEY_[1-4]=//p' "$ROOT/config/gemini_vault.env" 2>/dev/null | awk 'NF && !seen[$0]++' | head -n 4 > "$KF"
-  KEY_COUNT=$(wc -l < "$KF" 2>/dev/null)
+next_ready_slot(){
+  key_stats
+  [ "$KEY_COUNT" -gt 0 ] || return 1
+  _start="$1"; case "$_start" in ''|*[!0-9]*) _start=1;; esac
+  [ "$_start" -ge 1 ] && [ "$_start" -le "$KEY_COUNT" ] || _start=1
+  _step=0
+  while [ "$_step" -lt "$KEY_COUNT" ]; do
+    _slot=$(( ((_start-1+_step)%KEY_COUNT)+1 ))
+    _u=$(cooldown_until "$_slot")
+    if [ "$_u" -le "$(date +%s)" ] 2>/dev/null; then echo "$_slot"; return 0; fi
+    _step=$((_step+1))
+  done
+  return 1
 }
 
 while true; do
-  [ -r "$SNAP" ] && [ -r "$LEARN" ] || { rm -f "$OUT"; write_state WAITING "observer_or_learning_missing"; sleep 30; continue; }
-  [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { rm -f "$OUT"; write_state OBSERVE "non_game_workload"; sleep 60; continue; }
-  LSTATE=$(kv STATE "$LEARN")
-  [ "$LSTATE" = READY_HARDWARE_MODEL ] || { rm -f "$OUT"; write_state WAITING "baseline_not_mature"; sleep 30; continue; }
+  [ -r "$SNAP" ] && [ -r "$LEARN" ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING observer_or_learning_missing; sleep 30; continue; }
+  [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state OBSERVE non_game_workload; sleep 45; continue; }
+  [ "$(kv STATE "$LEARN")" = READY_HARDWARE_MODEL ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING baseline_not_mature; sleep 30; continue; }
 
-  FRAME=$(kv FRAME_EVIDENCE "$LEARN")
-  NOW=$(date +%s); LAST=$(cat "$LASTFILE" 2>/dev/null)
-  case "$LAST" in ''|*[!0-9]*) LAST=0;; esac
-  [ $((NOW-LAST)) -ge "$COOLDOWN" ] || { write_state COOLDOWN "quota_guard"; sleep 60; continue; }
+  NOW=$(date +%s)
+  LAST=$(cat "$LAST_SUCCESS" 2>/dev/null); case "$LAST" in ''|*[!0-9]*) LAST=0;; esac
+  if [ $((NOW-LAST)) -lt "$RATE_GUARD_SEC" ]; then
+    SLOT=0; HTTP=NA; write_state READY success_rate_guard; sleep 30; continue
+  fi
 
-  command -v curl >/dev/null 2>&1 || { write_state UNAVAILABLE "curl_missing"; sleep 120; continue; }
-  collect_keys
-  [ "${KEY_COUNT:-0}" -gt 0 ] || { write_state NO_KEY "restored_gemini_key_not_found"; rm -f "$KF"; sleep 120; continue; }
+  command -v curl >/dev/null 2>&1 || { SLOT=0; HTTP=NA; write_state UNAVAILABLE curl_missing; sleep 120; continue; }
+  key_stats
+  [ "$KEY_COUNT" -gt 0 ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state NO_KEY gemini_key_not_found; sleep 120; continue; }
 
-  MODEL=$(sed -n 's/^GEMINI_MODEL=//p' "$ROOT/config/gemini.env" 2>/dev/null | head -n1)
-  [ -n "$MODEL" ] || MODEL="gemini-3.6-flash"
-
-  SLOT=$(cat "$SLOTFILE" 2>/dev/null); case "$SLOT" in ''|*[!0-9]*) SLOT=1;; esac
-  [ "$SLOT" -ge 1 ] && [ "$SLOT" -le "$KEY_COUNT" ] || SLOT=1
-  KEY=$(sed -n "${SLOT}p" "$KF")
-  NEXT=$((SLOT+1)); [ "$NEXT" -gt "$KEY_COUNT" ] && NEXT=1
-  echo "$NEXT" > "$SLOTFILE"; chmod 600 "$SLOTFILE"
-  rm -f "$KF"
+  MODEL=$(kv GEMINI_MODEL "$ROOT/config/gemini.env"); [ -n "$MODEL" ] || MODEL=gemini-3.6-flash
+  START=$(cat "$SLOTFILE" 2>/dev/null); case "$START" in ''|*[!0-9]*) START=1;; esac
+  SLOT=$(next_ready_slot "$START") || { HTTP=429; rm -f "$OUT"; write_state ALL_KEYS_COOLDOWN no_ready_key; sleep 60; continue; }
 
   PKG=$(kv ACTIVE_PACKAGE "$SNAP" | tr -cd 'A-Za-z0-9._-')
+  FRAME=$(kv FRAME_EVIDENCE "$LEARN")
   SKIN=$(safe_num "$(kv SKIN_TEMP_C "$SNAP")")
   CPU=$(safe_num "$(kv CPU_TEMP_C "$SNAP")")
   GPUC=$(safe_num "$(kv GPU_TEMP_C "$SNAP")")
@@ -85,14 +126,70 @@ while true; do
   PAY="$ROOT/runtime/.gemini_request.$$"
   RESP="$ROOT/runtime/.gemini_response.$$"
   cat > "$PAY" <<EOF
-{"contents":[{"parts":[{"text":"You are one reasoning member of DJAEGER Observer. Analyze only measured stock behavior. Package=$PKG samples=$SAMPLES independent_frame_windows=$FRAME_WINDOWS. Stock envelope: little=$LMIN-$LMAX kHz big=$BMIN-$BMAX kHz gpu=$GMIN-$GMAX Hz. Kernel supported little frequencies=[$LAV], big frequencies=[$BAV], gpu frequencies=[$GAV]. Stock frame baseline: fps_p50=$FPS50 jank_p95=$JANK95 frame_p95_p95_ms=$FP95 frame_p99_p95_ms=$FP99. Current: little=$LCUR big=$BCUR gpu=$GCUR skin=$SKIN C cpu=$CPU C gpuTemp=$GPUC C power=$POWER mW fps=$CFPS jank=$CJANK p95=$CP95 p99=$CP99. Goal: frame stability first, then lower power and temperature. Never output shell commands, paths, legacy profile labels, or unsupported clocks. Choose OBSERVE when evidence does not justify a change. A CANDIDATE must stay inside the measured stock envelope and every selected frequency must be an exact member of its kernel-supported list. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."}]}],"generationConfig":{"temperature":0.1,"maxOutputTokens":256}}
+{"contents":[{"parts":[{"text":"You are one reasoning member of DJAEGER AI. Analyze only measured device behavior for the active GAME workload. Package=$PKG samples=$SAMPLES independent_frame_windows=$FRAME_WINDOWS. Measured stock envelope: little=$LMIN-$LMAX kHz big=$BMIN-$BMAX kHz gpu=$GMIN-$GMAX Hz. Kernel supported little frequencies=[$LAV], big frequencies=[$BAV], gpu frequencies=[$GAV]. Frame baseline: fps_p50=$FPS50 jank_p95=$JANK95 frame_p95_p95_ms=$FP95 frame_p99_p95_ms=$FP99. Current: little=$LCUR big=$BCUR gpu=$GCUR skin=$SKIN C cpu=$CPU C gpuTemp=$GPUC C power=$POWER mW fps=$CFPS jank=$CJANK p95=$CP95 p99=$CP99. Goal: frame stability first, then lower power and temperature. Never output shell commands, paths, legacy profile labels, or unsupported clocks. Choose OBSERVE when evidence does not justify change. A CANDIDATE must remain inside the measured envelope and use exact kernel-supported frequencies. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."}]}],"generationConfig":{"temperature":0.1,"maxOutputTokens":256}}
 EOF
+  chmod 600 "$PAY"
 
-  HTTP=$(curl -sS --connect-timeout 5 --max-time 15 -o "$RESP" -w '%{http_code}'     -H 'Content-Type: application/json'     -H "x-goog-api-key: $KEY"     -X POST "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"     --data-binary "@$PAY" 2>/dev/null)
+  ATTEMPTS=0
+  GOT_200=0
+  while [ "$ATTEMPTS" -lt "$KEY_COUNT" ]; do
+    NOW=$(date +%s)
+    _until=$(cooldown_until "$SLOT")
+    if [ "$_until" -gt "$NOW" ] 2>/dev/null; then
+      SLOT=$(next_ready_slot $((SLOT+1))) || break
+      ATTEMPTS=$((ATTEMPTS+1))
+      continue
+    fi
+    KEY=$(sed -n "s/^KEY_${SLOT}=//p" "$VAULT" 2>/dev/null | head -n1)
+    if [ -z "$KEY" ]; then
+      SLOT=$(next_ready_slot $((SLOT+1))) || break
+      ATTEMPTS=$((ATTEMPTS+1))
+      continue
+    fi
+    CURLCFG="$ROOT/runtime/.gemini_curl.$$"
+    printf 'header = "x-goog-api-key: %s"\n' "$KEY" > "$CURLCFG"
+    chmod 600 "$CURLCFG"
+    HTTP=$(curl -sS --connect-timeout 5 --max-time 15 -o "$RESP" -w '%{http_code}' -K "$CURLCFG" -H 'Content-Type: application/json' -X POST "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent" --data-binary "@$PAY" 2>/dev/null)
+    rm -f "$CURLCFG"; unset KEY
+
+    case "$HTTP" in
+      200)
+        GOT_200=1
+        NEXT=$((SLOT+1)); [ "$NEXT" -gt "$KEY_COUNT" ] && NEXT=1
+        echo "$NEXT" > "$SLOTFILE"; chmod 600 "$SLOTFILE"
+        break
+        ;;
+      429)
+        set_cooldown "$SLOT" $((NOW+RATE_LIMIT_COOLDOWN))
+        NEXT=$((SLOT+1)); [ "$NEXT" -gt "$KEY_COUNT" ] && NEXT=1
+        echo "$NEXT" > "$SLOTFILE"; chmod 600 "$SLOTFILE"
+        SLOT=$(next_ready_slot "$NEXT") || break
+        ;;
+      401|403)
+        set_cooldown "$SLOT" $((NOW+AUTH_COOLDOWN))
+        NEXT=$((SLOT+1)); [ "$NEXT" -gt "$KEY_COUNT" ] && NEXT=1
+        echo "$NEXT" > "$SLOTFILE"; chmod 600 "$SLOTFILE"
+        SLOT=$(next_ready_slot "$NEXT") || break
+        ;;
+      *)
+        break
+        ;;
+    esac
+    ATTEMPTS=$((ATTEMPTS+1))
+  done
   rm -f "$PAY"
-  echo "$NOW" > "$LASTFILE"; chmod 600 "$LASTFILE"
 
-  [ "$HTTP" = 200 ] || { rm -f "$OUT"; write_state HTTP_ERROR "request_failed"; rm -f "$RESP"; sleep 120; continue; }
+  if [ "$GOT_200" != 1 ]; then
+    rm -f "$OUT" "$RESP"
+    case "$HTTP" in
+      429) write_state ALL_KEYS_COOLDOWN rate_limited_all_ready_keys ;;
+      401|403) write_state AUTH_ERROR key_auth_failed ;;
+      000|'') HTTP=000; write_state HTTP_ERROR network_or_timeout ;;
+      *) write_state HTTP_ERROR request_failed ;;
+    esac
+    sleep 60
+    continue
+  fi
 
   TEXT=$(tr '\n' ' ' < "$RESP" 2>/dev/null | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g;s/\\r//g')
   rm -f "$RESP"
@@ -103,18 +200,25 @@ EOF
   GBMIN=$(gv BIG_MIN_KHZ); GBMAX=$(gv BIG_MAX_KHZ)
   GGMIN=$(gv GPU_MIN_HZ); GGMAX=$(gv GPU_MAX_HZ)
   REASON=$(gv REASON | tr -cd 'A-Za-z0-9_.:-' | cut -c1-96)
+  echo "$(date +%s)" > "$LAST_SUCCESS"; chmod 600 "$LAST_SUCCESS"
 
-  case "$VERDICT" in OBSERVE) rm -f "$OUT"; write_state OBSERVE "ai_requests_more_evidence"; continue;; CANDIDATE) :;; *) rm -f "$OUT"; write_state INVALID "unparseable_verdict"; continue;; esac
-  case "$CONF:$GLMIN:$GLMAX:$GBMIN:$GBMAX:$GGMIN:$GGMAX" in *[!0-9:]*|:*) rm -f "$OUT"; write_state INVALID "non_numeric_candidate"; continue;; esac
-  [ "$CONF" -ge 0 ] && [ "$CONF" -le 100 ] || { rm -f "$OUT"; write_state INVALID "confidence_out_of_range"; continue; }
-
-  [ "$GLMIN" -ge "$LMIN" ] && [ "$GLMAX" -le "$LMAX" ] && [ "$GLMIN" -le "$GLMAX" ] || { rm -f "$OUT"; write_state REJECTED "little_outside_stock"; continue; }
-  [ "$GBMIN" -ge "$BMIN" ] && [ "$GBMAX" -le "$BMAX" ] && [ "$GBMIN" -le "$GBMAX" ] || { rm -f "$OUT"; write_state REJECTED "big_outside_stock"; continue; }
-  [ "$GGMIN" -ge "$GMIN" ] && [ "$GGMAX" -le "$GMAX" ] && [ "$GGMIN" -le "$GGMAX" ] || { rm -f "$OUT"; write_state REJECTED "gpu_outside_stock"; continue; }
+  case "$VERDICT" in
+    OBSERVE) rm -f "$OUT"; write_state OBSERVE ai_requests_more_evidence; sleep 45; continue ;;
+    CANDIDATE) : ;;
+    *) rm -f "$OUT"; write_state INVALID unparseable_verdict; sleep 60; continue ;;
+  esac
+  case "$CONF:$GLMIN:$GLMAX:$GBMIN:$GBMAX:$GGMIN:$GGMAX" in *[!0-9:]*|:*) rm -f "$OUT"; write_state INVALID non_numeric_candidate; sleep 60; continue;; esac
+  [ "$CONF" -ge 0 ] && [ "$CONF" -le 100 ] || { rm -f "$OUT"; write_state INVALID confidence_out_of_range; sleep 60; continue; }
+  [ "$GLMIN" -ge "$LMIN" ] && [ "$GLMAX" -le "$LMAX" ] && [ "$GLMIN" -le "$GLMAX" ] || { rm -f "$OUT"; write_state REJECTED little_outside_stock; sleep 60; continue; }
+  [ "$GBMIN" -ge "$BMIN" ] && [ "$GBMAX" -le "$BMAX" ] && [ "$GBMIN" -le "$GBMAX" ] || { rm -f "$OUT"; write_state REJECTED big_outside_stock; sleep 60; continue; }
+  [ "$GGMIN" -ge "$GMIN" ] && [ "$GGMAX" -le "$GMAX" ] && [ "$GGMIN" -le "$GGMAX" ] || { rm -f "$OUT"; write_state REJECTED gpu_outside_stock; sleep 60; continue; }
+  contains_freq "$GLMIN" $LAV && contains_freq "$GLMAX" $LAV || { rm -f "$OUT"; write_state REJECTED unsupported_little_opp; sleep 60; continue; }
+  contains_freq "$GBMIN" $BAV && contains_freq "$GBMAX" $BAV || { rm -f "$OUT"; write_state REJECTED unsupported_big_opp; sleep 60; continue; }
+  contains_freq "$GGMIN" $GAV && contains_freq "$GGMAX" $GAV || { rm -f "$OUT"; write_state REJECTED unsupported_gpu_opp; sleep 60; continue; }
 
   T="$OUT.tmp.$$"
   {
-    echo "SCHEMA=DJAEGER_GEMINI_OBSERVER_PROPOSAL_V1"
+    echo "SCHEMA=DJAEGER_GEMINI_OBSERVER_PROPOSAL_V2"
     echo "AT=$(date +%s)"
     echo "PACKAGE=$PKG"
     echo "VERDICT=CANDIDATE"
@@ -125,11 +229,12 @@ EOF
     echo "BIG_MAX_KHZ=$GBMAX"
     echo "GPU_MIN_HZ=$GGMIN"
     echo "GPU_MAX_HZ=$GGMAX"
-    echo "REASON=${REASON:-GEMINI_OBSERVER_ANALYSIS}"
+    echo "REASON=${REASON:-GEMINI_MEASURED_ANALYSIS}"
     echo "FRAME_EVIDENCE=$FRAME"
+    echo "KEY_SLOT=$SLOT"
     echo "APPLY_AUTHORITY=NONE"
   } > "$T"
   chmod 600 "$T"; mv -f "$T" "$OUT"
-  write_state CANDIDATE "proposal_created_no_apply_authority"
-  sleep 60
+  write_state CANDIDATE proposal_created_no_apply_authority
+  sleep 45
 done
