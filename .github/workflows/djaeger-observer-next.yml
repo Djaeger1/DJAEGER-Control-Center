@@ -1,0 +1,144 @@
+name: DJAEGER Observer Next
+
+on:
+  push:
+    branches: [observer-v1, observer-v1-build]
+    paths:
+      - 'observer-next/**'
+      - '.github/workflows/djaeger-observer-next.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - 'observer-next/**'
+      - '.github/workflows/djaeger-observer-next.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Shell syntax and safety gates
+        run: |
+          set -euo pipefail
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+          test ! -e observer-next/module/bin/executor.sh
+          test ! -e observer-next/module/bin/agent_bus.sh
+          ! grep -Eq 'executor\.sh|agent_bus\.sh' observer-next/module/service.sh
+          ! grep -R -F 'SYSFS|' observer-next/module
+          ! grep -R -E 'SOFT_COOL|FREEZE|RESPONSE_REQUEST' observer-next/module
+          ! grep -R -E 'djaeger-profile-map|djaeger-root-authority' observer-next/module
+          ! grep -R -E 'api[_-]?key=[A-Za-z0-9_-]{16,}|Bearer [A-Za-z0-9_-]{16,}' observer-next
+          grep -q 'HARDWARE_AUTHORITY=STOCK_KERNEL_READ_ONLY' observer-next/module/bin/observer.sh
+          grep -q 'SYSFS_WRITES=DISABLED' observer-next/module/bin/publisher.sh
+          grep -q 'SHADOW_PASS=NO' observer-next/module/bin/consensus.sh
+          grep -q 'EXECUTOR_ENABLED=0' observer-next/module/bin/consensus.sh
+          grep -q 'EXECUTOR_ENABLED=0' observer-next/module/bin/shadow.sh
+          grep -q 'applicationId = "com.djaeger.observer"' observer-next/android/app/build.gradle.kts
+          grep -q 'versionCode = 102' observer-next/android/app/build.gradle.kts
+          grep -q 'CONTRACT=OBSERVER_NEXT_V1' observer-next/module/bin/publisher.sh
+          grep -q 'MODULE_VERSION_CODE=201' observer-next/module/bin/publisher.sh
+          grep -q 'HERMES_NEURON_USED_EST=UNAVAILABLE' observer-next/module/bin/publisher.sh
+          grep -q 'StatusCard(s);ThoughtsCard(s);Row' observer-next/android/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+
+      - name: Module contract tests
+        run: bash observer-next/tests/module_contract_test.sh
+
+      - name: Test and build non-debuggable Observer APK
+        working-directory: observer-next/android
+        run: gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
+
+      - name: Package and audit validation artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cd observer-next/module
+          zip -qr ../../out/DJAEGER-AI-Observer-v0.2.1.zip .
+          cd ../..
+
+          UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
+          test -n "$UNSIGNED"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | sort -V | tail -n1)"
+          test -x "$BUILD_TOOLS/zipalign"
+          test -x "$BUILD_TOOLS/apksigner"
+          test -x "$BUILD_TOOLS/aapt"
+          test -x "$APKANALYZER"
+
+          SIGN_DIR="$RUNNER_TEMP/observer-signing"
+          mkdir -p "$SIGN_DIR"
+          SIGN_PASS="$(openssl rand -hex 24)"
+          echo "::add-mask::$SIGN_PASS"
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$SIGN_DIR/observer-candidate.p12" \
+            -storepass "$SIGN_PASS" -keypass "$SIGN_PASS" \
+            -alias observer-candidate -keyalg RSA -keysize 4096 -validity 3650 \
+            -dname 'CN=DJAEGER Observer Validation Candidate, O=DJAEGER, C=ID'
+
+          ALIGNED="$RUNNER_TEMP/observer-aligned.apk"
+          APK="out/DJAEGER-AI-Observer-v1.0.2.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$SIGN_DIR/observer-candidate.p12" --ks-type PKCS12 \
+            --ks-key-alias observer-candidate \
+            --ks-pass "pass:$SIGN_PASS" --key-pass "pass:$SIGN_PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$APK" "$ALIGNED"
+
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee out/APKSIGNER_VERIFY.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
+          "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
+          unzip -t "$APK" > out/APK_ZIP_TEST.txt
+          unzip -t out/DJAEGER-AI-Observer-v0.2.1.zip > out/MODULE_ZIP_TEST.txt
+          unzip -l out/DJAEGER-AI-Observer-v0.2.1.zip > out/MODULE_CONTENTS.txt
+
+          grep -q "package: name='com.djaeger.observer' versionCode='102'" out/AAPT_BADGING.txt
+          grep -q "application-label:'DJAEGER AI Observer'" out/AAPT_BADGING.txt
+          grep -q 'Verified using v2 scheme.*true' out/APKSIGNER_VERIFY.txt
+          grep -q 'Verified using v3 scheme.*true' out/APKSIGNER_VERIFY.txt
+          grep -qx 'false' out/APK_DEBUGGABLE.txt
+          ! grep -Eq 'executor\.sh|agent_bus\.sh' out/MODULE_CONTENTS.txt
+
+          cd out
+          sha256sum DJAEGER-AI-Observer-v1.0.2.apk DJAEGER-AI-Observer-v0.2.1.zip > SHA256SUMS.txt
+          printf '%s\n' \
+            'STATUS=PASS' \
+            'CONTRACT=OBSERVER_NEXT_V1' \
+            'PAIR=MODULE_VC201+APP_VC102' \
+            'APP_DEBUGGABLE=NO' \
+            'EXECUTOR_PACKAGED=NO' \
+            'SYSFS_EXECUTION=DISABLED' \
+            'SIGNING=EPHEMERAL_VALIDATION_CANDIDATE' \
+            > BUILD_REPORT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Observer-Next-v0.2.1
+          path: |
+            out/DJAEGER-AI-Observer-v1.0.2.apk
+            out/DJAEGER-AI-Observer-v0.2.1.zip
+            out/SHA256SUMS.txt
+            out/BUILD_REPORT.txt
+            out/APKSIGNER_VERIFY.txt
+            out/AAPT_BADGING.txt
+            out/APK_DEBUGGABLE.txt
+            out/APK_ZIP_TEST.txt
+            out/MODULE_ZIP_TEST.txt
+            out/MODULE_CONTENTS.txt
+          if-no-files-found: error

@@ -1,0 +1,67 @@
+#!/system/bin/sh
+
+# Counterfactual shadow evaluator. It only compares naturally occurring stock
+# samples that already fall inside the proposed envelope. It never applies the
+# candidate and cannot enable the executor.
+
+ROOT="$1"
+HISTORY="$ROOT/history/telemetry.csv"
+LEARN="$ROOT/history/learned_envelope.env"
+POLICY="$ROOT/policy/candidate.env"
+OUT="$ROOT/runtime/shadow.env"
+
+kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
+
+publish(){
+  t="$OUT.tmp.$$"
+  {
+    echo "SHADOW_STATE=$1"
+    echo "SHADOW_REASON=$2"
+    echo "CANDIDATE_DIGEST=${DIGEST:-NA}"
+    echo "SHADOW_WINDOWS=${WINDOWS:-0}"
+    echo "SHADOW_FPS_AVG=${FPS_AVG:-NA}"
+    echo "SHADOW_JANK_AVG=${JANK_AVG:-NA}"
+    echo "SHADOW_P95_AVG=${P95_AVG:-NA}"
+    echo "SHADOW_POWER_AVG_MW=${POWER_AVG:-NA}"
+    echo "SHADOW_POWER_WINDOWS=${POWER_N:-0}"
+    echo "EXECUTOR_ENABLED=0"
+    echo "UPDATED_AT=$(date +%s)"
+  } > "$t"
+  chmod 600 "$t"; mv -f "$t" "$OUT"
+}
+
+while true; do
+  DIGEST=NA; WINDOWS=0; FPS_AVG=NA; JANK_AVG=NA; P95_AVG=NA; POWER_AVG=NA; POWER_N=0
+  [ -r "$POLICY" ] && [ -r "$HISTORY" ] && [ -r "$LEARN" ] || { publish WAITING candidate_or_history_missing; sleep 60; continue; }
+  [ "$(kv VERDICT "$POLICY")" = PROPOSED ] || { publish WAITING candidate_not_proposed; sleep 60; continue; }
+  [ "$(kv EXECUTOR_ENABLED "$POLICY")" = 0 ] || { publish REJECT executor_gate_must_remain_zero; sleep 60; continue; }
+
+  DIGEST=$(kv CANDIDATE_DIGEST "$POLICY"); PKG=$(kv PACKAGE "$POLICY")
+  LMIN=$(kv LITTLE_MIN_KHZ "$POLICY"); LMAX=$(kv LITTLE_MAX_KHZ "$POLICY")
+  BMIN=$(kv BIG_MIN_KHZ "$POLICY"); BMAX=$(kv BIG_MAX_KHZ "$POLICY")
+  GMIN=$(kv GPU_MIN_HZ "$POLICY"); GMAX=$(kv GPU_MAX_HZ "$POLICY")
+  case "$LMIN:$LMAX:$BMIN:$BMAX:$GMIN:$GMAX" in *[!0-9:]*|:*) publish REJECT invalid_candidate; sleep 60; continue;; esac
+
+  METRICS=$(awk -F, -v p="$PKG" -v l0="$LMIN" -v l1="$LMAX" -v b0="$BMIN" -v b1="$BMAX" -v g0="$GMIN" -v g1="$GMAX" '
+    NR>1 && $3==p && $20+0>=20 && $21~/^[0-9]+$/ && !seen[$21]++ &&
+    $7+0>=l0 && $7+0<=l1 && $8+0>=b0 && $8+0<=b1 && $9+0>=g0 && $9+0<=g1 &&
+    $16~/^[0-9]+([.][0-9]+)?$/ && $17~/^[0-9]+([.][0-9]+)?$/ && $18~/^[0-9]+([.][0-9]+)?$/ {
+      n++; fps+=$16; jank+=$17; p95+=$18
+      if($14~/^[0-9]+([.][0-9]+)?$/ && $14+0>0){pn++; power+=$14}
+    }
+    END{
+      if(n>0) printf "%d %.3f %.3f %.3f ",n,fps/n,jank/n,p95/n; else printf "0 0 0 0 "
+      if(pn>0) printf "%.3f %d",power/pn,pn; else printf "0 0"
+    }' "$HISTORY" 2>/dev/null)
+  set -- $METRICS
+  WINDOWS=${1:-0}; FPS_AVG=${2:-0}; JANK_AVG=${3:-0}; P95_AVG=${4:-0}; POWER_AVG=${5:-0}; POWER_N=${6:-0}
+  [ "$WINDOWS" -ge 60 ] 2>/dev/null || { publish WAITING insufficient_matching_frame_windows; sleep 60; continue; }
+  [ "$POWER_N" -ge 20 ] 2>/dev/null || { publish WAITING insufficient_power_evidence; sleep 60; continue; }
+
+  BASE_FPS=$(kv FPS_P50 "$LEARN"); BASE_JANK=$(kv JANK_P95 "$LEARN"); BASE_P95=$(kv FRAME_P95_P95_MS "$LEARN"); BASE_POWER=$(kv POWER_P95_MW "$LEARN")
+  case "$BASE_FPS:$BASE_JANK:$BASE_P95:$BASE_POWER" in *[!0-9.:]*|:*) publish WAITING baseline_metric_missing; sleep 60; continue;; esac
+  awk -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v bw="$BASE_POWER" 'BEGIN{
+    ok=(bf>0&&bp>0&&bw>0&&f>=bf*0.98&&p<=bp*1.05&&w<=bw&&((bj<=0&&j<=1)||(bj>0&&j<=bj*1.05))); exit !ok
+  }' && publish PASS frame_and_power_not_worse || publish REJECT frame_or_power_regression
+  sleep 60
+done
