@@ -4,6 +4,7 @@
 # Hardware writes remain owned exclusively by the local gated executor daemon.
 
 ROOT=${DJAEGER_OBSERVER_ROOT:-/data/adb/djaeger_observer}
+MODDIR=$(CDPATH= cd -- "${0%/*}/.." 2>/dev/null && pwd)
 CONFIG="$ROOT/config"
 RUNTIME="$ROOT/runtime"
 HISTORY="$ROOT/history"
@@ -12,6 +13,8 @@ GEMINI_VAULT="$CONFIG/gemini_vault.env"
 GEMINI_SLOT="$CONFIG/gemini_slot"
 GAME_REGISTRY="$CONFIG/game_registry.tsv"
 APP_REGISTRY="$CONFIG/app_registry.tsv"
+HANDSHAKE="$RUNTIME/handshake.env"
+GEMINI_COOLDOWN="$CONFIG/gemini_cooldown.env"
 
 mkdir -p "$CONFIG" "$RUNTIME" "$HISTORY" "$RECOVERY"
 chmod 700 "$ROOT" "$CONFIG" "$RECOVERY" 2>/dev/null
@@ -68,6 +71,63 @@ key_status() {
   echo "KEY_COUNT=$count"
   echo "ACTIVE_SLOT=$slot"
   echo "SECRET_VALUES=HIDDEN"
+}
+
+credential_status() {
+  count=$(vault_values | wc -l | tr -d ' '); case "$count" in ''|*[!0-9]*) count=0;; esac
+  now=$(date +%s); ready=0; cooldown=0
+  i=1
+  while [ "$i" -le "$count" ]; do
+    until=$(kv "KEY_${i}_UNTIL" "$GEMINI_COOLDOWN"); case "$until" in ''|*[!0-9]*) until=0;; esac
+    if [ "$until" -gt "$now" ] 2>/dev/null; then cooldown=$((cooldown+1)); else ready=$((ready+1)); fi
+    i=$((i+1))
+  done
+  hermes="$CONFIG/hermes_cloud.env"
+  ha=$(kv HERMES_ACCESS_KEY "$hermes")
+  he=$(kv HERMES_ENDPOINT "$hermes")
+  hi=$(kv HERMES_CLOUD_ID "$hermes")
+  echo "GEMINI_KEY_COUNT=$count"
+  echo "GEMINI_READY_COUNT=$ready"
+  echo "GEMINI_COOLDOWN_COUNT=$cooldown"
+  echo "HERMES_ACCESS_KEY_PRESENT=$([ -n "$ha" ] && echo YES || echo NO)"
+  echo "HERMES_ENDPOINT_PRESENT=$([ -n "$he" ] && echo YES || echo NO)"
+  echo "HERMES_CLOUD_ID_PRESENT=$([ -n "$hi" ] && echo YES || echo NO)"
+  echo "SECRET_VALUES=HIDDEN"
+  unset ha
+}
+
+sync_request() {
+  apk="$1"; schema="$2"; req="$3"
+  case "$apk" in ''|*[!0-9]*) echo "SYNC_STATUS=REJECTED"; echo "REASON=INVALID_APK_VERSION"; return 2;; esac
+  [ "$schema" = "DJAEGER_AI_ADAPTIVE_V2" ] || { echo "SYNC_STATUS=REJECTED"; echo "REASON=SCHEMA_MISMATCH"; return 2; }
+  req=$(printf '%s' "$req" | tr -cd 'A-Za-z0-9._:-' | cut -c1-96)
+  [ -n "$req" ] || { echo "SYNC_STATUS=REJECTED"; echo "REASON=INVALID_REQUEST_ID"; return 2; }
+  module_code=$(sed -n 's/^versionCode=//p' "$MODDIR/module.prop" 2>/dev/null | head -n1)
+  [ -n "$module_code" ] || module_code=0
+  expected_apk=104
+  pair=NO; [ "$apk" = "$expected_apk" ] && [ "$module_code" = 203 ] && pair=YES
+  now=$(date +%s)
+  tmp="$HANDSHAKE.tmp.$"
+  {
+    echo "APK_VERSION_CODE=$apk"
+    echo "EXPECTED_APK_VERSION_CODE=$expected_apk"
+    echo "MODULE_VERSION_CODE=$module_code"
+    echo "SCHEMA=$schema"
+    echo "REQUEST_ID=$req"
+    echo "ACK_ID=$req"
+    echo "PAIR_VERIFIED=$pair"
+    echo "ACK_AT=$now"
+  } > "$tmp"
+  chmod 600 "$tmp"; mv -f "$tmp" "$HANDSHAKE"
+  if [ -r "$MODDIR/bin/publisher.sh" ]; then
+    . "$MODDIR/bin/publisher.sh"
+    publish_cc "$ROOT"
+  fi
+  gen=$(cat "$RUNTIME/snapshot_generation" 2>/dev/null | head -n1)
+  echo "SYNC_STATUS=$([ "$pair" = YES ] && echo VERIFIED || echo VERSION_MISMATCH)"
+  echo "PAIR_VERIFIED=$pair"
+  echo "ACK_ID=$req"
+  echo "SNAPSHOT_GENERATION=${gen:-0}"
 }
 
 select_key() {
@@ -156,6 +216,8 @@ record_feedback() {
 case "$1" in
   feedback) record_feedback "$2" ;;
   gemini-key-status|gemini-key-vault-status) key_status ;;
+  credential-status) credential_status ;;
+  sync-request) sync_request "$2" "$3" "$4" ;;
   gemini-key-stdin|gemini-key-add-stdin) add_key ;;
   gemini-key-select) select_key "$2" ;;
   gemini-key-remove) remove_key "$2" ;;
