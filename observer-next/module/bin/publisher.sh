@@ -31,6 +31,16 @@ pub_registry_has() {
   awk -F'|' -v p="$2" '$2==p{found=1}END{exit !found}' "$1" 2>/dev/null
 }
 
+pub_age_sec() {
+  _v="$(pub_kv "$2" "$1")"
+  case "$_v" in ''|*[!0-9]*) echo 999999;; *) _n=$(date +%s); _a=$((_n-_v)); [ "$_a" -ge 0 ] 2>/dev/null || _a=999999; echo "$_a";; esac
+}
+
+pub_fresh() {
+  _a="$(pub_age_sec "$1" "$2")"
+  [ "$_a" -le "$3" ] 2>/dev/null && echo "FRESH:$_a" || echo "STALE:$_a"
+}
+
 publish_cc() {
   _root="$1"
   _snap="$_root/runtime/snapshot.env"
@@ -159,6 +169,13 @@ publish_cc() {
     _i=$((_i+1))
   done
   _gem_http="$(pub_kv GEMINI_HTTP "$_gem_state")"; [ -n "$_gem_http" ] || _gem_http=NA
+  _gem_age="$(pub_age_sec "$_gem_state" UPDATED_AT)"
+  _hermes_age="$(pub_age_sec "$_hermes_state" UPDATED_AT)"
+  _cons_age="$(pub_age_sec "$_cons" UPDATED_AT)"
+  _shadow_age="$(pub_age_sec "$_shadow" UPDATED_AT)"
+  _exec_age="$(pub_age_sec "$_execution" UPDATED_AT)"
+  _rail_age="$(pub_age_sec "$_railway" UPDATED_AT)"
+
   _gem_connection=WAITING
   if [ "$_gem_count" -eq 0 ]; then _gem_connection=NOT_CONFIGURED
   else
@@ -170,6 +187,8 @@ publish_cc() {
       *) _gem_connection=READY ;;
     esac
   fi
+
+  [ "$_gem_age" -le 180 ] 2>/dev/null || _gem_connection=STALE
 
   _h_access="$(pub_kv HERMES_ACCESS_KEY "$_hermes_cfg")"
   if [ -n "$_h_access" ]; then
@@ -186,6 +205,7 @@ publish_cc() {
     HTTP_ERROR|UNAVAILABLE|OFFLINE) _hermes_connection=OFFLINE ;;
     *) [ "$_hauth" = NOT_CONFIGURED ] && _hermes_connection=NOT_CONFIGURED ;;
   esac
+  [ "$_hermes_age" -le 180 ] 2>/dev/null || _hermes_connection=STALE
 
   _module_code=$(sed -n 's/^versionCode=//p' "${MODDIR:-/data/adb/modules/djaeger_ai_observer}/module.prop" 2>/dev/null | head -n1)
   case "$_module_code" in ''|*[!0-9]*) _module_code=0;; esac
@@ -270,7 +290,15 @@ publish_cc() {
     echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_shadow_n"
     echo "__AUTHORITY__"; echo "STATE=LOCAL_GATED"; echo "HARDWARE_AUTHORITY=LOCAL_VALIDATED_EXECUTOR"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
     echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
-    echo "__SUPERVISOR__"; echo "STATE=RUNNING"; echo "PROCESS_MODEL=BOUNDED_OBSERVER_LOOPS"
+    echo "__SUPERVISOR__"
+    if [ "$_exec_age" -le 10 ] 2>/dev/null && [ "$_cons_age" -le 90 ] 2>/dev/null && [ "$_hermes_age" -le 180 ] 2>/dev/null && [ "$_gem_age" -le 180 ] 2>/dev/null; then echo "STATE=HEALTHY"; else echo "STATE=DEGRADED"; fi
+    echo "PROCESS_MODEL=BOUNDED_OBSERVER_LOOPS"
+    echo "GEMINI=$(pub_fresh "$_gem_state" UPDATED_AT 180)"
+    echo "HERMES=$(pub_fresh "$_hermes_state" UPDATED_AT 180)"
+    echo "CONSENSUS=$(pub_fresh "$_cons" UPDATED_AT 90)"
+    echo "SHADOW=$(pub_fresh "$_shadow" UPDATED_AT 180)"
+    echo "EXECUTOR=$(pub_fresh "$_execution" UPDATED_AT 10)"
+    echo "RAILWAY=$(pub_fresh "$_railway" UPDATED_AT 90)"
     echo "__HERMES_CTX1_STATUS__"; echo "STATE=$_hlocal"; echo "MIGRATION=$_migration_state"
     echo "__HERMES_CTX1_RUNTIME__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "WINDOW=$_window"
     echo "__HERMES_CTX1_SAFETY__"; echo "SYSFS=LOCAL_EXECUTOR_ONLY"; echo "CONSENSUS=$_cons_state"; echo "SHADOW=$_shadow_state"; echo "EXECUTOR=$_exec_state"
