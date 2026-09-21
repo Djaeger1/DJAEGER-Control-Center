@@ -26,6 +26,19 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Shell syntax and safety gates
+        run: |
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+          ! grep -R -E 'SOFT_COOL|FREEZE|RESPONSE_REQUEST' observer-next/module
+          ! grep -R -E 'djaeger-profile-map|djaeger-root-authority' observer-next/module
+          ! grep -R -E 'api[_-]?key=[A-Za-z0-9_-]{16,}|Bearer [A-Za-z0-9_-]{16,}' observer-next
+          grep -R 'VALIDATED_EXECUTOR_ONLY' observer-next/module
+          grep -R 'SHADOW_PASS=NO' observer-next/module/bin/consensus.sh
+          grep -R 'EXECUTOR_ENABLED=0' observer-next/module/bin/consensus.sh
+          grep -R 'Legacy preset DISABLED' observer-next/android
+
       - name: Build Observer APK
         working-directory: observer-next/android
         run: gradle :app:assembleDebug --stacktrace
@@ -34,21 +47,14 @@ jobs:
         run: |
           mkdir -p out
           cd observer-next/module
-          zip -qr ../../out/DJAEGER-AI-Observer-v0.1.0.zip .
+          zip -qr ../../out/DJAEGER-AI-Observer-v0.2.0.zip .
           cd ../..
-          cp observer-next/android/app/build/outputs/apk/debug/app-debug.apk out/DJAEGER-AI-Observer-v1.0.0.apk
-
-      - name: Static safety checks
-        run: |
-          ! grep -R -E 'SOFT_COOL|FREEZE|RESPONSE_REQUEST' observer-next/module
-          ! grep -R -E 'api[_-]?key=[A-Za-z0-9_-]{16,}|Bearer [A-Za-z0-9_-]{16,}' observer-next
-          grep -R 'VALIDATED_EXECUTOR_ONLY' observer-next/module
-          grep -R 'Legacy preset DISABLED' observer-next/android
+          cp observer-next/android/app/build/outputs/apk/debug/app-debug.apk out/DJAEGER-AI-Observer-v1.0.1.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-Observer-Next
+          name: DJAEGER-Observer-Next-v0.2
           path: |
-            out/DJAEGER-AI-Observer-v1.0.0.apk
-            out/DJAEGER-AI-Observer-v0.1.0.zip
+            out/DJAEGER-AI-Observer-v1.0.1.apk
+            out/DJAEGER-AI-Observer-v0.2.0.zip
           if-no-files-found: error
