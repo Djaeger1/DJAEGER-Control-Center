@@ -3,6 +3,7 @@
 # Only explicitly named DJAEGER AI credentials/identity fields are imported.
 ROOT="$1"
 LEGACY=${DJAEGER_LEGACY_ROOT:-/data/adb/djaeger_ai}
+LEGACY_MODULE=${DJAEGER_LEGACY_MODULE_ROOT:-/data/adb/modules/djaeger_game_stabilizer}
 MARK="$ROOT/recovery/migration.env"
 CONFIG="$ROOT/config"
 GEMINI="$CONFIG/gemini_vault.env"
@@ -37,27 +38,30 @@ DEVICE_ID="$(extract_exact DEVICE_ID "$IDENTITY")"
 R_TOKEN="$(extract_exact DJAEGER_ACCESS_TOKEN "$RAILWAY")"
 G_MODEL="$(extract_exact GEMINI_MODEL "$CONFIG/gemini.env")"
 
-if [ -d "$LEGACY" ]; then
+STATE=NO_LEGACY
+: > "$TMP_SOURCES"
+for _root in "$LEGACY" "$LEGACY_MODULE"; do
+  [ -d "$_root" ] || continue
   STATE=LEGACY_FOUND
-  find "$LEGACY" -maxdepth 7 -type f -size -256k 2>/dev/null | while IFS= read -r f; do
+  find "$_root" -maxdepth 7 -type f -size -256k 2>/dev/null | while IFS= read -r f; do
     forbidden_path "$f" && continue
     printf '%s\n' "$f"
-  done > "$TMP_SOURCES"
+  done >> "$TMP_SOURCES"
+done
 
-  while IFS= read -r f; do
-    [ -r "$f" ] || continue
-    for k in GEMINI_API_KEY KEY_1 KEY_2 KEY_3 KEY_4; do
-      v="$(extract_exact "$k" "$f")"; [ -n "$v" ] && printf '%s\n' "$(safe_value "$v")" >> "$TMP_KEYS"
-    done
-    [ -n "$G_MODEL" ] || G_MODEL="$(extract_exact GEMINI_MODEL "$f")"
-    [ -n "$H_ACCESS" ] || H_ACCESS="$(extract_exact HERMES_ACCESS_KEY "$f")"
-    [ -n "$H_ENDPOINT" ] || H_ENDPOINT="$(extract_exact HERMES_ENDPOINT "$f")"
-    [ -n "$H_ID" ] || H_ID="$(extract_exact HERMES_CLOUD_ID "$f")"
-    [ -n "$DEVICE_ID" ] || DEVICE_ID="$(extract_exact DEVICE_ID "$f")"
-    [ -n "$R_TOKEN" ] || R_TOKEN="$(extract_exact DJAEGER_ACCESS_TOKEN "$f")"
-  done < "$TMP_SOURCES"
-  rm -f "$TMP_SOURCES"
-fi
+while IFS= read -r f; do
+  [ -r "$f" ] || continue
+  for k in GEMINI_API_KEY KEY_1 KEY_2 KEY_3 KEY_4; do
+    v="$(extract_exact "$k" "$f")"; [ -n "$v" ] && printf '%s\n' "$(safe_value "$v")" >> "$TMP_KEYS"
+  done
+  [ -n "$G_MODEL" ] || G_MODEL="$(extract_exact GEMINI_MODEL "$f")"
+  [ -n "$H_ACCESS" ] || H_ACCESS="$(extract_exact HERMES_ACCESS_KEY "$f")"
+  [ -n "$H_ENDPOINT" ] || H_ENDPOINT="$(extract_exact HERMES_ENDPOINT "$f")"
+  [ -n "$H_ID" ] || H_ID="$(extract_exact HERMES_CLOUD_ID "$f")"
+  [ -n "$DEVICE_ID" ] || DEVICE_ID="$(extract_exact DEVICE_ID "$f")"
+  [ -n "$R_TOKEN" ] || R_TOKEN="$(extract_exact DJAEGER_ACCESS_TOKEN "$f")"
+done < "$TMP_SOURCES"
+rm -f "$TMP_SOURCES"
 
 for f in   /data/user/0/com.termoneplus/app_HOME/hermes-cloud-deploy/hermes-cloud-djaeger/HERMES_CLOUD_CREDENTIALS.txt   /data/media/0/Download/HERMES_CLOUD_CREDENTIALS.txt   /sdcard/Download/HERMES_CLOUD_CREDENTIALS.txt; do
   [ -r "$f" ] || continue
@@ -95,6 +99,7 @@ TMP="$MARK.tmp.$$"
   echo "MIGRATION_SCHEMA=4"
   echo "MIGRATION_STATE=$STATE"
   echo "LEGACY_PATH=$LEGACY"
+  echo "LEGACY_MODULE_PATH=$LEGACY_MODULE"
   echo "GEMINI_KEY_COUNT=$GCOUNT"
   echo "HERMES_FIELD_COUNT=$HCOUNT"
   echo "IDENTITY_IMPORTED=$([ "$ICOUNT" -gt 0 ] && echo YES || echo NO)"
