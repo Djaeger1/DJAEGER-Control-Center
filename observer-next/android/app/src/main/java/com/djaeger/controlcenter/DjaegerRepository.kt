@@ -23,6 +23,8 @@ class DjaegerRepository {
     private var lastGoodNetwork:NetworkState?=null
     private var lastGoodNetworkAt:Long=0L
     private val module="/data/adb/modules/djaeger_ai_observer"; private val persistent="/data/adb/djaeger_observer"
+    private val apkVersionCode=104
+    private val syncSchema="DJAEGER_AI_ADAPTIVE_V2"
     private fun su(command:String,timeoutMs:Long=2500):Pair<Int,String> {
         val readerExecutor=Executors.newSingleThreadExecutor()
         return try {
@@ -48,7 +50,7 @@ class DjaegerRepository {
         val tel = parseTelemetry(mapped.telemetryRaw)
         val now = System.currentTimeMillis()/1000
         val age = if(tel.epoch > 0) now - tel.epoch else Long.MAX_VALUE
-        val adaptiveContract = AtomicSnapshot.keyValues(mapped.controlCenterSync)["CONTRACT"] == "DJAEGER_AI_ADAPTIVE_V1"
+        val adaptiveContract = AtomicSnapshot.keyValues(mapped.controlCenterSync)["CONTRACT"] == syncSchema
         val telemetryTtlSec = if(adaptiveContract) 15L else 5L
         val fresh = tel.epoch > 0 && age in 0..telemetryTtlSec
         val runtimeUpdated=(rt["UPDATED_AT"] ?: rt["updated_at"])?.toLongOrNull() ?: 0L
@@ -145,6 +147,17 @@ class DjaegerRepository {
             bugHealth=mapped.bugHealth,
             strategy=strategy
         )
+    }
+
+    suspend fun synchronizeLocal():Pair<Boolean,String> = withContext(Dispatchers.IO) {
+        val requestId="cc-"+System.currentTimeMillis().toString()
+        val (rc,out)=su("$module/bin/observerctl.sh sync-request $apkVersionCode $syncSchema $requestId",7000)
+        Pair(rc==0,out.trim().ifBlank{if(rc==0)"SYNC_STATUS=EMPTY_ACK" else "SYNC_STATUS=FAILED"})
+    }
+
+    suspend fun credentialStatus():Pair<Boolean,String> = withContext(Dispatchers.IO) {
+        val (rc,out)=su("$module/bin/observerctl.sh credential-status",5000)
+        Pair(rc==0,out.trim().ifBlank{"CREDENTIAL_STATUS=UNAVAILABLE"})
     }
 
     suspend fun setUserMode(mode:String):Pair<Boolean,String> = withContext(Dispatchers.IO) {
