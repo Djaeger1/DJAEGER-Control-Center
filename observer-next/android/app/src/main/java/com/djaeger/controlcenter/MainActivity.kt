@@ -73,9 +73,9 @@ private fun hccPresetFromBlock(block:String):String{
 private fun thoughtField(raw:String,key:String):String = raw.lineSequence().firstOrNull{it.startsWith("$key=")}?.substringAfter('=')?.trim()?.trim('\'') ?: ""
 private fun envField(raw:String,key:String):String = thoughtField(raw,key)
 private fun brainLabel(raw:String):String = when(raw){
-    "GEMINI"->"GEMINI • PRIMARY / HIGHEST"
-    "OBSERVER_LOCAL"->"HERMES LOCAL • DEVICE VALIDATOR"
-    "HERMES_LOCAL","HERMES_H2"->"HERMES H2 • DEPUTY LOCAL BRAIN"
+    "GEMINI"->"GEMINI • ADVISORY REASONER"
+    "OBSERVER_LOCAL"->"LOCAL OBSERVER • DEVICE TRUTH"
+    "HERMES_LOCAL","HERMES_H2"->"HERMES LOCAL • VALIDATOR / REVIEWER"
     "NONE"->"NONE • NATIVE FAILSAFE"
     else->raw.ifBlank{"—"}
 }
@@ -160,7 +160,7 @@ private fun ageLabel(raw:String):String{
     val backend=envField(s.brain,"AGENT_EXECUTION_BACKEND").ifBlank{"UNPUBLISHED"}
     val validation=envField(s.brain,"AGENT_LAST_VALIDATION").ifBlank{"UNKNOWN"}
     val readback=envField(s.brain,"AGENT_LAST_READBACK").ifBlank{"UNKNOWN"}
-    val priority=envField(s.brain,"DECISION_PRIORITY").ifBlank{"GEMINI>HERMES_H2>NATIVE_FAILSAFE"}
+    val priority=envField(s.brain,"DECISION_PRIORITY").ifBlank{"UNPUBLISHED"}
     val third=envField(s.brain,"THIRD_BRAIN").ifBlank{"UNPUBLISHED"}
     val syncContract=envField(s.controlCenterSync,"CONTRACT")
     val syncModule=envField(s.controlCenterSync,"MODULE_VERSION_CODE")
@@ -234,8 +234,9 @@ private fun planRange(a:String,b:String,unit:String):String{
     val used=envField(s.brain,"HERMES_NEURON_USED_EST").ifBlank{"UNAVAILABLE"}
     val limit=envField(s.brain,"HERMES_NEURON_LIMIT").ifBlank{"UNAVAILABLE"}
     val neuronLine=if(used.toLongOrNull()!=null&&limit.toLongOrNull()!=null) "$used / $limit • EST" else "UNAVAILABLE • provider does not report usage"
-    val online=if(s.installed) "ONLINE" else "OFFLINE"
-    BoxCard("HERMES: $online","Route    $route\nCloud    $cloud\nNeurons  $neuronLine",true)
+    val hermesFresh=envField(s.supervisor,"HERMES").startsWith("FRESH:")
+    val localState=when{!s.installed->"OFFLINE";hermesFresh->"ONLINE";else->"STALE"}
+    BoxCard("HERMES: $localState","Local    $localState\nRoute    $route\nCloud    $cloud\nNeurons  $neuronLine",true)
 }
 
 @Composable fun HermesCloudCard(s:RuntimeState){
@@ -284,7 +285,7 @@ private fun planRange(a:String,b:String,unit:String):String{
     val syncContract=envField(s.controlCenterSync,"CONTRACT").ifBlank{"UNPUBLISHED"}
     val syncModule=envField(s.controlCenterSync,"MODULE_VERSION_CODE").ifBlank{"—"}
     val syncCc=envField(s.controlCenterSync,"CONTROL_CENTER_VERSION_CODE").ifBlank{"—"}
-    val syncMatched=(syncContract=="DJAEGER_AI_ADAPTIVE_V2"&&syncModule=="202"&&syncCc=="103")||(syncContract=="REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_DUALREG3_SHAREDINT1_HERMESCLOUD1_WORKLOADFINAL1_APPREBUILD4_MAXVALUE1"&&syncModule=="129659"&&syncCc=="12263")
+    val syncMatched=(syncContract=="DJAEGER_AI_ADAPTIVE_V2"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="203"&&syncCc=="104")||(syncContract=="REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_DUALREG3_SHAREDINT1_HERMESCLOUD1_WORKLOADFINAL1_APPREBUILD4_MAXVALUE1"&&syncModule=="129659"&&syncCc=="12263")
     val currentBrain=envField(s.brain,"CURRENT_BRAIN")
     val finalSource=envField(s.brain,"FINAL_SOURCE")
     val displayState=when(hState){
@@ -295,7 +296,7 @@ private fun planRange(a:String,b:String,unit:String):String{
         else->hState
     }
     val hBackend=envField(s.brain,"HERMES_BACKEND").ifBlank{"LOCAL"}
-    val authority=if(currentBrain=="GEMINI") "SHADOW LEARNING • GEMINI HAS DECISION AUTHORITY" else "DEPUTY HERMES H2 • backend $hBackend • NO DIRECT HARDWARE WRITES"
+    val authority=when(currentBrain){"GEMINI"->"GEMINI ADVISORY PROPOSAL • NO DIRECT HARDWARE WRITES";"AI_CONSENSUS"->"CONSENSUS RESULT • LOCAL VALIDATOR / EXECUTOR OWNS HARDWARE";else->"HERMES/LOCAL REVIEW • backend $hBackend • NO DIRECT HARDWARE WRITES"}
     val body="State: $displayState\nMode: $hMode\nProfile: $hProfile\nConfidence: $hConfidence%\nVariable: $hVariable\nValue: $hValue\nVariable state: $hVariableState\nContext samples: $hSamples\nContext success rate: $hRate%\nEvidence scope: $hScope\nEvidence filter: $hFilter\nBrain source: ${currentBrain.ifBlank{"—"}}\nFinal source: ${finalSource.ifBlank{"—"}}\nAuthority: $authority\nReason: $hReason\n\nLANG3: CONVERSATIONAL • semantic planner + continuity + anti-repeat\nMATH1: $mathState • verify $mathVerify • sanity $mathSanity\nTarget frame: $mathFrame ms • FPS error: $mathFpsErr\nThermal headroom: $mathHeadroom °C • thermal/frame/control pressure: $mathThermal/$mathFramePressure/$mathControl\nControl Center sync: ${if(syncMatched) "MATCHED" else "MISMATCH/WAITING"} • $syncContract • module vc$syncModule / app vc$syncCc"
     BoxCard("HERMES H2 • KERNEL1 • LANG3 + MATH1",body,true)
 }
@@ -350,7 +351,7 @@ private fun planRange(a:String,b:String,unit:String):String{
     val little=envField(s.brain,"EXEC_LITTLE")
     val big=envField(s.brain,"EXEC_BIG")
     val gpu=envField(s.brain,"EXEC_GPU")
-    val cloudConnection=envField(s.brain,"CLOUD_CONNECTION_STATUS").ifBlank{"UNKNOWN"}
+    val cloudConnection=envField(s.brain,"GEMINI_CONNECTION_STATUS").ifBlank{"UNKNOWN"}
     val cloudState=envField(s.brain,"CLOUD_PLAN_STATE").ifBlank{"UNAVAILABLE"}
     val cloudScore=envField(s.brain,"CLOUD_PLAN_SCORE").ifBlank{"0"}
     val cloudReason=envField(s.brain,"CLOUD_PLAN_REASON").ifBlank{"—"}
@@ -405,9 +406,9 @@ private fun registryPreview(raw:String,max:Int=8):String{
     val syncContract=envField(s.controlCenterSync,"CONTRACT")
     val syncModule=envField(s.controlCenterSync,"MODULE_VERSION_CODE")
     val syncCc=envField(s.controlCenterSync,"CONTROL_CENTER_VERSION_CODE")
-    val paired=(syncContract=="DJAEGER_AI_ADAPTIVE_V2"&&syncModule=="202"&&syncCc=="103")||(syncContract.endsWith("WORKLOADFINAL1")&&syncModule=="129659"&&syncCc=="12263"&&finalState=="ACTIVE")
+    val paired=(syncContract=="DJAEGER_AI_ADAPTIVE_V2"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="203"&&syncCc=="104")||(syncContract.endsWith("WORKLOADFINAL1")&&syncModule=="129659"&&syncCc=="12263"&&finalState=="ACTIVE")
 
-    val pairLabel=if(syncContract=="DJAEGER_AI_ADAPTIVE_V2") "VC202 / VC103" else "VC129659 / VC12263"
+    val pairLabel=if(syncContract=="DJAEGER_AI_ADAPTIVE_V2") "VERIFIED • MODULE 203 / APP 104" else "VC129659 / VC12263"
     val body="Current: $cls • $pkg\nProfile: $profile • Subject: $subject\nReasoning: $domain\nGame semantics: $gameSem\nFrame semantics: $frameSem\nClassifier: $source • confidence $confidence%\n\nFinal enforcement: $finalState\nDual registry: $dual • conflicts $conflicts\nExecution scope: $execScope\nAPP game policy: $appPolicy\nSYSTEM game policy: $systemPolicy\nUNKNOWN game policy: $unknownPolicy\nStale policy: $stale\nLearning isolation: $learning\n\nShadow domain gates: GAME $gateGame • APP $gateApp • SYSTEM $gateSystem\nLatest proposal: $proposalSource • $proposalClass • $proposalPkg\nBinding: $proposalDecision • $proposalReason\nPre-exec guard: $guardDecision • $guardReason\n\nControl Center pair: ${if(paired)"MATCHED • $pairLabel" else "CHECKING / NOT MATCHED"}"
     BoxCard("WORKLOAD • GAME / APP / SYSTEM",body,true)
 }
