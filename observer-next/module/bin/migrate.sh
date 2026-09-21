@@ -4,6 +4,7 @@
 ROOT="$1"
 LEGACY=${DJAEGER_LEGACY_ROOT:-/data/adb/djaeger_ai}
 LEGACY_MODULE=${DJAEGER_LEGACY_MODULE_ROOT:-/data/adb/modules/djaeger_game_stabilizer}
+LEGACY_EXTRA="/data/adb/djaeger /data/adb/modules/djaeger_ai /data/adb/modules/djaeger_game_stabilizer"
 MARK="$ROOT/recovery/migration.env"
 CONFIG="$ROOT/config"
 GEMINI="$CONFIG/gemini_vault.env"
@@ -40,7 +41,7 @@ G_MODEL="$(extract_exact GEMINI_MODEL "$CONFIG/gemini.env")"
 
 STATE=NO_LEGACY
 : > "$TMP_SOURCES"
-for _root in "$LEGACY" "$LEGACY_MODULE"; do
+for _root in "$LEGACY" "$LEGACY_MODULE" $LEGACY_EXTRA; do
   [ -d "$_root" ] || continue
   STATE=LEGACY_FOUND
   find "$_root" -maxdepth 7 -type f -size -256k 2>/dev/null | while IFS= read -r f; do
@@ -96,10 +97,11 @@ if [ "$GCOUNT" -gt 0 ] || [ "$HCOUNT" -gt 0 ] || [ "$ICOUNT" -gt 0 ] || [ "$RCOU
 
 TMP="$MARK.tmp.$$"
 {
-  echo "MIGRATION_SCHEMA=4"
+  echo "MIGRATION_SCHEMA=5"
   echo "MIGRATION_STATE=$STATE"
   echo "LEGACY_PATH=$LEGACY"
   echo "LEGACY_MODULE_PATH=$LEGACY_MODULE"
+  echo "LEGACY_CONFIG_PRESENT=$([ "$STATE" = NO_LEGACY ] && echo NO || echo YES)"
   echo "GEMINI_KEY_COUNT=$GCOUNT"
   echo "HERMES_FIELD_COUNT=$HCOUNT"
   echo "IDENTITY_IMPORTED=$([ "$ICOUNT" -gt 0 ] && echo YES || echo NO)"
