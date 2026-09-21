@@ -5,12 +5,13 @@ mkdir -p "$ROOT/runtime" "$ROOT/history" "$ROOT/policy" "$ROOT/recovery" "$ROOT/
 chmod 700 "$ROOT" "$ROOT/config" "$ROOT/recovery" 2>/dev/null
 [ -f "$ROOT/config/game_registry.tsv" ] || : > "$ROOT/config/game_registry.tsv"
 [ -f "$ROOT/config/app_registry.tsv" ] || : > "$ROOT/config/app_registry.tsv"
-chmod 600 "$ROOT/config/game_registry.tsv" "$ROOT/config/app_registry.tsv" 2>/dev/null
+[ -f "$ROOT/config/execution_mode" ] || echo AUTO > "$ROOT/config/execution_mode"
+chmod 600 "$ROOT/config/game_registry.tsv" "$ROOT/config/app_registry.tsv" "$ROOT/config/execution_mode" 2>/dev/null
 
 sh "$MODDIR/bin/migrate.sh" "$ROOT" "$MODDIR"
 
-for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow; do
-  pkill -f "djaeger_ai_observer.*$n.sh" 2>/dev/null
+for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow executor railway_bridge; do
+  pkill -f "djaeger_ai_observer.*$n.sh" 2>/dev/null || true
 done
 
 nohup sh "$MODDIR/bin/observer.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
@@ -20,3 +21,5 @@ nohup sh "$MODDIR/bin/gemini_reasoner.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 nohup sh "$MODDIR/bin/hermes_adapter.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 nohup sh "$MODDIR/bin/consensus.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 nohup sh "$MODDIR/bin/shadow.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
+nohup sh "$MODDIR/bin/executor.sh" "$ROOT" daemon >/dev/null 2>&1 &
+nohup sh "$MODDIR/bin/railway_bridge.sh" "$ROOT" daemon >/dev/null 2>&1 &
