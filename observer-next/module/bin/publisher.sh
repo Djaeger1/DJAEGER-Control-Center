@@ -199,7 +199,8 @@ publish_cc() {
   unset _h_access
   _hermes_connection=WAITING
   case "$_hcloud" in
-    ONLINE|ONLINE_IDLE|APPROVED|REJECTED) _hermes_connection=ONLINE ;;
+    ONLINE|APPROVED|REJECTED) _hermes_connection=ONLINE ;;
+    REACHABLE_IDLE) _hermes_connection=REACHABLE ;;
     NO_KEY) _hermes_connection=NOT_CONFIGURED ;;
     AUTH_ERROR) _hermes_connection=AUTH_ERROR ;;
     HTTP_ERROR|UNAVAILABLE|OFFLINE) _hermes_connection=OFFLINE ;;
