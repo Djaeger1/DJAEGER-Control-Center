@@ -741,7 +741,7 @@ private fun humanDecision(s:RuntimeState):String{
             HccFeedbackButton("KURANG NYAMAN",feedbackFlash=="LESS_COMFORTABLE",bridgeOp==null,{feedbackFlash="LESS_COMFORTABLE";bridgeOp="FEEDBACK_LESS_COMFORTABLE"},Modifier.weight(1f))
             HccFeedbackButton("TIDAK NYAMAN",feedbackFlash=="UNCOMFORTABLE",bridgeOp==null,{feedbackFlash="UNCOMFORTABLE";bridgeOp="FEEDBACK_UNCOMFORTABLE"},Modifier.weight(1f))
         }
-        BoxCard("DJAEGER-AI SYNC",if(adaptive) "Target module: DJAEGER AI Adaptive v1.1.0 RC1\nTransport: verified APK↔module handshake + Gemini + ONE HERMES consensus\nControl path: observe → learn → propose → validate → shadow → local execute → readback → learn\nSYSFS execution: local gated executor only • cloud authority NONE" else "Target module: v12.9.50-r3\nTransport: Gemini v12.9.50 protected baseline\nControl path: official typed djaeger-ai commands only\nDisplay/battery cooling: not controlled by Control Center",true)
+        BoxCard("DJAEGER-AI SYNC",if(adaptive) "Target module: DJAEGER AI Adaptive v1.1.2 Credential Restore\nTransport: verified APK↔module handshake + Gemini + ONE HERMES consensus\nControl path: observe → learn → propose → validate → shadow → local execute → readback → learn\nSYSFS execution: local gated executor only • cloud authority NONE" else "Target module: v12.9.50-r3\nTransport: Gemini v12.9.50 protected baseline\nControl path: official typed djaeger-ai commands only\nDisplay/battery cooling: not controlled by Control Center",true)
         
         
         
