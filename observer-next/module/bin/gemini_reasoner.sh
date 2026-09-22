@@ -18,9 +18,18 @@ VAULT="$ROOT/config/gemini_vault.env"
 SLOTFILE="$ROOT/config/gemini_slot"
 COOLDOWN_FILE="$ROOT/config/gemini_cooldown.env"
 LAST_SUCCESS="$ROOT/config/gemini_last_success"
-RATE_GUARD_SEC=300
+# Adaptive reasoning cadence. Stable gameplay is intentionally quieter, while
+# degraded frame-time, thermal pressure, or high power usage wake Gemini much
+# sooner. Hardware is still changed only through consensus -> shadow -> executor.
+STABLE_GUARD_SEC=90
+FRAME_DEGRADED_GUARD_SEC=45
+URGENT_GUARD_SEC=20
+POWER_GUARD_SEC=60
 RATE_LIMIT_COOLDOWN=1800
 AUTH_COOLDOWN=21600
+GUARD_SEC=$STABLE_GUARD_SEC
+GUARD_REASON=STABLE
+LAST_SUCCESS_AGE=999999
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 safe_num(){ case "$1" in ''|*[!0-9.-]*) echo 0;; *) echo "$1";; esac; }
@@ -63,6 +72,9 @@ write_state(){
     echo "GEMINI_COOLDOWN_COUNT=$COOLDOWN_COUNT"
     echo "GEMINI_ACTIVE_SLOT=${SLOT:-0}"
     echo "GEMINI_HTTP=${HTTP:-NA}"
+    echo "GEMINI_GUARD_SEC=${GUARD_SEC:-$STABLE_GUARD_SEC}"
+    echo "GEMINI_GUARD_REASON=${GUARD_REASON:-STABLE}"
+    echo "GEMINI_LAST_SUCCESS_AGE_SEC=${LAST_SUCCESS_AGE:-999999}"
     echo "UPDATED_AT=$(date +%s)"
   } > "$_t"
   chmod 600 "$_t"; mv -f "$_t" "$STATE"
@@ -83,6 +95,61 @@ next_ready_slot(){
   return 1
 }
 
+adaptive_guard(){
+  GUARD_SEC=$STABLE_GUARD_SEC
+  GUARD_REASON=STABLE
+
+  _fe=$(kv FRAME_EVIDENCE "$SNAP")
+  _fn=$(safe_num "$(kv FRAME_N "$SNAP")")
+  _fps=$(safe_num "$(kv FPS_EST "$SNAP")")
+  _jank=$(safe_num "$(kv JANK_PCT "$SNAP")")
+  _p95=$(safe_num "$(kv P95_MS "$SNAP")")
+  _p99=$(safe_num "$(kv P99_MS "$SNAP")")
+  _bfps=$(safe_num "$(kv FPS_P50 "$LEARN")")
+  _bjank=$(safe_num "$(kv JANK_P95 "$LEARN")")
+  _bp95=$(safe_num "$(kv FRAME_P95_P95_MS "$LEARN")")
+  _bp99=$(safe_num "$(kv FRAME_P99_P95_MS "$LEARN")")
+  _power=$(safe_num "$(kv POWER_MW "$SNAP")")
+  _p50w=$(safe_num "$(kv POWER_P50_MW "$LEARN")")
+  _skin=$(safe_num "$(kv SKIN_TEMP_C "$SNAP")")
+  _cpu=$(safe_num "$(kv CPU_TEMP_C "$SNAP")")
+  _gput=$(safe_num "$(kv GPU_TEMP_C "$SNAP")")
+
+  if [ "$_fe" = VALID ] && [ "$_fn" -ge 20 ] 2>/dev/null; then
+    if awk -v f="$_fps" -v bf="$_bfps" -v j="$_jank" -v bj="$_bjank" -v p95="$_p95" -v bp95="$_bp95" -v p99="$_p99" -v bp99="$_bp99" 'BEGIN{
+      bad=(bf>0&&f>0&&f<bf*0.80)||(bp95>0&&p95>bp95*1.25)||(bp99>0&&p99>bp99*1.25);
+      if(bj>0&&j>bj*1.50+2)bad=1;
+      exit bad?0:1
+    }'; then
+      GUARD_SEC=$URGENT_GUARD_SEC
+      GUARD_REASON=FRAME_CRITICAL
+      return
+    fi
+
+    if awk -v f="$_fps" -v bf="$_bfps" -v j="$_jank" -v bj="$_bjank" -v p95="$_p95" -v bp95="$_bp95" -v p99="$_p99" -v bp99="$_bp99" 'BEGIN{
+      bad=(bf>0&&f>0&&f<bf*0.95)||(bp95>0&&p95>bp95*1.08)||(bp99>0&&p99>bp99*1.10);
+      if(bj>0&&j>bj*1.20+1)bad=1;
+      exit bad?0:1
+    }'; then
+      GUARD_SEC=$FRAME_DEGRADED_GUARD_SEC
+      GUARD_REASON=FRAME_DEGRADED
+      return
+    fi
+  fi
+
+  if awk -v s="$_skin" -v c="$_cpu" -v g="$_gput" 'BEGIN{exit !((s>0&&s>=44)||(c>0&&c>=70)||(g>0&&g>=68))}'; then
+    GUARD_SEC=30
+    GUARD_REASON=THERMAL_PRESSURE
+    return
+  fi
+
+  if awk -v p="$_power" -v b="$_p50w" 'BEGIN{exit !(p>0&&b>0&&p>b*1.15)}'; then
+    GUARD_SEC=$POWER_GUARD_SEC
+    GUARD_REASON=POWER_HIGH
+    return
+  fi
+}
+
 while true; do
   [ -r "$SNAP" ] && [ -r "$LEARN" ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING observer_or_learning_missing; sleep 30; continue; }
   [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state OBSERVE non_game_workload; sleep 45; continue; }
@@ -90,8 +157,14 @@ while true; do
 
   NOW=$(date +%s)
   LAST=$(cat "$LAST_SUCCESS" 2>/dev/null); case "$LAST" in ''|*[!0-9]*) LAST=0;; esac
-  if [ $((NOW-LAST)) -lt "$RATE_GUARD_SEC" ]; then
-    SLOT=0; HTTP=NA; write_state READY success_rate_guard; sleep 30; continue
+  LAST_SUCCESS_AGE=$((NOW-LAST)); [ "$LAST_SUCCESS_AGE" -ge 0 ] 2>/dev/null || LAST_SUCCESS_AGE=999999
+  adaptive_guard
+  if [ "$LAST_SUCCESS_AGE" -lt "$GUARD_SEC" ]; then
+    SLOT=0
+    HTTP=NA
+    write_state READY "adaptive_guard_${GUARD_REASON}_${GUARD_SEC}s"
+    sleep 10
+    continue
   fi
 
   command -v curl >/dev/null 2>&1 || { SLOT=0; HTTP=NA; write_state UNAVAILABLE curl_missing; sleep 120; continue; }
@@ -237,7 +310,7 @@ EOF
   echo "$(date +%s)" > "$LAST_SUCCESS"; chmod 600 "$LAST_SUCCESS"
 
   case "$VERDICT" in
-    OBSERVE) rm -f "$OUT"; write_state OBSERVE ai_requests_more_evidence; sleep 45; continue ;;
+    OBSERVE) rm -f "$OUT"; write_state OBSERVE ai_requests_more_evidence; sleep 15; continue ;;
     CANDIDATE) : ;;
     *) rm -f "$OUT"; write_state INVALID unparseable_verdict; sleep 60; continue ;;
   esac
@@ -273,5 +346,5 @@ EOF
   } > "$T"
   chmod 600 "$T"; mv -f "$T" "$OUT"
   write_state CANDIDATE proposal_created_no_apply_authority
-  sleep 45
+  sleep 15
 done
