@@ -1,5 +1,10 @@
 #!/system/bin/sh
 ROOT="$1"
+BIN_DIR="${0%/*}"
+if [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim learner
+fi
 HISTORY="$ROOT/history/telemetry.csv"
 SNAP="$ROOT/runtime/snapshot.env"
 OUT="$ROOT/history/learned_envelope.env"
