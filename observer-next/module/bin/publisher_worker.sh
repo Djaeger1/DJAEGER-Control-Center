@@ -11,10 +11,23 @@ if [ -r "$BIN_DIR/singleton.sh" ]; then
   djaeger_singleton_claim publisher_worker
 fi
 
+# Keep the singleton claim authoritative for the full worker lifetime.
+# If another generation legitimately replaces the lock owner, any stale
+# publisher process self-terminates on its next loop instead of continuing
+# as an invisible duplicate without lock ownership.
+PUBLISHER_LOCK="$ROOT/runtime/locks/publisher_worker.lock/pid"
+PUBLISHER_SELF="$(cat "$PUBLISHER_LOCK" 2>/dev/null)"
+[ -n "$PUBLISHER_SELF" ] || exit 0
+
+publisher_still_owns_lock(){
+  [ "$(cat "$PUBLISHER_LOCK" 2>/dev/null)" = "$PUBLISHER_SELF" ]
+}
+
 [ -r "$BIN_DIR/publisher.sh" ] || exit 1
 . "$BIN_DIR/publisher.sh"
 
 while true; do
+  publisher_still_owns_lock || exit 0
   if [ -r "$ROOT/runtime/snapshot.env" ]; then
     publish_cc "$ROOT"
   fi
@@ -25,4 +38,5 @@ while true; do
   else
     sleep 8
   fi
+  publisher_still_owns_lock || exit 0
 done
