@@ -174,6 +174,19 @@ PACKAGE=sts.al
 WORKLOAD_CLASS=GAME
 SOURCE=TEST
 EOF
+cat > "$TEST_ROOT/runtime/network.env" <<EOF
+SESSION_ACTIVE=1
+PACKAGE=sts.al
+PROBE_TARGET=1.1.1.1
+PING_CURRENT_MS=22.0
+PING_AVG_MS=24.0
+PING_P95_MS=30.0
+JITTER_MS=3.0
+PACKET_LOSS_PCT=0
+QUALITY=GOOD
+SOURCE=READ_ONLY_ICMP_PROBE
+UPDATED_AT=$NOW
+EOF
 cat > "$TEST_ROOT/runtime/consensus.env" <<EOF
 CONSENSUS_STATE=PENDING_SHADOW
 UPDATED_AT=$NOW
@@ -279,9 +292,16 @@ grep -Fqx 'HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED' "$SNAPSHOT"
 grep -Fqx 'OPTIMIZATION_OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND' "$SNAPSHOT"
 grep -Fqx 'AGENT_EXECUTION_OWNER=AI_AGENT' "$SNAPSHOT"
 grep -Fqx 'AGENT_EXECUTION_BACKEND=INTERNAL_EXECUTOR_WORKER' "$SNAPSHOT"
-grep -Fqx 'HERMES_NEURON_USED_EST=4321' "$SNAPSHOT"
-grep -Fqx 'HERMES_NEURON_LIMIT=10000' "$SNAPSHOT"
-grep -Fqx 'HERMES_NEURON_ACCOUNTING=DEVICE_ESTIMATE_SEPARATE_FROM_PROVIDER_QUOTA' "$SNAPSHOT"
+grep -Fqx 'HERMES_NEURON_USED_EST=UNAVAILABLE' "$SNAPSHOT"
+grep -Fqx 'HERMES_NEURON_LIMIT=UNAVAILABLE' "$SNAPSHOT"
+grep -Fqx 'HERMES_NEURON_TIER=PROVIDER_UNREPORTED' "$SNAPSHOT"
+grep -Fqx 'HERMES_NEURON_ACCOUNTING=PROVIDER_UNREPORTED_NO_FAKE_QUOTA' "$SNAPSHOT"
+grep -Fqx 'PING_CURRENT_MS=22.0' "$SNAPSHOT"
+grep -Fqx 'PING_AVG_MS=24.0' "$SNAPSHOT"
+grep -Fqx 'PING_P95_MS=30.0' "$SNAPSHOT"
+grep -Fqx 'JITTER_MS=3.0' "$SNAPSHOT"
+grep -Fqx 'PACKET_LOSS_PCT=0' "$SNAPSHOT"
+grep -Fqx 'QUALITY=GOOD' "$SNAPSHOT"
 grep -Fq 'CONTEXT_PACKAGE=sts.al' "$SNAPSHOT"
 ! grep -Fq 'CPU/GPU, thermal, power, and frame behavior is being learned from the device' "$SNAPSHOT"
 grep -Fq '[ "$WCLASS" != GAME ]' "$MODULE/bin/frame_observer.sh"
@@ -302,6 +322,9 @@ grep -Fq 'STARTUP_SCHEMA=DJAEGER_STARTUP_V2' "$MODULE/service.sh"
 grep -Fq 'SINGLETON_GUARD=ENABLED' "$MODULE/service.sh"
 grep -Fq 'kill_worker_hard' "$MODULE/service.sh"
 grep -Fq 'runtime/locks' "$MODULE/service.sh"
+grep -Fq 'djaeger_singleton_claim network_observer' "$MODULE/bin/network_observer.sh"
+grep -Fq 'READ_ONLY_ICMP_PROBE' "$MODULE/bin/network_observer.sh"
+grep -Fq 'network_observer.sh' "$MODULE/service.sh"
 grep -Fq 'djaeger_singleton_claim gemini_reasoner' "$MODULE/bin/gemini_reasoner.sh"
 grep -Fq 'djaeger_singleton_claim hermes_adapter' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'djaeger_singleton_claim consensus' "$MODULE/bin/consensus.sh"
