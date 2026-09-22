@@ -20,6 +20,7 @@ MONITOR="$ROOT/runtime/execution_monitor.env"
 OUTCOMES="$ROOT/history/outcomes.csv"
 OUTCOME_MARK="$ROOT/runtime/execution_outcome.mark"
 RESTORE_DIAG="$ROOT/runtime/execution_restore.env"
+SUPPRESS="$ROOT/runtime/execution_suppress.env"
 LEARN="$ROOT/history/learned_envelope.env"
 MODEFILE="$ROOT/config/execution_mode"
 
@@ -59,6 +60,31 @@ valid_actuators(){
   esac
 }
 clean_csv(){ printf '%s' "$1" | tr '\r\n,' '   ' | tr -cd 'A-Za-z0-9._:+/%= @-'; }
+
+suppress_digest(){
+  _sd="$1"; _sp="$2"; _sr="$3"; _secs="${4:-120}"
+  num "$_secs" || _secs=120
+  _stmp="$SUPPRESS.tmp.$PPID"
+  {
+    echo "DIGEST=$_sd"
+    echo "PACKAGE=$_sp"
+    echo "REASON=$_sr"
+    echo "UNTIL=$(( $(date +%s) + _secs ))"
+  } > "$_stmp"
+  chmod 600 "$_stmp"; mv -f "$_stmp" "$SUPPRESS"
+}
+
+digest_suppressed(){
+  _sd="$1"; _sp="$2"
+  [ -r "$SUPPRESS" ] || return 1
+  _du="$(kv UNTIL "$SUPPRESS")"; num "$_du" || { rm -f "$SUPPRESS"; return 1; }
+  if [ "$_du" -lt "$(date +%s)" ] 2>/dev/null; then
+    rm -f "$SUPPRESS"
+    return 1
+  fi
+  [ "$(kv DIGEST "$SUPPRESS")" = "$_sd" ] &&
+  [ "$(kv PACKAGE "$SUPPRESS")" = "$_sp" ]
+}
 
 record_outcome(){
   _result="$1"; _reason="$2"; _pkg="$3"; _digest="$4"
@@ -273,6 +299,10 @@ gate(){
 
   ACTUATORS="$GATE_ACTUATORS"
   GATE_DIGEST="$_d"
+  if digest_suppressed "$GATE_DIGEST" "$GATE_PACKAGE"; then
+    GATE_REASON=RECENT_EXTERNAL_OVERRIDE
+    return 1
+  fi
   GATE_REASON=PASS
   return 0
 }
@@ -343,23 +373,110 @@ active_context_safe(){
   return 0
 }
 
-active_readback_ok(){
+active_readback_state(){
+  LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
+  valid_cpu "$LP" && valid_cpu "$BP" && valid_gpu "$GP" || return 2
+  valid_actuators "$APPLIED_ACTUATORS" || return 2
+
   _almin="${APPLIED_LITTLE%%-*}"; _almax="${APPLIED_LITTLE#*-}"
   _abmin="${APPLIED_BIG%%-*}"; _abmax="${APPLIED_BIG#*-}"
   _agmin="${APPLIED_GPU%%-*}"; _agmax="${APPLIED_GPU#*-}"
 
   if act_has "$APPLIED_ACTUATORS" LITTLE; then
-    [ "$(readv "$LP/scaling_min_freq")" = "$_almin" ] &&
-    [ "$(readv "$LP/scaling_max_freq")" = "$_almax" ] || return 1
+    _cmin="$(readv "$LP/scaling_min_freq")"; _cmax="$(readv "$LP/scaling_max_freq")"
+    num "$_cmin" && num "$_cmax" || return 2
+    [ "$_cmin" = "$_almin" ] && [ "$_cmax" = "$_almax" ] || return 1
   fi
   if act_has "$APPLIED_ACTUATORS" BIG; then
-    [ "$(readv "$BP/scaling_min_freq")" = "$_abmin" ] &&
-    [ "$(readv "$BP/scaling_max_freq")" = "$_abmax" ] || return 1
+    _cmin="$(readv "$BP/scaling_min_freq")"; _cmax="$(readv "$BP/scaling_max_freq")"
+    num "$_cmin" && num "$_cmax" || return 2
+    [ "$_cmin" = "$_abmin" ] && [ "$_cmax" = "$_abmax" ] || return 1
   fi
   if act_has "$APPLIED_ACTUATORS" GPU; then
-    [ "$(readv "$GP/min_freq")" = "$_agmin" ] &&
-    [ "$(readv "$GP/max_freq")" = "$_agmax" ] || return 1
+    _cmin="$(readv "$GP/min_freq")"; _cmax="$(readv "$GP/max_freq")"
+    num "$_cmin" && num "$_cmax" || return 2
+    [ "$_cmin" = "$_agmin" ] && [ "$_cmax" = "$_agmax" ] || return 1
   fi
+  return 0
+}
+
+active_readback_ok(){
+  active_readback_state
+  [ "$?" -eq 0 ]
+}
+
+pair_post_restore_state(){
+  _path="$1"; _minfile="$2"; _maxfile="$3"; _applied="$4"; _bmin="$5"; _bmax="$6"
+  _cmin="$(readv "$_path/$_minfile")"; _cmax="$(readv "$_path/$_maxfile")"
+  num "$_cmin" && num "$_cmax" || { echo UNREADABLE; return 0; }
+  [ "$_cmin" -le "$_cmax" ] 2>/dev/null || { echo INVALID; return 0; }
+  _amin="${_applied%%-*}"; _amax="${_applied#*-}"
+  if [ "$_cmin" = "$_bmin" ] && [ "$_cmax" = "$_bmax" ]; then
+    echo BACKUP
+  elif [ "$_cmin" = "$_amin" ] && [ "$_cmax" = "$_amax" ]; then
+    echo APPLIED
+  else
+    echo EXTERNAL
+  fi
+}
+
+resolve_restore_failure(){
+  _reason="$1"; _pkg="$2"; _digest="$3"; _little="$4"; _big="$5"; _gpu="$6"
+  [ -r "$BACKUP" ] || return 1
+
+  LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
+  _ltmin="$(kv LITTLE_MIN "$BACKUP")"; _ltmax="$(kv LITTLE_MAX "$BACKUP")"
+  _btmin="$(kv BIG_MIN "$BACKUP")"; _btmax="$(kv BIG_MAX "$BACKUP")"
+  _gtmin="$(kv GPU_MIN "$BACKUP")"; _gtmax="$(kv GPU_MAX "$BACKUP")"
+  _act="$(kv ACTUATORS "$BACKUP")"; [ -n "$_act" ] || _act="$APPLIED_ACTUATORS"
+  valid_actuators "$_act" || return 1
+
+  _ls=SKIP; _bs=SKIP; _gs=SKIP; _external=0; _blocked=0
+  if act_has "$_act" LITTLE; then
+    _ls="$(pair_post_restore_state "$LP" scaling_min_freq scaling_max_freq "$_little" "$_ltmin" "$_ltmax")"
+    case "$_ls" in EXTERNAL) _external=1;; APPLIED|UNREADABLE|INVALID) _blocked=1;; esac
+  fi
+  if act_has "$_act" BIG; then
+    _bs="$(pair_post_restore_state "$BP" scaling_min_freq scaling_max_freq "$_big" "$_btmin" "$_btmax")"
+    case "$_bs" in EXTERNAL) _external=1;; APPLIED|UNREADABLE|INVALID) _blocked=1;; esac
+  fi
+  if act_has "$_act" GPU; then
+    _gs="$(pair_post_restore_state "$GP" min_freq max_freq "$_gpu" "$_gtmin" "$_gtmax")"
+    case "$_gs" in EXTERNAL) _external=1;; APPLIED|UNREADABLE|INVALID) _blocked=1;; esac
+  fi
+
+  _rtmp="$RESTORE_DIAG.tmp.$PPID"
+  {
+    echo "UPDATED_AT=$(date +%s)"
+    echo "ACTUATORS=$_act"
+    echo "FAILURE_REASON=$_reason"
+    echo "LITTLE_POST_STATE=$_ls"
+    echo "LITTLE_READBACK=$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
+    echo "BIG_POST_STATE=$_bs"
+    echo "BIG_READBACK=$(readv "$BP/scaling_min_freq")-$(readv "$BP/scaling_max_freq")"
+    echo "GPU_POST_STATE=$_gs"
+    echo "GPU_READBACK=$(readv "$GP/min_freq")-$(readv "$GP/max_freq")"
+  } > "$_rtmp"
+  chmod 600 "$_rtmp"; mv -f "$_rtmp" "$RESTORE_DIAG"
+
+  [ "$_blocked" -eq 0 ] || return 1
+
+  if [ "$_external" -eq 1 ]; then
+    READBACK=EXTERNAL_OVERRIDE
+    ROLLBACK_STATE=RELINQUISHED
+    record_outcome RELEASED "${_reason}_EXTERNAL_OVERRIDE" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+    suppress_digest "$_digest" "$_pkg" "${_reason}_EXTERNAL_OVERRIDE" 180
+  else
+    READBACK=RESTORED
+    ROLLBACK_STATE=RESTORED
+    record_outcome ROLLED_BACK "${_reason}_READBACK_RECOVERED" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+  fi
+
+  rm -f "$BACKUP" "$MONITOR"
+  ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_ACTUATORS=NONE
+  APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; APPLIED_AT=0
+  MONITOR_BAD_COUNT=0; MONITOR_SAMPLES=0
+  publish IDLE "${_reason}_RESOLVED"
   return 0
 }
 post_apply_monitor(){
@@ -409,9 +526,19 @@ rollback_active(){
   if restore_all; then
     READBACK=RESTORED
     record_outcome ROLLED_BACK "$_reason" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+    [ "$_reason" = THERMAL_GUARD ] && suppress_digest "$_digest" "$_pkg" THERMAL_GUARD 180
     publish ROLLED_BACK "$_reason"
     return 0
   fi
+
+  # A restore can race native thermal/kernel ownership. Re-read every owned
+  # axis before declaring a hard failure. If no DJAEGER-applied value remains
+  # and every readback is valid, the rollback was either completed or ownership
+  # was externally superseded; do not latch and do not hammer sysfs again.
+  if resolve_restore_failure "$_reason" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"; then
+    return 0
+  fi
+
   READBACK=RESTORE_FAILED
   record_outcome ROLLBACK_FAILED "$_reason" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
   publish ROLLBACK_FAILED "$_reason"
@@ -446,6 +573,7 @@ release_external_override(){
   READBACK=EXTERNAL_OVERRIDE
   ROLLBACK_STATE=RELINQUISHED
   record_outcome RELEASED SYSFS_EXTERNAL_OVERRIDE "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+  suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE 120
 
   rm -f "$BACKUP" "$MONITOR"
   ACTIVE_DIGEST=NONE
@@ -482,14 +610,21 @@ reconcile(){
   # live trial. Only device-truth safety, SYSFS drift or measured regression can
   # roll it back before a KEEP decision.
   if [ "$ACTIVE_DIGEST" != NONE ] && [ -r "$BACKUP" ]; then
-    if ! active_context_safe; then
-      rollback_active "$ACTIVE_GUARD_REASON"
+    active_readback_state
+    _rb_state=$?
+    if [ "$_rb_state" -eq 1 ]; then
+      READBACK=DRIFT
+      release_external_override
+      return 1
+    elif [ "$_rb_state" -eq 2 ]; then
+      READBACK=UNAVAILABLE
+      ROLLBACK_STATE=ARMED
+      publish APPLIED READBACK_UNAVAILABLE
       return 1
     fi
 
-    if ! active_readback_ok; then
-      READBACK=DRIFT
-      release_external_override
+    if ! active_context_safe; then
+      rollback_active "$ACTIVE_GUARD_REASON"
       return 1
     fi
 
@@ -621,9 +756,26 @@ case "$MODE" in
     READBACK=NA; ROLLBACK_STATE=NO_BACKUP
     publish IDLE EXPLICIT_RELINQUISH_NO_BACKUP
     ;;
+  resolve-latched)
+    # No-write forensic resolver for an existing RESTORE_FAILURE_LATCHED state.
+    # It clears the latch only when every owned axis is readable and no axis
+    # still equals DJAEGER's applied value.
+    load_active
+    if [ -r "$BACKUP" ]; then
+      if resolve_restore_failure LATCHED_RECHECK "$APPLIED_PACKAGE" "$ACTIVE_DIGEST" "$APPLIED_LITTLE" "$APPLIED_BIG" "$APPLIED_GPU"; then
+        exit 0
+      fi
+      READBACK=RESTORE_FAILED
+      ROLLBACK_STATE=RESTORE_FAILED
+      publish ROLLBACK_FAILED RESTORE_FAILURE_LATCHED
+      exit 1
+    fi
+    READBACK=NA; ROLLBACK_STATE=NO_BACKUP
+    publish IDLE EXPLICIT_RESOLVE_NO_BACKUP
+    ;;
   daemon)
     trap 'load_active; if [ "$PREV_EXECUTOR_STATE" != ROLLBACK_FAILED ] && { [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; }; then LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"; if active_readback_ok; then rollback_active SERVICE_STOP >/dev/null 2>&1 || true; else release_external_override >/dev/null 2>&1 || true; fi; fi; exit 0' INT TERM
     while :; do reconcile >/dev/null 2>&1 || true; sleep 2; done
     ;;
-  *) echo "usage: executor.sh ROOT {once|recover|relinquish|daemon}"; exit 2 ;;
+  *) echo "usage: executor.sh ROOT {once|recover|relinquish|resolve-latched|daemon}"; exit 2 ;;
 esac
