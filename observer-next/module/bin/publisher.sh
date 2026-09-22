@@ -80,11 +80,14 @@ publish_cc() {
   _top_pkg="$(pub_kv TOP_PACKAGE "$_snap")"; [ -n "$_top_pkg" ] || _top_pkg="$_pkg"
   _visible_game="$(pub_kv VISIBLE_GAME "$_snap")"; [ -n "$_visible_game" ] || _visible_game=NONE
   _pkg_source="$(pub_kv PACKAGE_SOURCE "$_snap")"; [ -n "$_pkg_source" ] || _pkg_source=LEGACY_FOREGROUND
-  _samples="$(pub_kv PACKAGE_SAMPLES "$_snap")"; case "$_samples" in ''|*[!0-9]*) _samples=0;; esac
+  _session_samples="$(pub_kv PACKAGE_SAMPLES "$_snap")"; case "$_session_samples" in ''|*[!0-9]*) _session_samples=0;; esac
+  _samples="$_session_samples"
   _learn_pkg="$(pub_kv PACKAGE "$_learn")"
   if [ -n "$_learn_pkg" ] && [ "$_learn_pkg" = "$_pkg" ]; then
     _learning="$(pub_kv STATE "$_learn")"
     _confidence="$(pub_kv CONFIDENCE "$_learn")"; case "$_confidence" in ''|*[!0-9]*) _confidence=0;; esac
+    _learned_samples="$(pub_kv SAMPLES "$_learn")"; case "$_learned_samples" in ''|*[!0-9]*) _learned_samples=0;; esac
+    [ "$_learned_samples" -gt "$_samples" ] 2>/dev/null && _samples="$_learned_samples"
   else
     _learning="$(pub_kv LEARNING_STATE "$_snap")"
     _confidence=0
@@ -365,10 +368,14 @@ publish_cc() {
         _thought_status=DEPUTY_LOCAL_SYNTH
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=KNOWLEDGE_DRIVEN intent=$_plan_intent gemini=$_gem frame=$_frame_evidence"
         _thought="Gemini tidak tersedia. ONE HERMES Local merumuskan kandidat baru dari knowledge perangkat, frame, daya, thermal, dan OPP kernel tanpa memakai Hermes Cloud. Kandidat tetap wajib lolos shadow, safety, exact readback, dan outcome."
-      else
+      elif [ "$_hlocal" = TAKEOVER_LOCAL ]; then
         _thought_status=DEPUTY_LOCAL_TAKEOVER
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=PROVEN_REUSE intent=$_plan_intent gemini=$_gem"
         _thought="Gemini tidak tersedia. ONE HERMES Local mengambil alih dengan strategi yang sebelumnya sudah terbukti pada perangkat ini, tanpa memakai neuron Cloud."
+      else
+        _thought_status=DEPUTY_LOCAL_OBSERVE
+        _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=NONE reason=$_hreason gemini=$_gem frame=$_frame_evidence"
+        _thought="Gemini tidak tersedia dan ONE HERMES Local sedang memimpin continuity, tetapi belum menemukan kandidat aman pada evidence saat ini. AI Agent tetap observe tanpa mengubah hardware."
       fi
       ;;
     HERMES_CLOUD)
@@ -481,7 +488,7 @@ publish_cc() {
     echo "UPDATED_AT=$_publish_at"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
     echo "CONTROLLER_PID=$_observer_pid"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
     echo "TOP_PACKAGE=$_top_pkg"; echo "PACKAGE_SOURCE=$_pkg_source"; echo "VISIBLE_GAME=$_visible_game"; echo "SNAPSHOT_GENERATION=$_generation"
-    echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
+    echo "SESSION_PACKAGE_SAMPLES=$_session_samples"; echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
     echo "__TEL__"; echo "$_tel"
     echo "__BRAIN__"
     _brain="$_active_brain_source"
