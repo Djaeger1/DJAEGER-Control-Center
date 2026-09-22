@@ -102,6 +102,7 @@ publish_cc() {
   [ -r "$_frame_src" ] || _frame_src="$_frame"
 
   _frame_evidence="$(pub_kv FRAME_EVIDENCE "$_frame_src")"; [ -n "$_frame_evidence" ] || _frame_evidence=UNAVAILABLE
+  _frame_at="$(pub_kv FRAME_AT "$_frame_src")"; case "$_frame_at" in ''|*[!0-9]*) _frame_at=0;; esac
   _workload=UNKNOWN
   _workload_source=UNCLASSIFIED
   case "$_pkg" in
@@ -420,7 +421,9 @@ publish_cc() {
   _exec_mode="$(cat "$_root/config/execution_mode" 2>/dev/null | head -n1)"; [ -n "$_exec_mode" ] || _exec_mode=AUTO
   _runtime_profile=LEARNED_PENDING; [ "$_exec_state" = APPLIED ] && _runtime_profile=ADAPTIVE_LEARNED
   _tel="$_epoch,$_cpu_t,$_gpu_t,$_skin_t,$_bat_t,$_little,$_big,$_gpu,$_runtime_profile,$_frame_ms,$_fps,$_jank,$_p95,$_p99,0,$_battery_status,$_current,$_voltage,$_power,$_power_valid,$_power_reason,$_pkg,$_window"
-  _frame_line="$_epoch,$_runtime_profile,$_frame_ms,$_fps,$_jank,$_p95,$_p99"
+  _frame_epoch="$_epoch"
+  [ "$_frame_at" -gt 0 ] 2>/dev/null && _frame_epoch="$_frame_at"
+  _frame_line="$_frame_epoch,$_runtime_profile,$_frame_ms,$_fps,$_jank,$_p95,$_p99"
   _plan_line=""
   if [ -r "$_candidate" ]; then
     _pc="$(pub_kv CONFIDENCE "$_candidate")"; [ -n "$_pc" ] || _pc=0
@@ -441,7 +444,10 @@ publish_cc() {
     echo "__INSTALLED__"; echo 1
     echo "__VERSION__"; echo "1.1.6-singletonfix"
     echo "__RUNTIME__"
-    echo "UPDATED_AT=$_epoch"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
+    # Runtime freshness tracks publication time; telemetry sample time stays in __TEL__.
+    # Using observer cycle-start EPOCH here made a newly published snapshot appear
+    # artificially old and could cross the APK's 15s runtime TTL.
+    echo "UPDATED_AT=$_now"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
     echo "CONTROLLER_PID=${OBSERVER_PID:-UNKNOWN}"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
     echo "TOP_PACKAGE=$_top_pkg"; echo "PACKAGE_SOURCE=$_pkg_source"; echo "VISIBLE_GAME=$_visible_game"; echo "SNAPSHOT_GENERATION=$_generation"
     echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
