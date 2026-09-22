@@ -484,6 +484,12 @@ MONITOR_SAMPLES=0
 UPDATED_AT=$NOW
 EOF
 DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" resolve-latched
+echo "=== RESOLVE-LATCHED STATE ==="
+cat "$TEST_ROOT/runtime/execution.env" || true
+echo "=== RESOLVE-LATCHED RESTORE ==="
+cat "$TEST_ROOT/runtime/execution_restore.env" || true
+echo "=== RESOLVE-LATCHED OUTCOMES ==="
+tail -n 5 "$TEST_ROOT/history/outcomes.csv" || true
 grep -Fqx '700000000' "$GP/max_freq"
 test ! -e "$TEST_ROOT/runtime/execution_backup.env"
 grep -Fqx 'EXECUTOR_STATE=IDLE' "$TEST_ROOT/runtime/execution.env"
