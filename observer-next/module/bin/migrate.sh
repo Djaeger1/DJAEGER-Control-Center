@@ -97,7 +97,6 @@ if [ -r "$LEGACY/gemini_keys.vault" ]; then
 fi
 
 LEGACY_ACTIVE_KEY="$(extract_exact GEMINI_API_KEY "$LEGACY/gemini.conf")"
-append_key "$LEGACY_ACTIVE_KEY"
 [ -r "$LEGACY/gemini.conf" ] && LEGACY_PRESENT=YES
 
 # Scan only DJAEGER roots and only import allowlisted key names.
@@ -159,6 +158,8 @@ while IFS= read -r _f; do
   _base="$(extract_exact ENDPOINT "$_f")"
   case "$_base" in https://*) [ -n "$H_BASE" ] || H_BASE="$_base";; esac
 done < "$TMP_SOURCES"
+# Preserve legacy active key only after raw vault order has been recovered.
+append_key "$LEGACY_ACTIVE_KEY"
 rm -f "$TMP_SOURCES"
 
 # Explicit Hermes backup locations that existed in the earlier deployment flow.
