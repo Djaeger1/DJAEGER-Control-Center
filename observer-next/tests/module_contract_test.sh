@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'rc=$?; echo "CONTRACT_TEST_FAIL_LINE=$LINENO RC=$rc" >&2' ERR
 PROJECT_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MODULE="$PROJECT_ROOT/observer-next/module"
 TEST_ROOT=$(mktemp -d)
