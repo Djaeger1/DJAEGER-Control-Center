@@ -8,11 +8,11 @@
 # - Provider quota errors never force USED_EST to 10000.
 
 ROOT="$1"
-STATE="$ROOT/config/hermes_neuron_live.env"
-LIMIT=10000
+NEURON_STATE="$ROOT/config/hermes_neuron_live.env"
+NEURON_LIMIT=10000
 
-kv(){ sed -n "s/^$1=//p" "$STATE" 2>/dev/null | head -n1; }
-num(){ case "$1" in ''|*[!0-9]*) echo 0;; *) echo "$1";; esac; }
+neuron_kv(){ sed -n "s/^$1=//p" "$NEURON_STATE" 2>/dev/null | head -n1; }
+neuron_num(){ case "$1" in ''|*[!0-9]*) echo 0;; *) echo "$1";; esac; }
 utc_day(){ date -u +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d; }
 
 write_state(){
@@ -24,7 +24,7 @@ write_state(){
     echo "RESET_AT=00:00_UTC"
     echo "RESET_AT_WIB=07:00"
     echo "USED_EST=$_used"
-    echo "LIMIT=$LIMIT"
+    echo "LIMIT=$NEURON_LIMIT"
     echo "FAST_CALLS=$_fast"
     echo "SMART_CALLS=$_smart"
     echo "DEEP_CALLS=$_deep"
@@ -36,15 +36,15 @@ write_state(){
     echo "UPDATED_AT=$(date +%s)"
   } > "$_tmp"
   chmod 600 "$_tmp" 2>/dev/null
-  mv -f "$_tmp" "$STATE"
+  mv -f "$_tmp" "$NEURON_STATE"
 }
 
 neuron_reset_if_needed(){
   _today="$(utc_day)"
-  _day="$(kv UTC_DAY)"
+  _day="$(neuron_kv UTC_DAY)"
   if [ "$_day" != "$_today" ]; then
     write_state "$_today" 0 0 0 0 0 0 DAILY_ROLLOVER
-  elif [ ! -s "$STATE" ]; then
+  elif [ ! -s "$NEURON_STATE" ]; then
     write_state "$_today" 0 0 0 0 0 0 INITIALIZED
   fi
 }
@@ -53,15 +53,15 @@ neuron_record_success(){
   _mode="$1"; _req="$2"; _resp="$3"
   neuron_reset_if_needed
 
-  _used="$(num "$(kv USED_EST)")"
-  _fast="$(num "$(kv FAST_CALLS)")"
-  _smart="$(num "$(kv SMART_CALLS)")"
-  _deep="$(num "$(kv DEEP_CALLS)")"
-  _calls="$(num "$(kv SUCCESS_CALLS)")"
+  _used="$(neuron_num "$(neuron_kv USED_EST)")"
+  _fast="$(neuron_num "$(neuron_kv FAST_CALLS)")"
+  _smart="$(neuron_num "$(neuron_kv SMART_CALLS)")"
+  _deep="$(neuron_num "$(neuron_kv DEEP_CALLS)")"
+  _calls="$(neuron_num "$(neuron_kv SUCCESS_CALLS)")"
 
   _in_bytes=$(wc -c < "$_req" 2>/dev/null | tr -dc '0-9')
   _out_bytes=$(wc -c < "$_resp" 2>/dev/null | tr -dc '0-9')
-  _in_bytes="$(num "$_in_bytes")"; _out_bytes="$(num "$_out_bytes")"
+  _in_bytes="$(neuron_num "$_in_bytes")"; _out_bytes="$(neuron_num "$_out_bytes")"
   _tin=$(((_in_bytes+3)/4))
   _tout=$(((_out_bytes+3)/4))
 
@@ -76,7 +76,7 @@ neuron_record_success(){
   [ "$_delta" -lt 1 ] && _delta=1
 
   _used=$((_used+_delta))
-  [ "$_used" -gt "$LIMIT" ] && _used="$LIMIT"
+  [ "$_used" -gt "$NEURON_LIMIT" ] && _used="$NEURON_LIMIT"
   _calls=$((_calls+1))
 
   write_state "$(utc_day)" "$_used" "$_fast" "$_smart" "$_deep" "$_calls" "$_delta" "TOKEN_ESTIMATE_${_mode}"
