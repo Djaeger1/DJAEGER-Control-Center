@@ -436,6 +436,49 @@ grep -Fqx '1800000' "$LP/scaling_max_freq"
 test ! -e "$TEST_ROOT/runtime/execution_backup.env"
 grep -Fq ',RELEASED,SYSFS_EXTERNAL_OVERRIDE,' "$TEST_ROOT/history/outcomes.csv"
 
+# Simulate a legacy latched SYSFS-drift restore failure from a previous runtime.
+# Explicit relinquish must clear the stale backup WITHOUT writing old values.
+printf '700000000\n' > "$GP/max_freq"
+cat > "$TEST_ROOT/runtime/execution_backup.env" <<EOF
+AT=$NOW
+DIGEST=legacydrift123
+PACKAGE=sts.al
+INTENT=POWER_EFFICIENCY
+ACTUATORS=GPU
+LITTLE_PATH=/sys/devices/system/cpu/cpufreq/policy0
+LITTLE_MIN=600000
+LITTLE_MAX=1800000
+BIG_PATH=/sys/devices/system/cpu/cpufreq/policy6
+BIG_MIN=900000
+BIG_MAX=2400000
+GPU_PATH=/sys/class/kgsl/kgsl-3d0/devfreq
+GPU_MIN=300000000
+GPU_MAX=900000000
+EOF
+cat > "$TEST_ROOT/runtime/execution.env" <<EOF
+EXECUTOR_STATE=ROLLBACK_FAILED
+EXECUTOR_REASON=RESTORE_FAILURE_LATCHED
+ACTIVE_DIGEST=legacydrift123
+APPLIED_PACKAGE=sts.al
+APPLIED_INTENT=POWER_EFFICIENCY
+APPLIED_ACTUATORS=GPU
+APPLIED_LITTLE=600000-1800000
+APPLIED_BIG=900000-2400000
+APPLIED_GPU=300000000-600000000
+READBACK=RESTORE_FAILED
+ROLLBACK_STATE=RESTORE_FAILED
+APPLIED_AT=$NOW
+MONITOR_BAD_COUNT=0
+MONITOR_SAMPLES=0
+UPDATED_AT=$NOW
+EOF
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" relinquish
+grep -Fqx '700000000' "$GP/max_freq"
+test ! -e "$TEST_ROOT/runtime/execution_backup.env"
+grep -Fqx 'EXECUTOR_STATE=IDLE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=SYSFS_EXTERNAL_OVERRIDE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'ROLLBACK_STATE=RELINQUISHED' "$TEST_ROOT/runtime/execution.env"
+
 # ---- APK/module atomic snapshot contract ----
 SYNC_OUT=$(run_ctl sync-request 110 DJAEGER_AI_ADAPTIVE_V3 contract-test-1)
 grep -Fqx 'SYNC_STATUS=VERIFIED' <<<"$SYNC_OUT"
@@ -555,6 +598,8 @@ grep -Fq '_approved_digest="$(kv CANDIDATE_DIGEST "$APPROVAL")"' "$MODULE/bin/sh
 grep -Fq 'rm -f "$APPROVAL"' "$MODULE/bin/shadow.sh"
 grep -Fq 'RESTORE_FAILURE_LATCHED' "$MODULE/bin/executor.sh"
 grep -Fq 'release_external_override()' "$MODULE/bin/executor.sh"
+grep -Fq 'relinquish)' "$MODULE/bin/executor.sh"
+grep -Fq 'EXPLICIT_RELINQUISH_NO_BACKUP' "$MODULE/bin/executor.sh"
 grep -Fq 'SYSFS_EXTERNAL_OVERRIDE' "$MODULE/bin/executor.sh"
 grep -Fq 'ROLLBACK_STATE=RELINQUISHED' "$MODULE/bin/executor.sh"
 grep -Fq 'execution_restore.env' "$MODULE/bin/executor.sh"
