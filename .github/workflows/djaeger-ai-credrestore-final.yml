@@ -1,15 +1,15 @@
-name: DJAEGER AI BRAINCONTRACT Final Pair
+name: DJAEGER AI STARTUPFIX Final Pair
 
 on:
   push:
-    branches: [fix/brain-contract-primary-gemini-one-hermes]
+    branches: [fix/braincontract-startup-v1]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: djaeger-ai-braincontract-final-${{ github.ref }}
+  group: djaeger-ai-startupfix-final-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,12 +39,12 @@ jobs:
           ! grep -Fq 'syncModule=="205"&&syncCc=="106"' "$APP"
           ! grep -Fq 'DJAEGER AI Adaptive v1.1.0 RC1 • VERIFIED SYNC' "$APP"
           ! grep -Fq 'DJAEGER AI Adaptive v1.1.2 CREDRESTORE • VERIFIED SYNC' "$APP"
-          grep -Fq 'syncModule=="207"&&syncCc=="108"' "$APP"
-          grep -Fq 'VERIFIED • MODULE 207 / APP 108' "$APP"
-          grep -Fq 'DJAEGER AI Adaptive v1.1.4 BRAINCONTRACT • VERIFIED SYNC' "$APP"
-          grep -Fq '_expected_apk=108' "$PUB"
-          grep -Fq 'private val apkVersionCode=108' "$REPO"
-          grep -Fqx 'versionCode=207' "$PROP"
+          grep -Fq 'syncModule=="208"&&syncCc=="109"' "$APP"
+          grep -Fq 'VERIFIED • MODULE 208 / APP 109' "$APP"
+          grep -Fq 'DJAEGER AI Adaptive v1.1.5 STARTUPFIX • VERIFIED SYNC' "$APP"
+          grep -Fq '_expected_apk=109' "$PUB"
+          grep -Fq 'private val apkVersionCode=109' "$REPO"
+          grep -Fqx 'versionCode=208' "$PROP"
 
       - name: Source isolation and backend tests
         run: |
@@ -77,6 +77,9 @@ jobs:
           grep -Fq 'FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND' observer-next/module/bin/gemini_reasoner.sh
           grep -Fq 'frame_priority_then_minimum_power' observer-next/module/bin/shadow.sh
           grep -Fq 'AGENT_EXECUTION_BACKEND=INTERNAL_EXECUTOR_WORKER' observer-next/module/bin/publisher.sh
+          grep -Fq 'migration_ready' observer-next/module/service.sh
+          grep -Fq 'timeout 20 sh "$MODDIR/bin/migrate.sh"' observer-next/module/service.sh
+          grep -Fq 'STARTUP_SCHEMA=DJAEGER_STARTUP_V1' observer-next/module/service.sh
 
           for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
             [ "$f" = observer-next/module/bin/executor.sh ] && continue
@@ -102,7 +105,7 @@ jobs:
           set -euo pipefail
           mkdir -p out
           cd observer-next/module
-          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip .
+          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip .
           cd ../..
 
           UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
@@ -116,7 +119,7 @@ jobs:
           keytool -genkeypair -noprompt -storetype PKCS12             -keystore "$SIGN_DIR/djaeger-ai.p12"             -storepass "$PASS" -keypass "$PASS"             -alias djaegerai -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER AI, O=DJAEGER, C=ID'
 
           ALIGNED="$RUNNER_TEMP/djaeger-ai-final-aligned.apk"
-          APK="out/DJAEGER-AI-Adaptive-v1.1.4-braincontract-FINAL.apk"
+          APK="out/DJAEGER-AI-Adaptive-v1.1.5-startupfix-FINAL.apk"
           "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
           "$BUILD_TOOLS/apksigner" sign             --ks "$SIGN_DIR/djaeger-ai.p12" --ks-type PKCS12             --ks-key-alias djaegerai             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$ALIGNED"
 
@@ -124,10 +127,10 @@ jobs:
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
           "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
           unzip -t "$APK" > out/APK_ZIP_TEST.txt
-          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip > out/MODULE_ZIP_TEST.txt
-          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip > out/MODULE_CONTENTS.txt
+          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip > out/MODULE_ZIP_TEST.txt
+          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip > out/MODULE_CONTENTS.txt
 
-          grep -q "package: name='com.djaeger.observer' versionCode='108' versionName='1.1.4-braincontract'" out/AAPT_BADGING.txt
+          grep -q "package: name='com.djaeger.observer' versionCode='109' versionName='1.1.5-startupfix'" out/AAPT_BADGING.txt
           grep -qx 'false' out/APK_DEBUGGABLE.txt
           grep -Eq 'bin/executor\.sh' out/MODULE_CONTENTS.txt
           grep -Eq 'bin/railway_bridge\.sh' out/MODULE_CONTENTS.txt
@@ -135,27 +138,27 @@ jobs:
           grep -Eq 'uninstall\.sh' out/MODULE_CONTENTS.txt
           ! grep -Eq 'agent_bus\.sh' out/MODULE_CONTENTS.txt
 
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/publisher.sh | grep -Fq '_expected_apk=108'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/migrate.sh | grep -Fq 'MIGRATION_SCHEMA=9'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/migrate.sh | grep -Fq 'gemini_keys.vault'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/migrate.sh | grep -Fq 'HERMES_SHARED_TOKEN'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/migrate.sh | grep -Fq 'hermes/neuron_budget.env'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/publisher.sh | grep -Fq '_expected_apk=109'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/migrate.sh | grep -Fq 'MIGRATION_SCHEMA=9'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/migrate.sh | grep -Fq 'gemini_keys.vault'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/migrate.sh | grep -Fq 'HERMES_SHARED_TOKEN'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/migrate.sh | grep -Fq 'hermes/neuron_budget.env'
 
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/observer.sh | grep -Fq 'sdm-skin-therm-usr'
-          ! unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/observer.sh | grep -Fq 'SKIN=$(temp_c "$(thermal_by_type'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/frame_observer.sh | grep -Fq 'VALID_PRESENTATION_LAYER'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip bin/migrate.sh | grep -Fq 'LEGACY_BACKUPS_TERMUX_DOWNLOAD'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/observer.sh | grep -Fq 'sdm-skin-therm-usr'
+          ! unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/observer.sh | grep -Fq 'SKIN=$(temp_c "$(thermal_by_type'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/frame_observer.sh | grep -Fq 'VALID_PRESENTATION_LAYER'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip bin/migrate.sh | grep -Fq 'LEGACY_BACKUPS_TERMUX_DOWNLOAD'
 
           cd out
-          sha256sum DJAEGER-AI-Adaptive-v1.1.4-braincontract-FINAL.apk DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip > SHA256SUMS.txt
-          printf '%s\n'             'STATUS=FINAL_PAIR_BUILD_VERIFIED_OFFLINE'             'PAIR=MODULE_207_APK_108'             'VERSION=1.1.4-braincontract'             'CREDENTIAL_RECOVERY=LEGACY_BACKUP_SCAN_PLUS_RAW_4_GEMINI_PLUS_HERMES_PLUS_LOCAL_NEURON'             'GEMINI_SECRET_VALUES=NEVER_LOGGED'             'HERMES_SECRET_VALUES=NEVER_LOGGED'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=AI_AGENT_INTERNAL_EXECUTOR_ONLY'             'LIVE_DEVICE_VALIDATION=REQUIRED_AFTER_INSTALL'             > BUILD_REPORT.txt
+          sha256sum DJAEGER-AI-Adaptive-v1.1.5-startupfix-FINAL.apk DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip > SHA256SUMS.txt
+          printf '%s\n'             'STATUS=FINAL_PAIR_BUILD_VERIFIED_OFFLINE'             'PAIR=MODULE_208_APK_109'             'VERSION=1.1.5-startupfix'             'CREDENTIAL_RECOVERY=LEGACY_BACKUP_SCAN_PLUS_RAW_4_GEMINI_PLUS_HERMES_PLUS_LOCAL_NEURON'             'GEMINI_SECRET_VALUES=NEVER_LOGGED'             'HERMES_SECRET_VALUES=NEVER_LOGGED'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=AI_AGENT_INTERNAL_EXECUTOR_ONLY'             'LIVE_DEVICE_VALIDATION=REQUIRED_AFTER_INSTALL'             > BUILD_REPORT.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-AI-Adaptive-BRAINCONTRACT-v1.1.4-FINAL
+          name: DJAEGER-AI-Adaptive-STARTUPFIX-v1.1.5-FINAL
           path: |
-            out/DJAEGER-AI-Adaptive-v1.1.4-braincontract-FINAL.apk
-            out/DJAEGER-AI-Adaptive-Module-v1.1.4-braincontract-FINAL.zip
+            out/DJAEGER-AI-Adaptive-v1.1.5-startupfix-FINAL.apk
+            out/DJAEGER-AI-Adaptive-Module-v1.1.5-startupfix-FINAL.zip
             out/SHA256SUMS.txt
             out/BUILD_REPORT.txt
             out/APKSIGNER_VERIFY.txt
