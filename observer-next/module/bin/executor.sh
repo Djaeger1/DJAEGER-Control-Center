@@ -622,7 +622,7 @@ case "$MODE" in
     publish IDLE EXPLICIT_RELINQUISH_NO_BACKUP
     ;;
   daemon)
-    trap 'load_active; if [ "$PREV_EXECUTOR_STATE" != ROLLBACK_FAILED ] && { [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; }; then rollback_active SERVICE_STOP >/dev/null 2>&1 || true; fi; exit 0' INT TERM
+    trap 'load_active; if [ "$PREV_EXECUTOR_STATE" != ROLLBACK_FAILED ] && { [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; }; then LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"; if active_readback_ok; then rollback_active SERVICE_STOP >/dev/null 2>&1 || true; else release_external_override >/dev/null 2>&1 || true; fi; fi; exit 0' INT TERM
     while :; do reconcile >/dev/null 2>&1 || true; sleep 2; done
     ;;
   *) echo "usage: executor.sh ROOT {once|recover|relinquish|daemon}"; exit 2 ;;
