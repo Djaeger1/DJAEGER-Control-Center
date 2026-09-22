@@ -1,15 +1,15 @@
-name: DJAEGER AI CREDRESTORE Final Pair
+name: DJAEGER AI RUNTIMEFIX Final Pair
 
 on:
   push:
-    branches: [djaeger-ai-adaptive-credrestore-v1]
+    branches: [djaeger-ai-adaptive-runtimefix-v1]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: djaeger-ai-credrestore-final-${{ github.ref }}
+  group: djaeger-ai-runtimefix-final-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,23 +37,23 @@ jobs:
           from pathlib import Path
           p=Path("observer-next/android/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt")
           s=p.read_text()
-          s=s.replace('syncModule=="203"&&syncCc=="104"', 'syncModule=="205"&&syncCc=="106"')
-          s=s.replace('VERIFIED • MODULE 203 / APP 104', 'VERIFIED • MODULE 205 / APP 106')
-          s=s.replace('DJAEGER AI Adaptive v1.1.0 RC1 • VERIFIED SYNC', 'DJAEGER AI Adaptive v1.1.2 CREDRESTORE • VERIFIED SYNC')
+          s=s.replace('syncModule=="206"&&syncCc=="107"', 'syncModule=="206"&&syncCc=="107"')
+          s=s.replace('VERIFIED • MODULE 206 / APP 107', 'VERIFIED • MODULE 206 / APP 107')
+          s=s.replace('DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC', 'DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC')
           p.write_text(s)
 
           p=Path("observer-next/module/bin/publisher.sh")
-          s=p.read_text().replace('_expected_apk=105', '_expected_apk=106')
+          s=p.read_text().replace('_expected_apk=107', '_expected_apk=107')
           p.write_text(s)
           PY
 
-          ! grep -Fq 'syncModule=="203"&&syncCc=="104"' "$APP"
-          ! grep -Fq 'VERIFIED • MODULE 203 / APP 104' "$APP"
-          ! grep -Fq 'DJAEGER AI Adaptive v1.1.0 RC1 • VERIFIED SYNC' "$APP"
-          grep -Fq 'syncModule=="205"&&syncCc=="106"' "$APP"
-          grep -Fq 'VERIFIED • MODULE 205 / APP 106' "$APP"
-          grep -Fq 'DJAEGER AI Adaptive v1.1.2 CREDRESTORE • VERIFIED SYNC' "$APP"
-          grep -Fq '_expected_apk=106' "$PUB"
+          ! grep -Fq 'syncModule=="206"&&syncCc=="107"' "$APP"
+          ! grep -Fq 'VERIFIED • MODULE 206 / APP 107' "$APP"
+          ! grep -Fq 'DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC' "$APP"
+          grep -Fq 'syncModule=="206"&&syncCc=="107"' "$APP"
+          grep -Fq 'VERIFIED • MODULE 206 / APP 107' "$APP"
+          grep -Fq 'DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC' "$APP"
+          grep -Fq '_expected_apk=107' "$PUB"
 
       - name: Source isolation and backend tests
         run: |
@@ -105,7 +105,7 @@ jobs:
           set -euo pipefail
           mkdir -p out
           cd observer-next/module
-          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip .
+          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip .
           cd ../..
 
           UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
@@ -119,7 +119,7 @@ jobs:
           keytool -genkeypair -noprompt -storetype PKCS12             -keystore "$SIGN_DIR/djaeger-ai.p12"             -storepass "$PASS" -keypass "$PASS"             -alias djaegerai -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER AI, O=DJAEGER, C=ID'
 
           ALIGNED="$RUNNER_TEMP/djaeger-ai-final-aligned.apk"
-          APK="out/DJAEGER-AI-Adaptive-v1.1.2-credrestore-FINAL.apk"
+          APK="out/DJAEGER-AI-Adaptive-v1.1.3-runtimefix-FINAL.apk"
           "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
           "$BUILD_TOOLS/apksigner" sign             --ks "$SIGN_DIR/djaeger-ai.p12" --ks-type PKCS12             --ks-key-alias djaegerai             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$ALIGNED"
 
@@ -127,10 +127,10 @@ jobs:
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
           "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
           unzip -t "$APK" > out/APK_ZIP_TEST.txt
-          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip > out/MODULE_ZIP_TEST.txt
-          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip > out/MODULE_CONTENTS.txt
+          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip > out/MODULE_ZIP_TEST.txt
+          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip > out/MODULE_CONTENTS.txt
 
-          grep -q "package: name='com.djaeger.observer' versionCode='106' versionName='1.1.2-credrestore'" out/AAPT_BADGING.txt
+          grep -q "package: name='com.djaeger.observer' versionCode='107' versionName='1.1.3-runtimefix'" out/AAPT_BADGING.txt
           grep -qx 'false' out/APK_DEBUGGABLE.txt
           grep -Eq 'bin/executor\.sh' out/MODULE_CONTENTS.txt
           grep -Eq 'bin/railway_bridge\.sh' out/MODULE_CONTENTS.txt
@@ -138,22 +138,27 @@ jobs:
           grep -Eq 'uninstall\.sh' out/MODULE_CONTENTS.txt
           ! grep -Eq 'agent_bus\.sh' out/MODULE_CONTENTS.txt
 
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip bin/publisher.sh | grep -Fq '_expected_apk=106'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip bin/migrate.sh | grep -Fq 'MIGRATION_SCHEMA=8'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip bin/migrate.sh | grep -Fq 'gemini_keys.vault'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip bin/migrate.sh | grep -Fq 'HERMES_SHARED_TOKEN'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip bin/migrate.sh | grep -Fq 'hermes/neuron_budget.env'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/publisher.sh | grep -Fq '_expected_apk=107'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/migrate.sh | grep -Fq 'MIGRATION_SCHEMA=9'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/migrate.sh | grep -Fq 'gemini_keys.vault'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/migrate.sh | grep -Fq 'HERMES_SHARED_TOKEN'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/migrate.sh | grep -Fq 'hermes/neuron_budget.env'
+
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/observer.sh | grep -Fq 'sdm-skin-therm-usr'
+          ! unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/observer.sh | grep -Fq 'SKIN=$(temp_c "$(thermal_by_type'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/frame_observer.sh | grep -Fq 'VALID_PRESENTATION_LAYER'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip bin/migrate.sh | grep -Fq 'LEGACY_BACKUPS_TERMUX_DOWNLOAD'
 
           cd out
-          sha256sum DJAEGER-AI-Adaptive-v1.1.2-credrestore-FINAL.apk DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip > SHA256SUMS.txt
-          printf '%s\n'             'STATUS=FINAL_PAIR_BUILD_VERIFIED_OFFLINE'             'PAIR=MODULE_205_APK_106'             'VERSION=1.1.2-credrestore'             'CREDENTIAL_RECOVERY=RAW_4_GEMINI_PLUS_HERMES_PLUS_LOCAL_NEURON'             'GEMINI_SECRET_VALUES=NEVER_LOGGED'             'HERMES_SECRET_VALUES=NEVER_LOGGED'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=LOCAL_GATED_EXECUTOR_ONLY'             'LIVE_DEVICE_VALIDATION=REQUIRED_AFTER_INSTALL'             > BUILD_REPORT.txt
+          sha256sum DJAEGER-AI-Adaptive-v1.1.3-runtimefix-FINAL.apk DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip > SHA256SUMS.txt
+          printf '%s\n'             'STATUS=FINAL_PAIR_BUILD_VERIFIED_OFFLINE'             'PAIR=MODULE_206_APK_107'             'VERSION=1.1.3-runtimefix'             'CREDENTIAL_RECOVERY=LEGACY_BACKUP_SCAN_PLUS_RAW_4_GEMINI_PLUS_HERMES_PLUS_LOCAL_NEURON'             'GEMINI_SECRET_VALUES=NEVER_LOGGED'             'HERMES_SECRET_VALUES=NEVER_LOGGED'             'CLOUD_HARDWARE_AUTHORITY=NONE'             'SYSFS_AUTHORITY=LOCAL_GATED_EXECUTOR_ONLY'             'LIVE_DEVICE_VALIDATION=REQUIRED_AFTER_INSTALL'             > BUILD_REPORT.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-AI-Adaptive-CREDRESTORE-v1.1.2-FINAL
+          name: DJAEGER-AI-Adaptive-RUNTIMEFIX-v1.1.3-FINAL
           path: |
-            out/DJAEGER-AI-Adaptive-v1.1.2-credrestore-FINAL.apk
-            out/DJAEGER-AI-Adaptive-Module-v1.1.2-credrestore-FINAL.zip
+            out/DJAEGER-AI-Adaptive-v1.1.3-runtimefix-FINAL.apk
+            out/DJAEGER-AI-Adaptive-Module-v1.1.3-runtimefix-FINAL.zip
             out/SHA256SUMS.txt
             out/BUILD_REPORT.txt
             out/APKSIGNER_VERIFY.txt
