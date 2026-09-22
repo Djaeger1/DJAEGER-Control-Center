@@ -31,6 +31,27 @@ migration_ready(){
   return 0
 }
 
+stop_worker(){
+  _name="$1"
+  _target="$MODDIR/bin/$_name.sh"
+  ps -A -o PID,ARGS 2>/dev/null | awk -v p="$_target" '$2=="sh" && $3==p {print $1}' | while IFS= read -r _pid; do
+    [ -n "$_pid" ] && kill -TERM "$_pid" 2>/dev/null || true
+  done
+}
+
+kill_worker_hard(){
+  _name="$1"
+  _target="$MODDIR/bin/$_name.sh"
+  ps -A -o PID,ARGS 2>/dev/null | awk -v p="$_target" '$2=="sh" && $3==p {print $1}' | while IFS= read -r _pid; do
+    [ -n "$_pid" ] && kill -KILL "$_pid" 2>/dev/null || true
+  done
+}
+
+# A previous broad recovery scan must never outlive a new service generation.
+stop_worker migrate
+sleep 1
+kill_worker_hard migrate
+
 # Recovery scan is only needed when credentials are not already recovered.
 # Never let broad legacy scanning block the runtime forever.
 if ! migration_ready; then
@@ -41,10 +62,19 @@ if ! migration_ready; then
   fi
 fi
 
-# Stop only this module's previous workers.
+# Stop every previous generation before clearing singleton locks.
 for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow executor railway_bridge; do
-  pkill -f "/djaeger_ai_observer/bin/$n.sh" 2>/dev/null || true
+  stop_worker "$n"
 done
+sleep 1
+for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow executor railway_bridge; do
+  kill_worker_hard "$n"
+done
+sleep 1
+
+rm -rf "$ROOT/runtime/locks" 2>/dev/null
+mkdir -p "$ROOT/runtime/locks"
+chmod 700 "$ROOT/runtime/locks" 2>/dev/null
 
 nohup sh "$MODDIR/bin/observer.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 nohup sh "$MODDIR/bin/frame_observer.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
@@ -60,8 +90,10 @@ nohup sh "$MODDIR/bin/railway_bridge.sh" "$ROOT" daemon >/dev/null 2>&1 &
 sleep 1
 startup_tmp="$ROOT/runtime/startup.env.tmp.$$"
 {
-  echo "STARTUP_SCHEMA=DJAEGER_STARTUP_V1"
+  echo "STARTUP_SCHEMA=DJAEGER_STARTUP_V2"
   echo "STARTUP_AT=$(date +%s)"
+  echo "SINGLETON_GUARD=ENABLED"
+  echo "PREVIOUS_GENERATION=TERMINATED"
   for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow executor; do
     if ps -A -o ARGS 2>/dev/null | grep -F "/djaeger_ai_observer/bin/$n.sh" | grep -v grep >/dev/null 2>&1; then
       state=RUNNING
