@@ -1,6 +1,6 @@
 id=djaeger_ai_observer
 name=DJAEGER AI Adaptive
-version=1.1.5-startupfix
-versionCode=208
+version=1.1.6-singletonfix
+versionCode=209
 author=DJAEGER
-description=Braincontract v3 with nonblocking credential migration startup, corrected worker restart matching, Gemini primary, ONE HERMES deputy, AI Agent hardware control.
+description=Braincontract v3 with bounded migration startup, hard generation cleanup, per-worker singleton locks, Gemini primary, ONE HERMES deputy, AI Agent hardware control.
