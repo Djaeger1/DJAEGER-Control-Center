@@ -409,6 +409,24 @@ grep -Fq 'GEMINI_REASONING_GUARD_REASON=' "$MODULE/bin/publisher.sh"
 grep -Fq 'DEPUTY_LOCAL_SYNTH' "$MODULE/bin/publisher.sh"
 grep -Fq 'CLOUD_PLAN_INTENT=' "$MODULE/bin/publisher.sh"
 grep -Fq 'KEEP_ROWS=$(awk -F, -v p="$PKG" '\''NR>1&&$2==p&&$4=="KEPT"' "$MODULE/bin/learner.sh"
+# Singleton workers must actually terminate on TERM; timeout/service stop must never hang.
+TERM_ROOT="$TEST_ROOT/term-root"
+mkdir -p "$TERM_ROOT/runtime/locks"
+sh -c 'ROOT="$1"; . "$2"; djaeger_singleton_claim term_probe; while :; do sleep 1; done' sh "$TERM_ROOT" "$MODULE/bin/singleton.sh" &
+TERM_PID=$!
+sleep 1
+kill -TERM "$TERM_PID"
+for _i in 1 2 3 4 5; do
+  kill -0 "$TERM_PID" 2>/dev/null || break
+  sleep 1
+done
+if kill -0 "$TERM_PID" 2>/dev/null; then
+  echo "singleton TERM trap did not terminate worker" >&2
+  kill -KILL "$TERM_PID" 2>/dev/null || true
+  exit 1
+fi
+! test -e "$TERM_ROOT/runtime/locks/term_probe.lock"
+
 grep -Fq 'djaeger_singleton_claim gemini_reasoner' "$MODULE/bin/gemini_reasoner.sh"
 grep -Fq 'djaeger_singleton_claim hermes_adapter' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'djaeger_singleton_claim consensus' "$MODULE/bin/consensus.sh"
