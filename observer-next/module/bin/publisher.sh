@@ -339,11 +339,17 @@ publish_cc() {
   case "$_active_brain_source" in
     GEMINI)
       _thought_source=GEMINI
-      _thought_status=PRIMARY
       _thought_conf="$_gem_conf"
       _thought_reason="$_gem_reason"
-      _thought_evidence="brain=GEMINI role=PRIMARY frame=$_frame_evidence"
-      _thought="Gemini adalah otak utama dan sedang memimpin reasoning untuk $_pkg. Hasilnya diteruskan ke ONE HERMES sebagai deputy continuity sebelum AI Agent melakukan shadow, safety, dan kontrol hardware."
+      if [ -r "$_gem_prop" ]; then
+        _thought_status=PRIMARY_CANDIDATE
+        _thought_evidence="brain=GEMINI role=PRIMARY proposal=CANDIDATE frame=$_frame_evidence hermes=$_hmode"
+        _thought="Gemini adalah otak utama dan telah menghasilkan kandidat untuk $_pkg. ONE HERMES bertindak sebagai deputy continuity/reviewer; AI Agent belum mengubah hardware sebelum consensus, shadow, safety gate, dan exact readback lulus."
+      else
+        _thought_status=PRIMARY_OBSERVE
+        _thought_evidence="brain=GEMINI role=PRIMARY proposal=NONE frame=$_frame_evidence hermes=$_hmode shadow=$_shadow_state executor=$_exec_state"
+        _thought="Gemini tetap menjadi otak utama untuk $_pkg, tetapi saat ini tidak mengeluarkan kandidat perubahan ($_gem_reason). ONE HERMES berada pada deputy continuity, sehingga tidak ada strategi yang masuk shadow dan AI Agent tetap mengamati tanpa mengubah hardware."
+      fi
       ;;
     HERMES_LOCAL)
       _thought_source=HERMES_H2
