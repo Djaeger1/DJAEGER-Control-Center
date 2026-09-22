@@ -189,6 +189,7 @@ publish_cc() {
   _shadow_n="$(pub_kv SHADOW_WINDOWS "$_shadow")"; case "$_shadow_n" in ''|*[!0-9]*) _shadow_n=0;; esac
   _exec_state="$(pub_kv EXECUTOR_STATE "$_execution")"; [ -n "$_exec_state" ] || _exec_state=IDLE
   _exec_reason="$(pub_kv EXECUTOR_REASON "$_execution")"; [ -n "$_exec_reason" ] || _exec_reason=WAITING
+  _exec_intent="$(pub_kv APPLIED_INTENT "$_execution")"; [ -n "$_exec_intent" ] || _exec_intent=NONE
   _exec_little="$(pub_kv APPLIED_LITTLE "$_execution")"; [ -n "$_exec_little" ] || _exec_little=NA
   _exec_big="$(pub_kv APPLIED_BIG "$_execution")"; [ -n "$_exec_big" ] || _exec_big=NA
   _exec_gpu="$(pub_kv APPLIED_GPU "$_execution")"; [ -n "$_exec_gpu" ] || _exec_gpu=NA
@@ -276,11 +277,13 @@ publish_cc() {
 
   # Brain plan truth. Gemini is primary; ONE HERMES is deputy takeover.
   _plan_provider=NONE
+  _plan_intent=NONE
   _cloud_plan_state=NOT_USED
   _cloud_plan_score=0
   _cloud_plan_reason=NO_ACTIVE_BRAIN_PLAN
   if [ -r "$_candidate" ] && [ "$(pub_kv PACKAGE "$_candidate")" = "$_pkg" ]; then
     _plan_provider="$(pub_kv BRAIN_SOURCE "$_candidate")"; [ -n "$_plan_provider" ] || _plan_provider=UNKNOWN
+    _plan_intent="$(pub_kv INTENT "$_candidate")"; [ -n "$_plan_intent" ] || _plan_intent=FRAME_FIRST_BALANCED
     _cloud_plan_state=PROPOSED
     _cloud_plan_score="$(pub_kv CONFIDENCE "$_candidate")"; case "$_cloud_plan_score" in ''|*[!0-9]*) _cloud_plan_score=0;; esac
     case "$_plan_provider" in
@@ -356,11 +359,17 @@ publish_cc() {
       ;;
     HERMES_LOCAL)
       _thought_source=HERMES_H2
-      _thought_status=DEPUTY_LOCAL_TAKEOVER
       _thought_conf="$_hconf"
       _thought_reason="$_hreason"
-      _thought_evidence="brain=ONE_HERMES source=LOCAL gemini=$_gem"
-      _thought="Gemini tidak tersedia. ONE HERMES mengambil alih melalui Hermes Local menggunakan memory dan strategi proven tanpa memakai neuron Cloud."
+      if [ "$_hlocal" = TAKEOVER_LOCAL_SYNTH ]; then
+        _thought_status=DEPUTY_LOCAL_SYNTH
+        _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=KNOWLEDGE_DRIVEN intent=$_plan_intent gemini=$_gem frame=$_frame_evidence"
+        _thought="Gemini tidak tersedia. ONE HERMES Local merumuskan kandidat baru dari knowledge perangkat, frame, daya, thermal, dan OPP kernel tanpa memakai Hermes Cloud. Kandidat tetap wajib lolos shadow, safety, exact readback, dan outcome."
+      else
+        _thought_status=DEPUTY_LOCAL_TAKEOVER
+        _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=PROVEN_REUSE intent=$_plan_intent gemini=$_gem"
+        _thought="Gemini tidak tersedia. ONE HERMES Local mengambil alih dengan strategi yang sebelumnya sudah terbukti pada perangkat ini, tanpa memakai neuron Cloud."
+      fi
       ;;
     HERMES_CLOUD)
       _thought_source=HERMES_H2
@@ -381,7 +390,7 @@ publish_cc() {
 
   if [ "$_cons_state" = PENDING_SHADOW ]; then
     _thought_status=PENDING_SHADOW
-    _thought="Strategi dari $_active_brain_source sedang diuji shadow. Frame stability adalah syarat pertama; daya minimum dinilai setelah kestabilan frame terpenuhi."
+    _thought="Strategi dari $_active_brain_source sedang diuji shadow dengan intent $_plan_intent. Frame stability adalah syarat pertama; daya minimum hanya diterima jika kestabilan frame tetap terpenuhi."
   fi
   if [ "$_shadow_state" = PASS ]; then
     _thought_status=SHADOW_PASS
@@ -496,6 +505,7 @@ publish_cc() {
     _cloud_control=NO; _cloud_controller=NONE
     case "$_active_brain_source" in GEMINI) _cloud_control=YES; _cloud_controller=GEMINI;; HERMES_CLOUD) _cloud_control=YES; _cloud_controller=HERMES_CLOUD;; esac
     echo "CLOUD_IN_CONTROL=$_cloud_control"; echo "CLOUD_CONTROL_PROVIDER=$_cloud_controller"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
+    echo "CLOUD_PLAN_INTENT=$_plan_intent"
     echo "CLOUD_PLAN_STATE=$_cloud_plan_state"; echo "CLOUD_PLAN_SCORE=$_cloud_plan_score"; echo "CLOUD_PLAN_REASON=$(pub_clean "$_cloud_plan_reason")"
     echo "HERMES_PROPOSAL_STATE=$_hlocal"; echo "HERMES_PROPOSAL_CONFIDENCE=$_hconf"; echo "HERMES_PROFILE=ADAPTIVE_NO_FIXED_PROFILE"
     echo "HERMES_REASON=$(pub_clean "$_hreason")"; echo "HERMES_BACKEND=$([ "$_hroute" = LOCAL ] && echo LOCAL || echo CLOUD)"
@@ -507,7 +517,7 @@ publish_cc() {
     echo "AGENT_HARDWARE_AUTHORITY=FULL_LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=AI_AGENT_SYSFS_READBACK"
     echo "AGENT_HARDWARE_TRUTH_AUTHORITY=MEASURED"; echo "AGENT_MUST_OBEY_ACTIVE_BRAIN=YES_WITH_SAFETY_GATES"
     echo "AGENT_CAN_CHOOSE_BRAIN=FAILOVER_CONTRACT_ONLY"; echo "AGENT_CAN_OVERRIDE_BRAIN=SAFETY_ONLY"; echo "AGENT_EXECUTION_BACKEND=INTERNAL_EXECUTOR_WORKER"
-    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>MINIMUM_POWER"
+    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "AGENT_ACTIVE_INTENT=$_exec_intent"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>MINIMUM_POWER"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
     echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
@@ -549,7 +559,7 @@ publish_cc() {
     echo "GEMINI_CONNECTION=$_gem_connection"; echo "HERMES_CONNECTION=$_hermes_connection"
     echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"; echo "HERMES_AUTH=$_hauth"
     echo "HERMES_CLOUD=ONE_HERMES_CLOUD_COGNITION"; echo "HERMES_CLOUD_ROLE=STRONGEST_HERMES_CLOUD_BRAIN_ON_DEMAND"; echo "HERMES_BACKEND_PRIORITY=LOCAL_CONTINUITY_THEN_CLOUD_ESCALATION_WHEN_NEEDED"; echo "WORKLOAD_FINAL=ADAPTIVE_CLASSIFIER_V2"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=ACTIVE_LOCAL_GATED"
-    echo "__STRATEGY_RESULT__"; echo "VALIDATION=$_cons_state"; echo "READBACK=$_readback"; echo "OUTCOME=$_outcome_last"; echo "OUTCOME_REASON=$(pub_clean "$_outcome_reason")"; echo "SHADOW=$_shadow_state"
+    echo "__STRATEGY_RESULT__"; echo "VALIDATION=$_cons_state"; echo "INTENT=$_plan_intent"; echo "READBACK=$_readback"; echo "OUTCOME=$_outcome_last"; echo "OUTCOME_REASON=$(pub_clean "$_outcome_reason")"; echo "SHADOW=$_shadow_state"
     echo "__ENV__"; [ -r "$_learn" ] && cat "$_learn"
     echo "__HTTP__"; [ -r "$_gem_state" ] && cat "$_gem_state" || true
     echo "__SERVER__"; [ -r "$_hermes_state" ] && cat "$_hermes_state" || true
