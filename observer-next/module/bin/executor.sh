@@ -1,6 +1,6 @@
 #!/system/bin/sh
-# DJAEGER AI adaptive local executor.
-# Only this file may write approved CPU/GPU frequency bounds.
+# Internal hardware transaction worker of AI Agent.
+# AI Agent is the controller; this file only performs its gated SYSFS write/readback/rollback transactions.
 ROOT="$1"
 MODE="${2:-daemon}"
 SYSROOT="${DJAEGER_SYSFS_ROOT:-}"
