@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 33
         versionCode = 107
-        versionName = "1.1.3-runtimefix"
+        versionName = "1.1.3-v7-brain"
     }
 
     buildFeatures {
