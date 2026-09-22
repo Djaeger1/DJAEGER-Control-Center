@@ -384,6 +384,78 @@ WORKLOAD_CLASS=GAME
 SOURCE=TEST
 EOF
 
+# Qualcomm/MIUI may legitimately relax a raised LITTLE min_freq back toward
+# the pre-transaction floor while preserving the exact max_freq. That bounded
+# power-saving relaxation must not be misclassified as external ownership loss.
+cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+SHADOW_STATE=PASS
+CANDIDATE_DIGEST=nativerelax123
+SHADOW_WINDOWS=80
+UPDATED_AT=$NOW
+EOF
+cat > "$TEST_ROOT/policy/candidate.env" <<EOF
+SCHEMA=DJAEGER_ADAPTIVE_POLICY_V3
+AT=$NOW
+PACKAGE=sts.al
+CONFIDENCE=90
+INTENT=FRAME_FIRST_BALANCED
+ACTUATORS=ALL
+CANDIDATE_DIGEST=nativerelax123
+LITTLE_MIN_KHZ=1000000
+LITTLE_MAX_KHZ=1800000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=2400000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=900000000
+EOF
+cat > "$TEST_ROOT/policy/approved.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_V2
+AT=$NOW
+EXPIRES_AT=$((NOW+180))
+EXECUTOR_ALLOWED=YES
+PACKAGE=sts.al
+INTENT=FRAME_FIRST_BALANCED
+ACTUATORS=ALL
+CANDIDATE_DIGEST=nativerelax123
+LITTLE_MIN_KHZ=1000000
+LITTLE_MAX_KHZ=1800000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=2400000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=900000000
+EOF
+rm -f "$TEST_ROOT/runtime/execution_suppress.env"
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+grep -Fqx 'EXECUTOR_STATE=APPLIED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'APPLIED_LITTLE=1000000-1800000' "$TEST_ROOT/runtime/execution.env"
+printf '600000\n' > "$LP/scaling_min_freq"
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+grep -Fqx 'EXECUTOR_STATE=APPLIED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=ACTIVE_TRIAL_PINNED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'READBACK=NATIVE_RELAXED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx '600000' "$LP/scaling_min_freq"
+test ! -e "$TEST_ROOT/runtime/execution_suppress.env"
+! grep -Fq 'nativerelax123,RELEASED,SYSFS_EXTERNAL_OVERRIDE' "$TEST_ROOT/history/outcomes.csv"
+
+# Exit the test transaction through the normal safety boundary and prove the
+# original backup is restored before the strict drift regression continues.
+cat > "$TEST_ROOT/runtime/workload.env" <<EOF
+AT=$NOW
+PACKAGE=sts.al
+WORKLOAD_CLASS=APP
+SOURCE=TEST
+EOF
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once || true
+grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx '600000' "$LP/scaling_min_freq"
+grep -Fqx '1800000' "$LP/scaling_max_freq"
+cat > "$TEST_ROOT/runtime/workload.env" <<EOF
+AT=$NOW
+PACKAGE=sts.al
+WORKLOAD_CLASS=GAME
+SOURCE=TEST
+EOF
+
 # Restore full-policy fixture for the existing drift regression.
 cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
 SHADOW_STATE=PASS
