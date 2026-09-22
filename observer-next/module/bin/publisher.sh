@@ -91,7 +91,17 @@ publish_cc() {
   fi
   [ -n "$_learning" ] || _learning=WAITING
 
-  _frame_evidence="$(pub_kv FRAME_EVIDENCE "$_snap")"; [ -n "$_frame_evidence" ] || _frame_evidence=UNAVAILABLE
+  # Read the frame worker as one coherent source for every frame metric.
+  # Previously FRAME_MS came from frame.env while FPS/JANK/P95/P99 came from
+  # observer snapshot.env, which could produce impossible mixed UI states such
+  # as "Frame 16.7 ms" together with "FPS — / Jank —".
+  _frame_src="$_root/runtime/.publisher_frame.$"
+  if [ -r "$_frame" ]; then
+    cp "$_frame" "$_frame_src" 2>/dev/null || :
+  fi
+  [ -r "$_frame_src" ] || _frame_src="$_frame"
+
+  _frame_evidence="$(pub_kv FRAME_EVIDENCE "$_frame_src")"; [ -n "$_frame_evidence" ] || _frame_evidence=UNAVAILABLE
   _workload=UNKNOWN
   _workload_source=UNCLASSIFIED
   case "$_pkg" in
@@ -138,11 +148,11 @@ publish_cc() {
   _power_valid=REJECTED; _power_reason=NO_VALID_DISCHARGE_SAMPLE
   [ "$_power" -gt 0 ] 2>/dev/null && { _power_valid=VALID; _power_reason=MEASURED_DISCHARGE; }
   _battery_status="$(pub_kv BATTERY_STATUS "$_snap")"; [ -n "$_battery_status" ] || _battery_status=NA
-  _frame_ms="$(pub_kv FRAME_MS "$_frame")"; [ -n "$_frame_ms" ] || _frame_ms=0
-  _fps="$(pub_kv FPS_EST "$_snap")"; [ -n "$_fps" ] && [ "$_fps" != NA ] || _fps=0
-  _jank="$(pub_kv JANK_PCT "$_snap")"; [ -n "$_jank" ] && [ "$_jank" != NA ] || _jank=-1
-  _p95="$(pub_kv P95_MS "$_snap")"; [ -n "$_p95" ] && [ "$_p95" != NA ] || _p95=0
-  _p99="$(pub_kv P99_MS "$_snap")"; [ -n "$_p99" ] && [ "$_p99" != NA ] || _p99=0
+  _frame_ms="$(pub_kv FRAME_MS "$_frame_src")"; [ -n "$_frame_ms" ] && [ "$_frame_ms" != NA ] || _frame_ms=0
+  _fps="$(pub_kv FPS_EST "$_frame_src")"; [ -n "$_fps" ] && [ "$_fps" != NA ] || _fps=0
+  _jank="$(pub_kv JANK_PCT "$_frame_src")"; [ -n "$_jank" ] && [ "$_jank" != NA ] || _jank=-1
+  _p95="$(pub_kv P95_MS "$_frame_src")"; [ -n "$_p95" ] && [ "$_p95" != NA ] || _p95=0
+  _p99="$(pub_kv P99_MS "$_frame_src")"; [ -n "$_p99" ] && [ "$_p99" != NA ] || _p99=0
 
   if [ "$_learn_pkg" = "$_pkg" ]; then
     _lmin="$(pub_kv LITTLE_MIN_KHZ "$_learn")"; [ -n "$_lmin" ] || _lmin=NA
@@ -545,4 +555,5 @@ publish_cc() {
   } > "$_tmp"
   chmod 644 "$_tmp" 2>/dev/null
   mv -f "$_tmp" "$_out"
+  [ "$_frame_src" = "$_frame" ] || rm -f "$_frame_src" 2>/dev/null
 }
