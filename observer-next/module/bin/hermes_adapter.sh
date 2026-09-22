@@ -314,7 +314,7 @@ write_local_vote(){
   _d=$(digest "$_src"); [ -n "$_d" ] || return 1
   _base=$(kv CONFIDENCE "$LEARN"); case "$_base" in ''|*[!0-9]*) _base=75;; esac
   _conf=$((_base+5)); [ "$_conf" -gt 95 ] && _conf=95
-  _t="$LOCAL_OUT.tmp.$"
+  _t="$LOCAL_OUT.tmp.$$"
   {
     echo "SCHEMA=DJAEGER_ONE_HERMES_LOCAL_V2"
     echo "AT=$(date +%s)"
@@ -352,7 +352,7 @@ write_hermes_plan(){
     return 0
   fi
 
-  _t="$HPLAN.tmp.$"
+  _t="$HPLAN.tmp.$$"
   {
     echo "SCHEMA=DJAEGER_ONE_HERMES_TAKEOVER_V1"
     echo "AT=$(date +%s)"
@@ -388,7 +388,7 @@ local_history_takeover(){
   _b0=$(printf '%s' "$_br" | cut -d- -f1); _b1=$(printf '%s' "$_br" | cut -d- -f2)
   _g0=$(printf '%s' "$_gr" | cut -d- -f1); _g1=$(printf '%s' "$_gr" | cut -d- -f2)
   case "$_l0:$_l1:$_b0:$_b1:$_g0:$_g1" in *[!0-9:]*) return 1;; esac
-  _tmp="$ROOT/runtime/.hermes_local_candidate.$"
+  _tmp="$ROOT/runtime/.hermes_local_candidate.$$"
   {
     echo "PACKAGE=$_pkg"
     echo "LITTLE_MIN_KHZ=$_l0"; echo "LITTLE_MAX_KHZ=$_l1"
@@ -499,7 +499,7 @@ local_synthesize_takeover(){
   [ "$_nl0" -le "$_nl1" ] && [ "$_nb0" -le "$_nb1" ] && [ "$_ng0" -le "$_ng1" ] || { HDETAIL=local_synth_invalid_range; return 1; }
   [ "$_nl0" != "$_l0" ] || [ "$_nl1" != "$_l1" ] || [ "$_nb0" != "$_b0" ] || [ "$_nb1" != "$_b1" ] || [ "$_ng0" != "$_g0" ] || [ "$_ng1" != "$_g1" ] || { HDETAIL=local_synth_no_change; return 1; }
 
-  _tmp="$ROOT/runtime/.hermes_local_synth_candidate.$"
+  _tmp="$ROOT/runtime/.hermes_local_synth_candidate.$$"
   {
     echo "PACKAGE=$_pkg"
     echo "INTENT=$_intent"
@@ -545,10 +545,10 @@ cloud_takeover(){
   HROUTE=$_mode
   _msg="You are ONE HERMES Cloud, the strongest cloud cognition of the same Hermes identity that also runs locally. Gemini primary brain is currently unavailable, so ONE HERMES is deputy-in-control. Reason independently from measured Device Truth and return a safe takeover strategy. Optimization is strict: FIRST maximize frame stability; SECOND, among equally stable strategies, minimize power. Never sacrifice meaningful frame stability merely to save power. Do not output commands or paths. Package=$_pkg current_fps=$(kv FPS_EST "$SNAP") current_jank=$(kv JANK_PCT "$SNAP") current_p95=$(kv P95_MS "$SNAP") current_p99=$(kv P99_MS "$SNAP") current_power_mw=$(kv POWER_MW "$SNAP") skin_c=$(kv SKIN_TEMP_C "$SNAP") cpu_c=$(kv CPU_TEMP_C "$SNAP") gpu_c=$(kv GPU_TEMP_C "$SNAP"). Learned envelope little=$(kv LITTLE_MIN_KHZ "$LEARN")-$(kv LITTLE_MAX_KHZ "$LEARN") big=$(kv BIG_MIN_KHZ "$LEARN")-$(kv BIG_MAX_KHZ "$LEARN") gpu=$(kv GPU_MIN_HZ "$LEARN")-$(kv GPU_MAX_HZ "$LEARN"). Kernel OPP little=[$(kv LITTLE_AVAILABLE_KHZ "$SNAP")] big=[$(kv BIG_AVAILABLE_KHZ "$SNAP")] gpu=[$(kv GPU_AVAILABLE_HZ "$SNAP")]. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."
   _sys="You are ONE HERMES Cloud. You are not a third brain; you are cloud cognition of the same ONE HERMES deputy identity. No root/sysfs authority."
-  _req="$ROOT/runtime/.hermes_takeover_request.$"; _resp="$ROOT/runtime/.hermes_takeover_response.$"
+  _req="$ROOT/runtime/.hermes_takeover_request.$$"; _resp="$ROOT/runtime/.hermes_takeover_response.$$"
   printf '{"mode":"%s","task":"djaeger_takeover_strategy","message":"%s","prompt":"%s","system":"%s","fallback":false,"max_tokens":256,"temperature":0.1}' "$_mode" "$(json_escape "$_msg")" "$(json_escape "$_msg")" "$(json_escape "$_sys")" > "$_req"
   chmod 600 "$_req"
-  _cfg="$ROOT/runtime/.hermes_takeover_curl.$"
+  _cfg="$ROOT/runtime/.hermes_takeover_curl.$$"
   printf 'header = "Authorization: Bearer %s"\n' "$_token" > "$_cfg"; chmod 600 "$_cfg"
   HTTP=$(curl --http1.1 --connect-timeout 5 -m 18 -sS -o "$_resp" -w '%{http_code}' -K "$_cfg" -H 'Content-Type: application/json' --data-binary "@$_req" "$_url" 2>/dev/null)
   unset _token
@@ -557,7 +557,7 @@ cloud_takeover(){
     command -v neuron_record_success >/dev/null 2>&1 && neuron_record_success "$_mode" "$_req" "$_resp"
   fi
   rm -f "$_req"
-  { echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$"; chmod 600 "$LAST.tmp.$"; mv -f "$LAST.tmp.$" "$LAST"
+  { echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$$"; chmod 600 "$LAST.tmp.$$"; mv -f "$LAST.tmp.$$" "$LAST"
   [ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"; rm -f "$_resp"; return 1; }
   HAUTH=CONFIGURED
   _text=$(tr '\n' ' ' < "$_resp" 2>/dev/null | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g;s/\\r//g')
@@ -568,7 +568,7 @@ cloud_takeover(){
   _verdict=$(_gv VERDICT); _conf=$(_gv CONFIDENCE)
   [ "$_verdict" = CANDIDATE ] || { HCLOUD_STATE=OBSERVE; HDETAIL=cloud_requests_observe; return 1; }
   case "$_conf" in ''|*[!0-9]*) HCLOUD_STATE=INVALID; HDETAIL=cloud_confidence_invalid; return 1;; esac
-  _tmp="$ROOT/runtime/.hermes_cloud_candidate.$"
+  _tmp="$ROOT/runtime/.hermes_cloud_candidate.$$"
   {
     echo "PACKAGE=$_pkg"
     echo "LITTLE_MIN_KHZ=$(_gv LITTLE_MIN_KHZ)"; echo "LITTLE_MAX_KHZ=$(_gv LITTLE_MAX_KHZ)"
@@ -584,7 +584,7 @@ cloud_takeover(){
   fi
   write_hermes_plan "$_tmp" HERMES_CLOUD "$_conf" "$_reason" "$_cloud_intent"
   _d=$(digest "$HPLAN")
-  _t="$CLOUD_OUT.tmp.$"
+  _t="$CLOUD_OUT.tmp.$$"
   {
     echo "SCHEMA=DJAEGER_ONE_HERMES_CLOUD_TAKEOVER_V1"
     echo "AT=$(date +%s)"
