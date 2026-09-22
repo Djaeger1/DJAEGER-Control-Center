@@ -273,12 +273,35 @@ grep -Fqx '1400000' "$LP/scaling_max_freq"
 grep -Fqx '1800000' "$BP/scaling_max_freq"
 grep -Fqx '600000000' "$GP/max_freq"
 
+# Approval churn must NOT abort a just-applied trial. The active digest is
+# pinned until outcome evidence exists; only device-truth safety can end it.
 rm -f "$TEST_ROOT/policy/approved.env"
 DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+grep -Fqx 'EXECUTOR_STATE=APPLIED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=ACTIVE_TRIAL_PINNED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx '1400000' "$LP/scaling_max_freq"
+grep -Fqx '1800000' "$BP/scaling_max_freq"
+grep -Fqx '600000000' "$GP/max_freq"
+
+# Leaving the game is a real safety/context boundary and must restore now.
+cat > "$TEST_ROOT/runtime/workload.env" <<EOF
+AT=$NOW
+PACKAGE=sts.al
+WORKLOAD_CLASS=APP
+SOURCE=TEST
+EOF
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once || true
 grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=NON_GAME' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx '1800000' "$LP/scaling_max_freq"
 grep -Fqx '2400000' "$BP/scaling_max_freq"
 grep -Fqx '900000000' "$GP/max_freq"
+cat > "$TEST_ROOT/runtime/workload.env" <<EOF
+AT=$NOW
+PACKAGE=sts.al
+WORKLOAD_CLASS=GAME
+SOURCE=TEST
+EOF
 
 # GPU-only ownership: CPU policies must remain byte-for-byte untouched while
 # the candidate trims only GPU. Rollback must likewise touch only GPU.
@@ -332,12 +355,34 @@ grep -Fqx '600000000' "$GP/max_freq"
 
 rm -f "$TEST_ROOT/policy/approved.env"
 DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+grep -Fqx 'EXECUTOR_STATE=APPLIED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=ACTIVE_TRIAL_PINNED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx "$LP_MIN_BEFORE" "$LP/scaling_min_freq"
+grep -Fqx "$LP_MAX_BEFORE" "$LP/scaling_max_freq"
+grep -Fqx "$BP_MIN_BEFORE" "$BP/scaling_min_freq"
+grep -Fqx "$BP_MAX_BEFORE" "$BP/scaling_max_freq"
+grep -Fqx '600000000' "$GP/max_freq"
+
+# Force a real context exit; GPU rollback must not write either CPU policy.
+cat > "$TEST_ROOT/runtime/workload.env" <<EOF
+AT=$NOW
+PACKAGE=sts.al
+WORKLOAD_CLASS=APP
+SOURCE=TEST
+EOF
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once || true
 grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx "$LP_MIN_BEFORE" "$LP/scaling_min_freq"
 grep -Fqx "$LP_MAX_BEFORE" "$LP/scaling_max_freq"
 grep -Fqx "$BP_MIN_BEFORE" "$BP/scaling_min_freq"
 grep -Fqx "$BP_MAX_BEFORE" "$BP/scaling_max_freq"
 grep -Fqx '900000000' "$GP/max_freq"
+cat > "$TEST_ROOT/runtime/workload.env" <<EOF
+AT=$NOW
+PACKAGE=sts.al
+WORKLOAD_CLASS=GAME
+SOURCE=TEST
+EOF
 
 # Restore full-policy fixture for the existing drift regression.
 cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
@@ -490,6 +535,13 @@ grep -Fq 'APPLIED_INTENT=' "$MODULE/bin/executor.sh"
 grep -Fq 'APPROVAL_INTENT_MISMATCH' "$MODULE/bin/executor.sh"
 grep -Fq 'APPROVAL_ACTUATOR_MISMATCH' "$MODULE/bin/executor.sh"
 grep -Fq 'APPLIED_ACTUATORS=' "$MODULE/bin/executor.sh"
+grep -Fq 'ACTIVE_TRIAL_PINNED' "$MODULE/bin/executor.sh"
+grep -Fq 'CANDIDATE_SWITCH_AFTER_KEEP' "$MODULE/bin/executor.sh"
+grep -Fq 'APPLIED_PACKAGE="$GATE_PACKAGE"' "$MODULE/bin/executor.sh"
+grep -Fq 'APPLIED_INTENT="$GATE_INTENT"' "$MODULE/bin/executor.sh"
+grep -Fq 'APPLIED_ACTUATORS="$GATE_ACTUATORS"' "$MODULE/bin/executor.sh"
+grep -Fq '_POLICY="$ROOT/runtime/.executor_policy.$PPID"' "$MODULE/bin/executor.sh"
+grep -Fq 'active_context_safe()' "$MODULE/bin/executor.sh"
 grep -Fq 'act_has "$ACTUATORS" GPU' "$MODULE/bin/executor.sh"
 grep -Fq 'echo "ACTUATORS=$ACTUATORS"' "$MODULE/bin/executor.sh"
 grep -Fq 'echo "ACTUATORS=$_actuators"' "$MODULE/bin/hermes_adapter.sh"
