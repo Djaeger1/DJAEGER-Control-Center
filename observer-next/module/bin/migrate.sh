@@ -124,6 +124,9 @@ done
 awk 'NF&&!seen[$0]++' "$TMP_SOURCES" > "$TMP_SOURCES.uniq" 2>/dev/null || :
 mv -f "$TMP_SOURCES.uniq" "$TMP_SOURCES" 2>/dev/null || true
 
+# Recover raw vault backups first so slot order is authoritative regardless
+# of filesystem traversal order. Config-assignment fallbacks are processed only
+# after the raw vault pass.
 while IFS= read -r _f; do
   [ -r "$_f" ] || continue
   case "$(basename "$_f")" in
@@ -135,6 +138,10 @@ while IFS= read -r _f; do
       done < "$_f"
       ;;
   esac
+done < "$TMP_SOURCES"
+
+while IFS= read -r _f; do
+  [ -r "$_f" ] || continue
   for _name in GEMINI_API_KEY KEY_1 KEY_2 KEY_3 KEY_4; do
     append_key "$(extract_exact "$_name" "$_f")"
   done
