@@ -144,12 +144,19 @@ while true; do
         for(i=s;i<=n;i++){
           total++;
           superseded=0;
+          recovered=0;
           if(r[i]=="ROLLBACK_FAILED"){
             for(j=i+1;j<=n;j++){
               if(d[j]==d[i] && r[j]=="RELEASED" && q[j] ~ /EXTERNAL_OVERRIDE/){
                 superseded=1; break;
               }
+              if(d[j]==d[i] && r[j]=="ROLLED_BACK" && q[j] ~ /READBACK_RECOVERED/){
+                recovered=1; break;
+              }
             }
+          }
+          if(recovered){
+            continue;
           }
           if(superseded){
             sup++;
