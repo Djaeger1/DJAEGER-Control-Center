@@ -498,8 +498,14 @@ publish_cc() {
   case "$_outcome_keep" in ''|*[!0-9]*) _outcome_keep=0;; esac
   case "$_outcome_rollback" in ''|*[!0-9]*) _outcome_rollback=0;; esac
   case "$_outcome_rollback_failed" in ''|*[!0-9]*) _outcome_rollback_failed=0;; esac
+  # Permanent readiness belongs to the learned game model, not to the
+  # app that happens to be foreground when Control Center publishes.
+  _maturity_learning="$(pub_kv STATE "$_learn")"; [ -n "$_maturity_learning" ] || _maturity_learning=WAITING
+  _maturity_samples="$(pub_kv SAMPLES "$_learn")"; case "$_maturity_samples" in ''|*[!0-9]*) _maturity_samples=0;; esac
+  _maturity_confidence="$(pub_kv CONFIDENCE "$_learn")"; case "$_maturity_confidence" in ''|*[!0-9]*) _maturity_confidence=0;; esac
+
   _permanent_readiness=LEARNING
-  if [ "$_learning" = READY_HARDWARE_MODEL ] && [ "$_samples" -ge 1000 ] 2>/dev/null && [ "$_confidence" -ge 90 ] 2>/dev/null; then
+  if [ "$_maturity_learning" = READY_HARDWARE_MODEL ] && [ "$_maturity_samples" -ge 1000 ] 2>/dev/null && [ "$_maturity_confidence" -ge 90 ] 2>/dev/null; then
     _permanent_readiness=LIVE_VALIDATION_REQUIRED
     if [ "$_validation_keep" -ge 5 ] 2>/dev/null && [ "$_validation_rollback_failed" -eq 0 ] 2>/dev/null && [ "$_validation_keep" -gt "$_validation_rollback" ] 2>/dev/null; then
       _permanent_readiness=MATURE_CANDIDATE
@@ -590,7 +596,7 @@ publish_cc() {
     echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "AGENT_ACTIVE_INTENT=$_exec_intent"; echo "AGENT_ACTIVE_ACTUATORS=$_exec_actuators"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>MINIMUM_POWER"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
-    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "RECENT_OUTCOME_ROWS=$_recent_outcome_rows"; echo "RECENT_KEEP_ROWS=$_recent_keep"; echo "RECENT_ROLLBACK_ROWS=$_recent_rollback"; echo "RECENT_ROLLBACK_FAILED_ROWS=$_recent_rollback_failed"; echo "VALIDATION_OUTCOME_ROWS=$_validation_outcome_rows"; echo "VALIDATION_KEEP_ROWS=$_validation_keep"; echo "VALIDATION_ROLLBACK_ROWS=$_validation_rollback"; echo "VALIDATION_ROLLBACK_FAILED_ROWS=$_validation_rollback_failed"; echo "VALIDATION_SUPERSEDED_DRIFT_ROWS=$_validation_superseded_drift"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
+    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "RECENT_OUTCOME_ROWS=$_recent_outcome_rows"; echo "RECENT_KEEP_ROWS=$_recent_keep"; echo "RECENT_ROLLBACK_ROWS=$_recent_rollback"; echo "RECENT_ROLLBACK_FAILED_ROWS=$_recent_rollback_failed"; echo "VALIDATION_OUTCOME_ROWS=$_validation_outcome_rows"; echo "VALIDATION_KEEP_ROWS=$_validation_keep"; echo "VALIDATION_ROLLBACK_ROWS=$_validation_rollback"; echo "VALIDATION_ROLLBACK_FAILED_ROWS=$_validation_rollback_failed"; echo "VALIDATION_SUPERSEDED_DRIFT_ROWS=$_validation_superseded_drift"; echo "MATURITY_PACKAGE=$_maturity_pkg"; echo "MATURITY_MODEL_STATE=$_maturity_learning"; echo "MATURITY_MODEL_SAMPLES=$_maturity_samples"; echo "MATURITY_MODEL_CONFIDENCE=$_maturity_confidence"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
     echo "__AUTHORITY__"; echo "STATE=AI_AGENT_LOCAL_GATED"; echo "HARDWARE_AUTHORITY=AI_AGENT"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=AI_AGENT_INTERNAL_EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
     echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
     echo "__SUPERVISOR__"
