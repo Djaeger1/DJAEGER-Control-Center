@@ -27,7 +27,20 @@ kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 num(){ case "$1" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
 map_path(){ [ -n "$SYSROOT" ] && printf '%s%s' "$SYSROOT" "$1" || printf '%s' "$1"; }
 readv(){ _f="$(map_path "$1")"; [ -r "$_f" ] && cat "$_f" 2>/dev/null | head -n1; }
-writev(){ _f="$(map_path "$1")"; [ -w "$_f" ] || return 1; printf '%s\n' "$2" > "$_f"; }
+writev(){
+  _f="$(map_path "$1")"
+  [ -w "$_f" ] || return 1
+
+  # qcom-cpufreq-hw can return a non-zero write status even when the requested
+  # policy value is actually committed. Device truth is the immediate readback,
+  # not the shell write return code.
+  printf '%s\n' "$2" > "$_f" 2>/dev/null
+  _wr=$?
+  _rb="$(cat "$_f" 2>/dev/null | head -n1)"
+  [ "$_rb" = "$2" ] && return 0
+  [ "$_wr" -eq 0 ] || return 1
+  return 1
+}
 valid_cpu(){ case "$1" in /sys/devices/system/cpu/cpufreq/policy[0-9]|/sys/devices/system/cpu/cpufreq/policy[0-9][0-9]) return 0;; *) return 1;; esac; }
 valid_gpu(){ case "$1" in /sys/class/kgsl/kgsl-3d0/devfreq|/sys/class/devfreq/*gpu*|/sys/class/devfreq/*mali*) return 0;; *) return 1;; esac; }
 contains_freq(){ _v="$1"; _list="$2"; for _x in $_list; do [ "$_x" = "$_v" ] && return 0; done; return 1; }
@@ -385,9 +398,25 @@ reconcile(){
 
 case "$MODE" in
   once) reconcile ;;
+  recover)
+    load_active
+    if [ -r "$BACKUP" ]; then
+      if restore_all; then
+        READBACK=RESTORED
+        publish ROLLED_BACK EXPLICIT_RECOVERY_OK
+        exit 0
+      else
+        READBACK=RESTORE_FAILED
+        publish ROLLBACK_FAILED EXPLICIT_RECOVERY_FAILED
+        exit 1
+      fi
+    fi
+    READBACK=NA; ROLLBACK_STATE=NO_BACKUP
+    publish IDLE EXPLICIT_RECOVERY_NO_BACKUP
+    ;;
   daemon)
-    trap 'load_active; if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then rollback_active SERVICE_STOP >/dev/null 2>&1 || true; fi; exit 0' INT TERM
+    trap 'load_active; if [ "$PREV_EXECUTOR_STATE" != ROLLBACK_FAILED ] && { [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; }; then rollback_active SERVICE_STOP >/dev/null 2>&1 || true; fi; exit 0' INT TERM
     while :; do reconcile >/dev/null 2>&1 || true; sleep 2; done
     ;;
-  *) echo "usage: executor.sh ROOT {once|daemon}"; exit 2 ;;
+  *) echo "usage: executor.sh ROOT {once|recover|daemon}"; exit 2 ;;
 esac
