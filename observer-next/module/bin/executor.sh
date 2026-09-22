@@ -126,7 +126,9 @@ thermal_safe(){
   awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu" 'BEGIN{
     if(s!~/^[0-9]+([.][0-9]+)?$/||b!~/^[0-9]+([.][0-9]+)?$/||c!~/^[0-9]+([.][0-9]+)?$/) exit 1;
     gok=(g!~/^[0-9]+([.][0-9]+)?$/ || g<75);
-    exit !((s<44)&&(b<43)&&(c<75)&&gok)
+    # 44C is a pressure point, not a hard execution ban. Hard stop is aligned
+    # with candidate validation; reconcile() rechecks every ~2s and rolls back.
+    exit !((s<46)&&(b<45)&&(c<75)&&gok)
   }'
 }
 
