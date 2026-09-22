@@ -418,6 +418,51 @@ rollback_active(){
   return 1
 }
 
+release_external_override(){
+  _pkg="$APPLIED_PACKAGE"; _digest="$ACTIVE_DIGEST"
+  _little="$APPLIED_LITTLE"; _big="$APPLIED_BIG"; _gpu="$APPLIED_GPU"
+
+  # A transaction was initially verified, then a different kernel/vendor owner
+  # changed one of the owned SYSFS values. Do not fight that owner by forcing
+  # the stale backup back into sysfs. Relinquish DJAEGER ownership and let the
+  # next coherent decision start from fresh device truth.
+  LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
+  _restore_act="$(kv ACTUATORS "$BACKUP")"; [ -n "$_restore_act" ] || _restore_act="$APPLIED_ACTUATORS"
+
+  _rtmp="$RESTORE_DIAG.tmp.$PPID"
+  {
+    echo "UPDATED_AT=$(date +%s)"
+    echo "ACTUATORS=$_restore_act"
+    echo "RELEASE_REASON=SYSFS_EXTERNAL_OVERRIDE"
+    echo "LITTLE_STATUS=RELINQUISHED"
+    echo "LITTLE_READBACK=$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
+    echo "BIG_STATUS=RELINQUISHED"
+    echo "BIG_READBACK=$(readv "$BP/scaling_min_freq")-$(readv "$BP/scaling_max_freq")"
+    echo "GPU_STATUS=RELINQUISHED"
+    echo "GPU_READBACK=$(readv "$GP/min_freq")-$(readv "$GP/max_freq")"
+  } > "$_rtmp"
+  chmod 600 "$_rtmp"; mv -f "$_rtmp" "$RESTORE_DIAG"
+
+  READBACK=EXTERNAL_OVERRIDE
+  ROLLBACK_STATE=RELINQUISHED
+  record_outcome RELEASED SYSFS_EXTERNAL_OVERRIDE "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+
+  rm -f "$BACKUP" "$MONITOR"
+  ACTIVE_DIGEST=NONE
+  APPLIED_PACKAGE=NONE
+  APPLIED_INTENT=NONE
+  APPLIED_ACTUATORS=NONE
+  APPLIED_LITTLE=NA
+  APPLIED_BIG=NA
+  APPLIED_GPU=NA
+  APPLIED_AT=0
+  MONITOR_BAD_COUNT=0
+  MONITOR_SAMPLES=0
+
+  publish IDLE SYSFS_EXTERNAL_OVERRIDE
+  return 0
+}
+
 reconcile(){
   load_active
 
@@ -444,7 +489,7 @@ reconcile(){
 
     if ! active_readback_ok; then
       READBACK=DRIFT
-      rollback_active SYSFS_DRIFT
+      release_external_override
       return 1
     fi
 
