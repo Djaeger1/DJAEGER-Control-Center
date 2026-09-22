@@ -438,7 +438,7 @@ publish_cc() {
   _outcome_rows=0; _outcome_keep=0; _outcome_rollback=0; _outcome_rollback_failed=0; _outcome_last=NONE; _outcome_reason=NONE
   if [ -r "$_outcomes" ]; then
     _outcome_rows="$(awk -F, 'NR>1{n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
-    _outcome_keep="$(awk -F, 'NR>1&&($4=="KEPT"||$4=="APPLIED_VERIFIED"){n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
+    _outcome_keep="$(awk -F, 'NR>1&&$4=="KEPT"{n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
     _outcome_rollback="$(awk -F, 'NR>1&&($4=="ROLLED_BACK"||$4=="ROLLBACK_FAILED"){n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
     _outcome_rollback_failed="$(awk -F, 'NR>1&&$4=="ROLLBACK_FAILED"{n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
     _outcome_last="$(awk -F, 'NR>1{v=$4}END{print v}' "$_outcomes" 2>/dev/null)"; [ -n "$_outcome_last" ] || _outcome_last=NONE
