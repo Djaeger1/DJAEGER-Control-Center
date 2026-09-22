@@ -22,13 +22,14 @@ djaeger_singleton_claim(){
     printf '%s\n' "$$" > "$_dj_lock/pid"
   fi
   chmod 700 "$_dj_lock" 2>/dev/null
+  _dj_self="$(cat "$_dj_lock/pid" 2>/dev/null)"
 
   # Only the process that still owns the PID file may remove the lock.
   # Without this ownership check, an old worker exiting late can delete a
   # newly-started worker's lock directory after a hot restart.
   djaeger_singleton_cleanup(){
     _dj_owner="$(cat "$_dj_lock/pid" 2>/dev/null)"
-    [ "$_dj_owner" = "$" ] && rm -rf "$_dj_lock" 2>/dev/null
+    [ -n "$_dj_self" ] && [ "$_dj_owner" = "$_dj_self" ] && rm -rf "$_dj_lock" 2>/dev/null
   }
 
   # EXIT only cleans the lock. Signal traps must also terminate the worker.
