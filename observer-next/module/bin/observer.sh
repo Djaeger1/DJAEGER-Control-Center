@@ -1,6 +1,11 @@
 #!/system/bin/sh
 ROOT="$1"
 MODDIR="$2"
+BIN_DIR="${0%/*}"
+if [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim observer
+fi
 OBSERVER_PID=$(sh -c 'echo $PPID' 2>/dev/null)
 case "$OBSERVER_PID" in ''|*[!0-9]*) OBSERVER_PID=UNKNOWN;; esac
 RUNTIME="$ROOT/runtime"
