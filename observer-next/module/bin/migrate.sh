@@ -110,8 +110,31 @@ for _root in "$LEGACY" "$LEGACY_MODULE"; do
   done >> "$TMP_SOURCES"
 done
 
+# RUNTIMEFIX1: old DJAEGER recovery flows also left credential/config backups
+# in Termux and Download. Scan only known credential filenames.
+for _root in /data/user/0/com.termoneplus/app_HOME /data/media/0/Download /sdcard/Download; do
+  [ -d "$_root" ] || continue
+  find "$_root" -maxdepth 8 -type f -size -256k \( \
+    -name 'gemini_keys.vault*' -o -name 'gemini.conf*' -o -name 'gemini_key_cooldowns*' -o \
+    -name 'hermes_cloud.conf*' -o -name 'HERMES_CLOUD_CREDENTIALS.txt*' -o -name 'neuron_budget.env*' \
+  \) 2>/dev/null | while IFS= read -r _f; do
+    is_foreign_path "$_f" && continue
+    printf '%s\n' "$_f"
+  done >> "$TMP_SOURCES"
+done
+awk 'NF&&!seen[$0]++' "$TMP_SOURCES" > "$TMP_SOURCES.uniq" 2>/dev/null || :
+mv -f "$TMP_SOURCES.uniq" "$TMP_SOURCES" 2>/dev/null || true
+
 while IFS= read -r _f; do
   [ -r "$_f" ] || continue
+  case "$(basename "$_f")" in
+    gemini_keys.vault*)
+      while IFS= read -r _raw_key; do
+        _raw_key="$(printf '%s' "$_raw_key" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        append_key "$_raw_key"
+      done < "$_f"
+      ;;
+  esac
   for _name in GEMINI_API_KEY KEY_1 KEY_2 KEY_3 KEY_4; do
     append_key "$(extract_exact "$_name" "$_f")"
   done
@@ -198,7 +221,9 @@ case "$_slot" in 1|2|3|4) [ "$_slot" -le "$GCOUNT" ] 2>/dev/null || printf '1\n'
 [ -e "$GEMINI_SLOT" ] && chmod 600 "$GEMINI_SLOT"
 
 # Legacy cooldown ledger is slot|until|reason.
-if [ -r "$LEGACY/gemini_key_cooldowns" ]; then
+COOLDOWN_SRC="$LEGACY/gemini_key_cooldowns"
+[ -r "$COOLDOWN_SRC" ] || COOLDOWN_SRC="$(find "$LEGACY" /data/user/0/com.termoneplus/app_HOME /data/media/0/Download /sdcard/Download -maxdepth 8 -type f -name 'gemini_key_cooldowns*' 2>/dev/null | head -n1)"
+if [ -r "$COOLDOWN_SRC" ]; then
   COOLDOWN_FOUND=YES
   grep -E '^KEY_[1-4]_UNTIL=[0-9]+$' "$GEMINI_COOLDOWN" 2>/dev/null > "$GEMINI_COOLDOWN.tmp.$$" || :
   while IFS='|' read -r _slot _until _reason; do
@@ -207,7 +232,7 @@ if [ -r "$LEGACY/gemini_key_cooldowns" ]; then
     grep -v "^KEY_${_slot}_UNTIL=" "$GEMINI_COOLDOWN.tmp.$$" > "$GEMINI_COOLDOWN.tmp2.$$" 2>/dev/null || :
     mv -f "$GEMINI_COOLDOWN.tmp2.$$" "$GEMINI_COOLDOWN.tmp.$$"
     printf 'KEY_%s_UNTIL=%s\n' "$_slot" "$_until" >> "$GEMINI_COOLDOWN.tmp.$$"
-  done < "$LEGACY/gemini_key_cooldowns"
+  done < "$COOLDOWN_SRC"
   if [ -s "$GEMINI_COOLDOWN.tmp.$$" ]; then
     chmod 600 "$GEMINI_COOLDOWN.tmp.$$"
     mv -f "$GEMINI_COOLDOWN.tmp.$$" "$GEMINI_COOLDOWN"
@@ -251,13 +276,15 @@ if [ -n "$R_TOKEN" ] || [ -n "$R_URL" ]; then
 fi
 
 # Import old device-side Neuron estimate without pretending it is provider truth.
-if [ -r "$LEGACY/hermes/neuron_budget.env" ]; then
-  N_USED="$(extract_exact USED_EST "$LEGACY/hermes/neuron_budget.env")"
-  N_LIMIT="$(extract_exact LIMIT "$LEGACY/hermes/neuron_budget.env")"
-  N_DAY="$(extract_exact EPOCH_DAY "$LEGACY/hermes/neuron_budget.env")"
-  N_FAST="$(extract_exact FAST_CALLS "$LEGACY/hermes/neuron_budget.env")"
-  N_SMART="$(extract_exact SMART_CALLS "$LEGACY/hermes/neuron_budget.env")"
-  N_DEEP="$(extract_exact DEEP_CALLS "$LEGACY/hermes/neuron_budget.env")"
+NEURON_SRC="$LEGACY/hermes/neuron_budget.env"
+[ -r "$NEURON_SRC" ] || NEURON_SRC="$(find "$LEGACY" /data/user/0/com.termoneplus/app_HOME /data/media/0/Download /sdcard/Download -maxdepth 8 -type f -name 'neuron_budget.env*' 2>/dev/null | head -n1)"
+if [ -r "$NEURON_SRC" ]; then
+  N_USED="$(extract_exact USED_EST "$NEURON_SRC")"
+  N_LIMIT="$(extract_exact LIMIT "$NEURON_SRC")"
+  N_DAY="$(extract_exact EPOCH_DAY "$NEURON_SRC")"
+  N_FAST="$(extract_exact FAST_CALLS "$NEURON_SRC")"
+  N_SMART="$(extract_exact SMART_CALLS "$NEURON_SRC")"
+  N_DEEP="$(extract_exact DEEP_CALLS "$NEURON_SRC")"
   if num_value "$N_USED" >/dev/null && num_value "$N_LIMIT" >/dev/null; then
     {
       echo "SOURCE=LEGACY_LOCAL_ACCOUNTING"
@@ -292,7 +319,7 @@ if [ "$GCOUNT" -gt 0 ] || [ "$HCOUNT" -gt 0 ] || [ "$ICOUNT" -gt 0 ] || [ "$RCOU
 if [ "$GCOUNT" -eq 4 ] && [ "$H_ACCESS_PRESENT" = YES ] && [ "$H_ENDPOINT_PRESENT" = YES ]; then STATE=RECOVERED; fi
 
 {
-  echo "MIGRATION_SCHEMA=8"
+  echo "MIGRATION_SCHEMA=9"
   echo "MIGRATION_STATE=$STATE"
   echo "LEGACY_CONFIG_PRESENT=$LEGACY_PRESENT"
   echo "RAW_GEMINI_VAULT_FOUND=$RAW_VAULT_FOUND"
@@ -312,7 +339,7 @@ if [ "$GCOUNT" -eq 4 ] && [ "$H_ACCESS_PRESENT" = YES ] && [ "$H_ENDPOINT_PRESEN
   echo "LEGACY_HARDWARE_CONTROLLER_IMPORTED=NO"
   echo "LEGACY_PROFILE_MAP_IMPORTED=NO"
   echo "FOREIGN_PROJECT_IMPORTS=0"
-  echo "MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY"
+  echo "MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY"\n  echo "CREDENTIAL_SCAN_SCOPE=LEGACY_BACKUPS_TERMUX_DOWNLOAD"
   echo "SECRET_VALUES=HIDDEN"
   echo "MIGRATED_AT=$(date +%s)"
 } > "$MARK.tmp.$$"
