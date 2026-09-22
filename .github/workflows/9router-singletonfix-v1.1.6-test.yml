@@ -123,6 +123,22 @@ jobs:
           tail -n 200 "$GITHUB_WORKSPACE/out/9router-server.log"
           exit 1
 
+      - name: Configure local-only 9Router API for experiment
+        run: |
+          set -euo pipefail
+          curl -fsS -c out/9router-cookie.txt \
+            -H 'Content-Type: application/json' \
+            --data '{"password":"experiment-only"}' \
+            http://127.0.0.1:20128/api/auth/login \
+            > out/9router-login.json
+          curl -fsS -b out/9router-cookie.txt \
+            -X PATCH -H 'Content-Type: application/json' \
+            --data '{"requireApiKey":false}' \
+            http://127.0.0.1:20128/api/settings \
+            > out/9router-settings.json
+          grep -q '"requireApiKey":false' out/9router-settings.json
+          echo '9ROUTER_LOCAL_API_AUTH=DISABLED_FOR_ISOLATED_EXPERIMENT' > out/9router-auth-mode.txt
+
       - name: Audit latest pair through 9Router free coding provider
         run: |
           set -euo pipefail
