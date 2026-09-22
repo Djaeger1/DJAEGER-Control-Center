@@ -1,6 +1,6 @@
 id=djaeger_ai_observer
 name=DJAEGER AI Adaptive
-version=1.1.4-braincontract
-versionCode=207
+version=1.1.5-startupfix
+versionCode=208
 author=DJAEGER
-description=Gemini primary + ONE HERMES deputy failover, neuron-guarded Hermes Cloud escalation, AI Agent hardware control, frame-stability-first minimum-power contract.
+description=Braincontract v3 with nonblocking credential migration startup, corrected worker restart matching, Gemini primary, ONE HERMES deputy, AI Agent hardware control.
