@@ -102,7 +102,7 @@ for _rf in "$LEGACY/railway.conf" "$LEGACY_MODULE/system/etc/djaeger/railway/rai
   [ -n "$R_URL" ] || R_URL="$(extract_exact ENDPOINT "$_rf")"
 done
 
-# Build an allowlisted source list. Foreign DJAEGER Work paths are excluded.
+# Build an allowlisted source list. Foreign project paths are excluded.
 for _root in "$LEGACY" "$LEGACY_MODULE" $LEGACY_EXTRA; do
   [ -d "$_root" ] || continue
   LEGACY_PRESENT=YES
