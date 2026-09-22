@@ -27,33 +27,24 @@ jobs:
         with:
           gradle-version: '8.14.3'
 
-      - name: Patch release identity only
+      - name: Verify release identity
         run: |
           set -euo pipefail
           APP=observer-next/android/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           PUB=observer-next/module/bin/publisher.sh
+          REPO=observer-next/android/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          PROP=observer-next/module/module.prop
 
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path("observer-next/android/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt")
-          s=p.read_text()
-          s=s.replace('syncModule=="206"&&syncCc=="107"', 'syncModule=="206"&&syncCc=="107"')
-          s=s.replace('VERIFIED • MODULE 206 / APP 107', 'VERIFIED • MODULE 206 / APP 107')
-          s=s.replace('DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC', 'DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC')
-          p.write_text(s)
-
-          p=Path("observer-next/module/bin/publisher.sh")
-          s=p.read_text().replace('_expected_apk=107', '_expected_apk=107')
-          p.write_text(s)
-          PY
-
-          ! grep -Fq 'syncModule=="206"&&syncCc=="107"' "$APP"
-          ! grep -Fq 'VERIFIED • MODULE 206 / APP 107' "$APP"
-          ! grep -Fq 'DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC' "$APP"
+          ! grep -Fq 'syncModule=="203"&&syncCc=="104"' "$APP"
+          ! grep -Fq 'syncModule=="205"&&syncCc=="106"' "$APP"
+          ! grep -Fq 'DJAEGER AI Adaptive v1.1.0 RC1 • VERIFIED SYNC' "$APP"
+          ! grep -Fq 'DJAEGER AI Adaptive v1.1.2 CREDRESTORE • VERIFIED SYNC' "$APP"
           grep -Fq 'syncModule=="206"&&syncCc=="107"' "$APP"
           grep -Fq 'VERIFIED • MODULE 206 / APP 107' "$APP"
           grep -Fq 'DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC' "$APP"
           grep -Fq '_expected_apk=107' "$PUB"
+          grep -Fq 'private val apkVersionCode=107' "$REPO"
+          grep -Fqx 'versionCode=206' "$PROP"
 
       - name: Source isolation and backend tests
         run: |
