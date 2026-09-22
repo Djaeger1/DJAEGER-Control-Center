@@ -17,7 +17,7 @@ neuron_utc_day(){ date -u +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d; }
 
 neuron_write_state(){
   _day="$1"; _used="$2"; _fast="$3"; _smart="$4"; _deep="$5"; _calls="$6"; _delta="$7"; _method="$8"
-  _tmp="$NEURON_STATE.tmp.$"
+  _tmp="$NEURON_STATE.tmp.$PPID"
   {
     echo "SCHEMA=DJAEGER_NEURON_LIVE_V1"
     echo "UTC_DAY=$_day"
