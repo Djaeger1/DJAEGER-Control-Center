@@ -167,6 +167,16 @@ BIG_MIN_KHZ=900000
 BIG_MAX_KHZ=1800000
 GPU_MIN_HZ=300000000
 GPU_MAX_HZ=600000000
+POWER_P50_MW=2200
+POWER_P95_MW=3200
+FPS_P50=60
+JANK_P95=2
+FRAME_P95_P95_MS=18
+FRAME_P99_P95_MS=22
+OUTCOME_ROWS=0
+KEEP_ROWS=0
+ROLLBACK_ROWS=0
+OUTCOME_FEEDBACK=NONE
 EOF
 cat > "$TEST_ROOT/runtime/workload.env" <<EOF
 AT=$NOW
@@ -219,6 +229,7 @@ SCHEMA=DJAEGER_ADAPTIVE_POLICY_V2
 AT=$NOW
 PACKAGE=sts.al
 CONFIDENCE=90
+INTENT=FRAME_FIRST_BALANCED
 CANDIDATE_DIGEST=abc123
 LITTLE_MIN_KHZ=600000
 LITTLE_MAX_KHZ=1400000
@@ -233,6 +244,7 @@ AT=$NOW
 EXPIRES_AT=$((NOW+180))
 EXECUTOR_ALLOWED=YES
 PACKAGE=sts.al
+INTENT=FRAME_FIRST_BALANCED
 CANDIDATE_DIGEST=abc123
 LITTLE_MIN_KHZ=600000
 LITTLE_MAX_KHZ=1400000
@@ -274,6 +286,7 @@ AT=$NOW
 EXPIRES_AT=$((NOW+180))
 EXECUTOR_ALLOWED=YES
 PACKAGE=sts.al
+INTENT=FRAME_FIRST_BALANCED
 CANDIDATE_DIGEST=abc123
 LITTLE_MIN_KHZ=600000
 LITTLE_MAX_KHZ=1400000
@@ -380,6 +393,22 @@ grep -Fq 'GEMINI_REASONING_GUARD_REASON=' "$MODULE/bin/publisher.sh"
 grep -Fq 'sleep 5' "$MODULE/bin/consensus.sh"
 grep -Fq 'publish WAITING candidate_missing; sleep 10' "$MODULE/bin/shadow.sh"
 grep -Fq 'insufficient_matching_frame_windows; sleep 20' "$MODULE/bin/shadow.sh"
+grep -Fq 'local_synthesize_takeover()' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'TAKEOVER_LOCAL_SYNTH' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'LOCAL_FRAME_CRITICAL_RECOVERY' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'LOCAL_POWER_TRIM_GPU' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'cloud_takeover_deferred_thermal_guard' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq '$4=="KEPT"' "$MODULE/bin/hermes_adapter.sh"
+! grep -Fq '$4=="KEPT"||$4=="APPLIED_VERIFIED"' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'INTENT=$INTENT' "$MODULE/bin/consensus.sh"
+grep -Fq 'intent=="POWER_EFFICIENCY"' "$MODULE/bin/shadow.sh"
+grep -Fq 'intent=="FRAME_RECOVERY"' "$MODULE/bin/shadow.sh"
+grep -Fq 'APPLIED_INTENT=' "$MODULE/bin/executor.sh"
+grep -Fq 'APPROVAL_INTENT_MISMATCH' "$MODULE/bin/executor.sh"
+grep -Fq 'GEMINI_REASONING_GUARD_REASON=' "$MODULE/bin/publisher.sh"
+grep -Fq 'DEPUTY_LOCAL_SYNTH' "$MODULE/bin/publisher.sh"
+grep -Fq 'CLOUD_PLAN_INTENT=' "$MODULE/bin/publisher.sh"
+grep -Fq 'KEEP_ROWS=$(awk -F, -v p="$PKG" '\''NR>1&&$2==p&&$4=="KEPT"' "$MODULE/bin/learner.sh"
 grep -Fq 'djaeger_singleton_claim gemini_reasoner' "$MODULE/bin/gemini_reasoner.sh"
 grep -Fq 'djaeger_singleton_claim hermes_adapter' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'djaeger_singleton_claim consensus' "$MODULE/bin/consensus.sh"
