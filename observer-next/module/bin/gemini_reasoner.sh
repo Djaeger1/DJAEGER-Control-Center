@@ -126,7 +126,7 @@ while true; do
   PAY="$ROOT/runtime/.gemini_request.$$"
   RESP="$ROOT/runtime/.gemini_response.$$"
   cat > "$PAY" <<EOF
-{"contents":[{"parts":[{"text":"You are one reasoning member of DJAEGER AI. Analyze only measured device behavior for the active GAME workload. Package=$PKG samples=$SAMPLES independent_frame_windows=$FRAME_WINDOWS. Measured stock envelope: little=$LMIN-$LMAX kHz big=$BMIN-$BMAX kHz gpu=$GMIN-$GMAX Hz. Kernel supported little frequencies=[$LAV], big frequencies=[$BAV], gpu frequencies=[$GAV]. Frame baseline: fps_p50=$FPS50 jank_p95=$JANK95 frame_p95_p95_ms=$FP95 frame_p99_p95_ms=$FP99. Current: little=$LCUR big=$BCUR gpu=$GCUR skin=$SKIN C cpu=$CPU C gpuTemp=$GPUC C power=$POWER mW fps=$CFPS jank=$CJANK p95=$CP95 p99=$CP99. Goal: frame stability first, then lower power and temperature. Never output shell commands, paths, legacy profile labels, or unsupported clocks. Choose OBSERVE when evidence does not justify change. A CANDIDATE must remain inside the measured envelope and use exact kernel-supported frequencies. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."}]}],"generationConfig":{"temperature":0.1,"maxOutputTokens":256}}
+{"contents":[{"parts":[{"text":"You are GEMINI, the PRIMARY and HIGHEST reasoning brain of DJAEGER AI while you are online and valid. Analyze only measured device behavior for the active GAME workload. Package=$PKG samples=$SAMPLES independent_frame_windows=$FRAME_WINDOWS. Measured stock envelope: little=$LMIN-$LMAX kHz big=$BMIN-$BMAX kHz gpu=$GMIN-$GMAX Hz. Kernel supported little frequencies=[$LAV], big frequencies=[$BAV], gpu frequencies=[$GAV]. Frame baseline: fps_p50=$FPS50 jank_p95=$JANK95 frame_p95_p95_ms=$FP95 frame_p99_p95_ms=$FP99. Current: little=$LCUR big=$BCUR gpu=$GCUR skin=$SKIN C cpu=$CPU C gpuTemp=$GPUC C power=$POWER mW fps=$CFPS jank=$CJANK p95=$CP95 p99=$CP99. Optimization contract is lexicographic: FIRST make frame-time as stable as evidence allows; SECOND, among strategies with equivalent frame stability, minimize power. Never trade meaningful frame stability for lower power. Temperature is a local safety constraint, not a reason to sacrifice frame stability inside safe limits. Never output shell commands, paths, legacy profile labels, or unsupported clocks. Choose OBSERVE when evidence does not justify change. A CANDIDATE must remain inside the measured envelope and use exact kernel-supported frequencies. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."}]}],"generationConfig":{"temperature":0.1,"maxOutputTokens":256}}
 EOF
   chmod 600 "$PAY"
 
@@ -218,7 +218,7 @@ EOF
 
   T="$OUT.tmp.$$"
   {
-    echo "SCHEMA=DJAEGER_GEMINI_OBSERVER_PROPOSAL_V2"
+    echo "SCHEMA=DJAEGER_GEMINI_PRIMARY_STRATEGY_V3"
     echo "AT=$(date +%s)"
     echo "PACKAGE=$PKG"
     echo "VERDICT=CANDIDATE"
@@ -229,7 +229,10 @@ EOF
     echo "BIG_MAX_KHZ=$GBMAX"
     echo "GPU_MIN_HZ=$GGMIN"
     echo "GPU_MAX_HZ=$GGMAX"
-    echo "REASON=${REASON:-GEMINI_MEASURED_ANALYSIS}"
+    echo "REASON=${REASON:-GEMINI_PRIMARY_FRAME_FIRST_ANALYSIS}"
+    echo "BRAIN_SOURCE=GEMINI"
+    echo "BRAIN_ROLE=PRIMARY_HIGHEST"
+    echo "OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
     echo "FRAME_EVIDENCE=$FRAME"
     echo "KEY_SLOT=$SLOT"
     echo "APPLY_AUTHORITY=NONE"
