@@ -43,7 +43,7 @@ temp_c() {
 THERMAL_TYPES_CACHE="$RUNTIME/thermal_types.cache"
 
 build_thermal_cache() {
-  _tmp="$THERMAL_TYPES_CACHE.tmp.$"
+  _tmp="$THERMAL_TYPES_CACHE.tmp.$PPID"
   : > "$_tmp"
   for z in /sys/class/thermal/thermal_zone*; do
     [ -r "$z/type" ] || continue
@@ -58,13 +58,21 @@ build_thermal_cache() {
 thermal_by_type() {
   pat="$1"; best=""
   [ -s "$THERMAL_TYPES_CACHE" ] || build_thermal_cache
-  while IFS='|' read -r z t; do
+
+  # Filter the cached type table once, then read temps only from matching zones.
+  # Avoid spawning grep once per thermal zone; that caused observer cycles >20s
+  # on devices with dozens of zones.
+  _matches="$RUNTIME/.thermal_matches.$PPID"
+  grep -Ei "$pat" "$THERMAL_TYPES_CACHE" 2>/dev/null | cut -d'|' -f1 > "$_matches"
+
+  while IFS= read -r z; do
     [ -n "$z" ] || continue
-    printf '%s\n' "$t" | grep -Eqi "$pat" || continue
     c=$(temp_c "$(read_one "$z/temp")")
     case "$c" in ''|NA|*[!0-9.-]*) continue;; esac
     if [ -z "$best" ] || awk -v a="$c" -v b="$best" 'BEGIN{exit !(a>b)}'; then best="$c"; fi
-  done < "$THERMAL_TYPES_CACHE"
+  done < "$_matches"
+
+  rm -f "$_matches"
   [ -n "$best" ] && echo "$best" || echo "NA"
 }
 
