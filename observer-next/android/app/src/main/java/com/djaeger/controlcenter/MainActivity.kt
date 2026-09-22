@@ -6,6 +6,9 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -43,6 +46,34 @@ private fun runtimeStateStale(s:RuntimeState):Boolean{
     return s.updated<=0||(System.currentTimeMillis()/1000-s.updated)>15L
 }
 private fun positiveLongText(value:Long,divisor:Long,suffix:String)=if(value>0)"${value/divisor}$suffix" else "—"
+
+private const val VISUAL_SMOOTH_MS=300
+
+// VISUAL_SMOOTHING_ONLY_RAW_RUNTIME_UNCHANGED
+// Device Truth, AI Agent, safety, executor, learning and history always consume raw RuntimeState.
+// Only rendered numeric text is interpolated, matching the smooth Huawei-style presentation.
+@Composable
+private fun smoothVisualValue(target:Float?):Float?{
+    val valid=target?.takeIf{it.isFinite()}
+    val anim=remember{Animatable(valid?:0f)}
+    var initialized by remember{mutableStateOf(valid!=null)}
+    LaunchedEffect(valid){
+        if(valid==null){
+            initialized=false
+        }else if(!initialized){
+            anim.snapTo(valid)
+            initialized=true
+        }else{
+            anim.animateTo(valid,tween(durationMillis=VISUAL_SMOOTH_MS,easing=LinearEasing))
+        }
+    }
+    return if(valid!=null&&initialized) anim.value else null
+}
+private fun smoothText(value:Float?,suffix:String="",decimals:Int=1):String{
+    if(value==null||!value.isFinite())return "—"
+    return String.format(Locale.US,"%."+decimals+"f%s",value,suffix)
+}
+private fun netFloat(raw:String):Float?=raw.trim().toFloatOrNull()?.takeIf{it.isFinite()}
 private fun stat3(values:List<Double>,unit:String)=if(values.isEmpty())"—" else "%.1f / %.1f / %.1f%s".format(values.average(),values.minOrNull()?:0.0,values.maxOrNull()?:0.0,unit)
 private fun stat2(values:List<Double>,unit:String)=if(values.isEmpty())"—" else "%.1f / %.1f%s".format(values.average(),values.maxOrNull()?:0.0,unit)
 private fun hccPresetFromBlock(block:String):String{
@@ -438,7 +469,42 @@ private fun registryPreview(raw:String,max:Int=8):String{
     BoxCard("WORKLOAD ENFORCEMENT SAFETY",body,true)
 }
 
-@Composable fun Overview(s:RuntimeState){val power=if(s.telemetry.powerMw>=0)"%.1f mW".format(s.telemetry.powerMw) else "—";val current=if(s.telemetry.currentUa>0)"${s.telemetry.currentUa} µA" else "—";val voltage=if(s.telemetry.voltageUv>0)"${s.telemetry.voltageUv} µV" else "—";Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){if(s.error.isNotBlank())BoxCard("ROOT / CONNECTION",s.error);StatusCard(s);ThoughtsCard(s);Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Metric("FPS",positiveText(s.telemetry.fps,""),Modifier.weight(1f));Metric("Frame",positiveText(s.telemetry.frameMs," ms"),Modifier.weight(1f));Metric("Jank",jankText(s.telemetry.jank),Modifier.weight(1f))};ThermalRow(s);NetworkCard(s.network);StrategyCard(s);HermesStatusCard(s);AgentRebuild3Card(s);HermesCloudCard(s);KernelAgentSyncCard(s);HermesCard(s);HumanComfortHcc1Card(s);ContextVNextCard(s);MemoryVNextCard(s);ReasoningV2Card(s);SkillsVNextCard(s);LearningResearchV2Card(s);OutcomeLearningCard(s);StrategyCompositionCard(s);DecisionPipelineCard(s);BoxCard("PERFORMANCE","Little current: ${positiveLongText(s.telemetry.littleKhz,1000," MHz")}\nBig current: ${positiveLongText(s.telemetry.bigKhz,1000," MHz")}\nGPU current: ${positiveLongText(s.telemetry.gpuHz,1_000_000," MHz")}\nLearned Little: ${s.strategy.cpuLittleMin}–${s.strategy.cpuLittleMax} kHz\nLearned Big: ${s.strategy.cpuBigMin}–${s.strategy.cpuBigMax} kHz\nLearned GPU: ${s.strategy.gpuMin}–${s.strategy.gpuMax} Hz\nProfile: ${s.telemetry.profile}\nP95/P99: ${positiveText(s.telemetry.p95," ms")} / ${positiveText(s.telemetry.p99," ms")}");BoxCard("POWER","${s.telemetry.batteryStatus} • $power\n$current • $voltage\nValidity: ${s.telemetry.powerValid} (${s.telemetry.powerReason})");BoxCard("FRAME INTELLIGENCE • RECENT",s.frameIntel.ifBlank{"No frame history yet"},true);WorkloadIntelligenceCard(s)}}
+@Composable fun Overview(s:RuntimeState){
+    val power=if(s.telemetry.powerMw>=0)"%.1f mW".format(s.telemetry.powerMw) else "—"
+    val current=if(s.telemetry.currentUa>0)"${s.telemetry.currentUa} µA" else "—"
+    val voltage=if(s.telemetry.voltageUv>0)"${s.telemetry.voltageUv} µV" else "—"
+    Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
+        if(s.error.isNotBlank())BoxCard("ROOT / CONNECTION",s.error)
+        StatusCard(s)
+        ThoughtsCard(s)
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            SmoothMetric("FPS",s.telemetry.fps.takeIf{it>0}?.toFloat(),"",1,Modifier.weight(1f))
+            SmoothMetric("Frame",s.telemetry.frameMs.takeIf{it>0}?.toFloat()," ms",1,Modifier.weight(1f))
+            SmoothMetric("Jank",s.telemetry.jank.takeIf{it>=0}?.toFloat(),"%",1,Modifier.weight(1f))
+        }
+        ThermalRow(s)
+        NetworkCard(s.network)
+        StrategyCard(s)
+        HermesStatusCard(s)
+        AgentRebuild3Card(s)
+        HermesCloudCard(s)
+        KernelAgentSyncCard(s)
+        HermesCard(s)
+        HumanComfortHcc1Card(s)
+        ContextVNextCard(s)
+        MemoryVNextCard(s)
+        ReasoningV2Card(s)
+        SkillsVNextCard(s)
+        LearningResearchV2Card(s)
+        OutcomeLearningCard(s)
+        StrategyCompositionCard(s)
+        DecisionPipelineCard(s)
+        PerformanceCard(s)
+        BoxCard("POWER","${s.telemetry.batteryStatus} • $power\n$current • $voltage\nValidity: ${s.telemetry.powerValid} (${s.telemetry.powerReason})")
+        BoxCard("FRAME INTELLIGENCE • RECENT",s.frameIntel.ifBlank{"No frame history yet"},true)
+        WorkloadIntelligenceCard(s)
+    }
+}
 private fun compactModuleVersion(raw:String):String=when{
     raw.contains("adaptive",true)->"DJAEGER AI Adaptive • device learning • no fixed preset"
     raw.contains("LOOPFIX1",true)&&raw.contains("CCSYNC1",true)&&raw.contains("KERNEL1",true)&&raw.contains("SYSFS1",true)->"v12.9.50 • REBUILD3 • HK1 • SYSFS1 • CCSYNC1 • LOOPFIX1"
@@ -481,23 +547,96 @@ private fun compactModuleVersion(raw:String):String=when{
     val clipboard=LocalClipboardManager.current
     val show=n.fresh||n.held
     val body="Ping ${n.ping} ms • Avg ${n.avg} ms • P95 ${n.p95} ms • Jitter ${n.jitter} ms • Loss ${n.loss}% • Quality ${n.quality}"
-    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("NETWORK",color=Green,fontWeight=FontWeight.Bold);TextButton(onClick={clipboard.setText(AnnotatedString(body))}){Text("COPY",maxLines=1)}}
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){NetworkMetric("Ping",if(show) "${n.ping} ms" else "—");NetworkMetric("Avg",if(show) "${n.avg} ms" else "—");NetworkMetric("P95",if(show) "${n.p95} ms" else "—");NetworkMetric("Jitter",if(show) "${n.jitter} ms" else "—");NetworkMetric("Loss",if(show) "${n.loss}%" else "—")}
-        Spacer(Modifier.height(8.dp));Text("Quality: ${if(show)n.quality else "INACTIVE"}",color=when{n.fresh->Green;n.held->Amber;else->Muted},fontWeight=FontWeight.Bold)
-    }}
+    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
+        Column(Modifier.padding(14.dp)){
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+                Text("NETWORK",color=Green,fontWeight=FontWeight.Bold)
+                TextButton(onClick={clipboard.setText(AnnotatedString(body))}){Text("COPY",maxLines=1)}
+            }
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+                SmoothNetworkMetric("Ping",if(show)netFloat(n.ping) else null," ms")
+                SmoothNetworkMetric("Avg",if(show)netFloat(n.avg) else null," ms")
+                SmoothNetworkMetric("P95",if(show)netFloat(n.p95) else null," ms")
+                SmoothNetworkMetric("Jitter",if(show)netFloat(n.jitter) else null," ms")
+                NetworkMetric("Loss",if(show)"${n.loss}%" else "—")
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Quality: ${if(show)n.quality else "INACTIVE"}",color=when{n.fresh->Green;n.held->Amber;else->Muted},fontWeight=FontWeight.Bold)
+        }
+    }
 }
-@Composable fun NetworkMetric(label:String,value:String){Column{Text(label,color=Muted,style=MaterialTheme.typography.labelMedium);Text(value,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.bodyMedium)}}
-
+@Composable fun NetworkMetric(label:String,value:String){
+    Column{
+        Text(label,color=Muted,style=MaterialTheme.typography.labelMedium)
+        Text(value,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.bodyMedium)
+    }
+}
+@Composable fun SmoothNetworkMetric(label:String,target:Float?,suffix:String){
+    val shown=smoothVisualValue(target)
+    NetworkMetric(label,smoothText(shown,suffix,1))
+}
 
 @Composable fun StrategyCompositionCard(s:RuntimeState){val x=s.strategy;BoxCard("STRATEGY COMPOSITION • LAST PROMOTED PLAN",(if(runtimeStateStale(s)) "STALE SNAPSHOT — NOT CURRENT RUNTIME\n" else "")+"Source: ${x.source}\nMode: ${s.userMode}\nCPU LITTLE: ${x.cpuLittleMin} → ${x.cpuLittleMax}\nCPU BIG: ${x.cpuBigMin} → ${x.cpuBigMax}\nGPU: ${x.gpuMin} → ${x.gpuMax}\nCPU governor: ${x.cpuGovernor} • GPU governor: ${x.gpuGovernor}\nPower/bias: ${x.powerBias} • Burst/lease: ${x.burstLease}\nComfort ceiling: ${x.comfortCeiling} • Confidence: ${x.confidence}\nRationale: ${x.rationale}",true)}
 @Composable fun DecisionPipelineCard(s:RuntimeState){val x=s.strategy;BoxCard("DECISION PIPELINE","PROPOSED: ${x.proposal}\nVALIDATED / REJECTED: ${x.validation}\nAPPLIED: ${x.applied}\nREADBACK VERIFIED: ${x.readback}\nOUTCOME: ${x.outcome}\nDecision source: ${x.source}",true)}
 @Composable fun OutcomeLearningCard(s:RuntimeState){val x=s.strategy;BoxCard("OUTCOME + LEARNING","FPS: ${x.fpsOutcome} • Frame: ${x.frameOutcome}\nThermal: ${x.thermalOutcome} • Power: ${x.powerOutcome}\nLearning samples: ${x.learningSamples}\nLearning confidence: ${x.learningConfidence}\nPromotion: ${x.learningPromotion}\nOnly module-published truth is displayed; missing fields remain unavailable.",true)}
 
-@Composable fun ThermalRow(s:RuntimeState){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Thermal("CPU",s.telemetry.cpuT,Modifier.weight(1f));Thermal("GPU",s.telemetry.gpuT,Modifier.weight(1f));Thermal("Skin",s.telemetry.skinT,Modifier.weight(1f));Thermal("Battery",s.telemetry.batT,Modifier.weight(1f))}}
-@Composable fun Thermal(label:String,t:Int,m:Modifier){val c=when{t<0->Muted;t>=50->Red;t>=43->Amber;else->Green};Card(m,colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(12.dp)){Text(label,color=Muted,style=MaterialTheme.typography.labelMedium);Text(tempText(t),color=c,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)}}}
-
-
+@Composable fun ThermalRow(s:RuntimeState){
+    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+        Thermal("CPU",s.telemetry.cpuT,Modifier.weight(1f))
+        Thermal("GPU",s.telemetry.gpuT,Modifier.weight(1f))
+        Thermal("Skin",s.telemetry.skinT,Modifier.weight(1f))
+        Thermal("Battery",s.telemetry.batT,Modifier.weight(1f))
+    }
+}
+@Composable fun Thermal(label:String,t:Int,m:Modifier){
+    // Safety color follows RAW temperature immediately; only numeric motion is smoothed.
+    val c=when{t<0->Muted;t>=50->Red;t>=43->Amber;else->Green}
+    val shown=smoothVisualValue(t.takeIf{it>=0}?.toFloat())
+    Card(m,colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
+        Column(Modifier.padding(12.dp)){
+            Text(label,color=Muted,style=MaterialTheme.typography.labelMedium)
+            Text(smoothText(shown,"°C",1),color=c,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+@Composable fun SmoothMetric(label:String,target:Float?,suffix:String,decimals:Int,m:Modifier=Modifier){
+    val shown=smoothVisualValue(target)
+    Card(m,colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
+        Column(Modifier.padding(12.dp)){
+            Text(label,color=Muted,style=MaterialTheme.typography.labelMedium)
+            Text(smoothText(shown,suffix,decimals),fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+@Composable fun PerformanceCard(s:RuntimeState){
+    val clipboard=LocalClipboardManager.current
+    val little=smoothVisualValue(s.telemetry.littleKhz.takeIf{it>0}?.toFloat()?.div(1000f))
+    val big=smoothVisualValue(s.telemetry.bigKhz.takeIf{it>0}?.toFloat()?.div(1000f))
+    val gpu=smoothVisualValue(s.telemetry.gpuHz.takeIf{it>0}?.toFloat()?.div(1_000_000f))
+    val p95=smoothVisualValue(s.telemetry.p95.takeIf{it>0}?.toFloat())
+    val p99=smoothVisualValue(s.telemetry.p99.takeIf{it>0}?.toFloat())
+    val rawBody="Little current: ${positiveLongText(s.telemetry.littleKhz,1000," MHz")}\nBig current: ${positiveLongText(s.telemetry.bigKhz,1000," MHz")}\nGPU current: ${positiveLongText(s.telemetry.gpuHz,1_000_000," MHz")}\nLearned Little: ${s.strategy.cpuLittleMin}–${s.strategy.cpuLittleMax} kHz\nLearned Big: ${s.strategy.cpuBigMin}–${s.strategy.cpuBigMax} kHz\nLearned GPU: ${s.strategy.gpuMin}–${s.strategy.gpuMax} Hz\nProfile: ${s.telemetry.profile}\nP95/P99: ${positiveText(s.telemetry.p95," ms")} / ${positiveText(s.telemetry.p99," ms")}"
+    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){
+        Column(Modifier.padding(14.dp)){
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+                Text("PERFORMANCE",color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge)
+                TextButton(onClick={clipboard.setText(AnnotatedString(rawBody))}){Text("COPY",maxLines=1)}
+            }
+            Spacer(Modifier.height(7.dp))
+            Text(
+                "Little current: ${smoothText(little," MHz",0)}\n"+
+                "Big current: ${smoothText(big," MHz",0)}\n"+
+                "GPU current: ${smoothText(gpu," MHz",0)}\n"+
+                "Learned Little: ${s.strategy.cpuLittleMin}–${s.strategy.cpuLittleMax} kHz\n"+
+                "Learned Big: ${s.strategy.cpuBigMin}–${s.strategy.cpuBigMax} kHz\n"+
+                "Learned GPU: ${s.strategy.gpuMin}–${s.strategy.gpuMax} Hz\n"+
+                "Profile: ${s.telemetry.profile}\n"+
+                "P95/P99: ${smoothText(p95," ms",1)} / ${smoothText(p99," ms",1)}",
+                color=Color(0xFFE6EAF0),style=MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
 
 @Composable fun BugHealth(b:BugHealthState){
     val clipboard=LocalClipboardManager.current
