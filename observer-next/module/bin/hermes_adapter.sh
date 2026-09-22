@@ -330,7 +330,8 @@ write_local_vote(){
 }
 
 write_hermes_plan(){
-  _src="$1"; _source="$2"; _conf="$3"; _reason="$4"
+  _src="$1"; _source="$2"; _conf="$3"; _reason="$4"; _intent="$5"
+  [ -n "$_intent" ] || _intent=FRAME_FIRST_BALANCED
   _t="$HPLAN.tmp.$"
   {
     echo "SCHEMA=DJAEGER_ONE_HERMES_TAKEOVER_V1"
@@ -338,6 +339,7 @@ write_hermes_plan(){
     echo "PACKAGE=$(kv PACKAGE "$_src")"
     echo "VERDICT=CANDIDATE"
     echo "CONFIDENCE=$_conf"
+    echo "INTENT=$_intent"
     echo "LITTLE_MIN_KHZ=$(kv LITTLE_MIN_KHZ "$_src")"
     echo "LITTLE_MAX_KHZ=$(kv LITTLE_MAX_KHZ "$_src")"
     echo "BIG_MIN_KHZ=$(kv BIG_MIN_KHZ "$_src")"
@@ -374,7 +376,7 @@ local_history_takeover(){
     echo "GPU_MIN_HZ=$_g0"; echo "GPU_MAX_HZ=$_g1"
   } > "$_tmp"
   if validate_candidate_file "$_tmp"; then
-    write_hermes_plan "$_tmp" HERMES_LOCAL 86 LAST_PROVEN_GOOD_STRATEGY
+    write_hermes_plan "$_tmp" HERMES_LOCAL 86 LAST_PROVEN_GOOD_STRATEGY PROVEN_REUSE
     write_local_vote "$HPLAN" TAKEOVER_LOCAL LAST_PROVEN_GOOD_STRATEGY
     rm -f "$_tmp"
     return 0
