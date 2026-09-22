@@ -4,6 +4,11 @@
 # This worker never writes hardware.
 
 ROOT="$1"
+BIN_DIR="${0%/*}"
+if [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim shadow
+fi
 HISTORY="$ROOT/history/telemetry.csv"
 LEARN="$ROOT/history/learned_envelope.env"
 POLICY="$ROOT/policy/candidate.env"
