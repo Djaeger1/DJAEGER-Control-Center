@@ -129,6 +129,7 @@ while IFS= read -r _f; do
   [ -r "$_f" ] || continue
   case "$(basename "$_f")" in
     gemini_keys.vault*)
+      RAW_VAULT_FOUND=YES
       while IFS= read -r _raw_key; do
         _raw_key="$(printf '%s' "$_raw_key" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
         append_key "$_raw_key"
@@ -339,7 +340,8 @@ if [ "$GCOUNT" -eq 4 ] && [ "$H_ACCESS_PRESENT" = YES ] && [ "$H_ENDPOINT_PRESEN
   echo "LEGACY_HARDWARE_CONTROLLER_IMPORTED=NO"
   echo "LEGACY_PROFILE_MAP_IMPORTED=NO"
   echo "FOREIGN_PROJECT_IMPORTS=0"
-  echo "MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY"\n  echo "CREDENTIAL_SCAN_SCOPE=LEGACY_BACKUPS_TERMUX_DOWNLOAD"
+  echo "MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY"
+  echo "CREDENTIAL_SCAN_SCOPE=LEGACY_BACKUPS_TERMUX_DOWNLOAD"
   echo "SECRET_VALUES=HIDDEN"
   echo "MIGRATED_AT=$(date +%s)"
 } > "$MARK.tmp.$$"
