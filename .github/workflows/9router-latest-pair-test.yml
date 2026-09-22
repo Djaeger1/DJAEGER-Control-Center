@@ -1,0 +1,228 @@
+name: 9Router Latest Pair Experiment
+
+on:
+  push:
+    branches:
+      - experiment/9router-latest-pair-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-latest-pair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout DJAEGER experiment
+        uses: actions/checkout@v4
+
+      - name: Record baseline identity
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          {
+            echo "DJAEGER_SOURCE_SHA=$(git rev-parse HEAD)"
+            echo "DJAEGER_EXPECTED_BASE=fb72df1235635d3691ab300671bf1a7f4443824e"
+            echo "TEST_MODE=NO_DEVICE_NO_INSTALL"
+            echo "BRANCH=experiment/9router-latest-pair-test"
+          } | tee out/BASELINE_IDENTITY.txt
+
+      - name: Baseline source and module tests
+        run: |
+          set -euo pipefail
+          node isolation-check.js
+          npm test
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+          bash observer-next/tests/module_contract_test.sh
+          printf '%s\n' "BASELINE_STATIC_TESTS=PASS" > out/BASELINE_TESTS.txt
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Baseline APK unit tests and release build
+        working-directory: observer-next/android
+        run: gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
+
+      - name: Package baseline module and APK evidence
+        run: |
+          set -euo pipefail
+          cd observer-next/module
+          zip -qr ../../out/DJAEGER-LATEST-BASELINE-MODULE.zip .
+          cd ../..
+          APK="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*.apk' | head -n1)"
+          test -n "$APK"
+          cp "$APK" out/DJAEGER-LATEST-BASELINE.apk
+          sha256sum out/DJAEGER-LATEST-BASELINE.apk out/DJAEGER-LATEST-BASELINE-MODULE.zip > out/BASELINE_SHA256SUMS.txt
+
+      - name: Setup Node 22 for 9Router
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Checkout pinned 9Router MIBP
+        run: |
+          set -euo pipefail
+          git clone https://github.com/mhiqrambg/9router-mibp-version.git "$RUNNER_TEMP/9router"
+          cd "$RUNNER_TEMP/9router"
+          git checkout 25df5e6a9d209906dc8a3d8691fba99a1094b05f
+          echo "9ROUTER_SHA=$(git rev-parse HEAD)" | tee "$GITHUB_WORKSPACE/out/9ROUTER_IDENTITY.txt"
+
+      - name: Build 9Router
+        working-directory: ${{ runner.temp }}/9router
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Start 9Router with no-auth free provider
+        working-directory: ${{ runner.temp }}/9router
+        env:
+          JWT_SECRET: experiment-only-jwt-secret-9router-djaeger
+          INITIAL_PASSWORD: experiment-only
+          API_KEY_SECRET: experiment-only-api-key-secret
+          MACHINE_ID_SALT: experiment-only-machine-salt
+          DATA_DIR: ${{ runner.temp }}/9router-data
+          PORT: '20128'
+          HOSTNAME: 127.0.0.1
+          NODE_ENV: production
+          REQUIRE_API_KEY: 'false'
+          ENABLE_REQUEST_LOGS: 'false'
+          NEXT_PUBLIC_CLOUD_URL: ''
+          CLOUD_URL: ''
+        run: |
+          set -euo pipefail
+          mkdir -p "$DATA_DIR"
+          nohup node custom-server.js --port 20128 > "$GITHUB_WORKSPACE/out/9router-server.log" 2>&1 &
+          echo $! > "$GITHUB_WORKSPACE/out/9router.pid"
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:20128/api/health >/dev/null; then
+              echo "9ROUTER_HEALTH=PASS" | tee "$GITHUB_WORKSPACE/out/9ROUTER_HEALTH.txt"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "9ROUTER_HEALTH=FAIL" | tee "$GITHUB_WORKSPACE/out/9ROUTER_HEALTH.txt"
+          tail -n 200 "$GITHUB_WORKSPACE/out/9router-server.log"
+          exit 1
+
+      - name: Ask 9Router free coding model to audit latest APK-module pair
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          files = [
+              "observer-next/README.md",
+              "observer-next/module/bin/executor.sh",
+              "observer-next/module/bin/publisher.sh",
+              "observer-next/module/bin/consensus.sh",
+              "observer-next/tests/module_contract_test.sh",
+              "observer-next/android/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt",
+              "observer-next/android/app/src/main/java/com/djaeger/controlcenter/TelemetryNormalizer.kt",
+          ]
+          chunks = []
+          for p in files:
+              text = Path(p).read_text(errors="replace")
+              chunks.append(f"\n===== FILE: {p} =====\n{text}\n")
+
+          prompt = """You are auditing the CURRENT LATEST DJAEGER AI APK+module source pair.
+          This is an experiment only: do not assume any device installation.
+          Goal: find concrete source-level synchronization defects, correctness bugs, unsafe mismatches,
+          stale truth/UI mappings, or missing regression tests between the Android APK and Magisk/module runtime.
+
+          Rules:
+          - Do not invent device behavior that cannot be proven from source.
+          - Prefer exact file/function references and mechanically testable claims.
+          - Preserve the architecture: cloud has no direct sysfs authority; local gated executor only.
+          - Do not propose DJAEGER Work features.
+          - Return concise sections: FINDINGS, PATCH_PLAN, TESTS_TO_ADD.
+          - If no concrete bug is proven, say NO_PROVEN_BUG instead of guessing.
+
+          SOURCE:
+          """ + "".join(chunks)
+
+          payload = {
+              "model": "oc/union-alpha",
+              "messages": [
+                  {"role": "system", "content": "Act as a rigorous senior Android/Linux systems code auditor."},
+                  {"role": "user", "content": prompt},
+              ],
+              "temperature": 0.1,
+              "stream": False,
+          }
+          Path("out/9router-request.json").write_text(json.dumps(payload))
+          PY
+
+          try_model() {
+            model="$1"
+            python3 - "$model" <<'PY'
+          import json, sys
+          from pathlib import Path
+          p=json.loads(Path("out/9router-request.json").read_text())
+          p["model"]=sys.argv[1]
+          Path("out/9router-request-current.json").write_text(json.dumps(p))
+          PY
+            code="$(curl -sS -o out/9router-response.json -w '%{http_code}' \
+              -H 'Content-Type: application/json' \
+              --data-binary @out/9router-request-current.json \
+              http://127.0.0.1:20128/v1/chat/completions || true)"
+            echo "$model HTTP=$code" | tee -a out/9router-attempts.txt
+            [ "$code" = "200" ]
+          }
+
+          if try_model "oc/union-alpha"; then
+            echo "USED_MODEL=oc/union-alpha" > out/9router-used-model.txt
+          elif try_model "oc/muse-spark-1.2-contributor-free"; then
+            echo "USED_MODEL=oc/muse-spark-1.2-contributor-free" > out/9router-used-model.txt
+          else
+            echo "NO_FREE_MODEL_SUCCEEDED" > out/9router-used-model.txt
+            cat out/9router-response.json || true
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("out/9router-response.json").read_text())
+          text=""
+          try:
+              text=data["choices"][0]["message"]["content"]
+          except Exception:
+              text=json.dumps(data, indent=2)
+          Path("out/9router-audit.txt").write_text(text)
+          print(text)
+          PY
+
+      - name: Summarize experiment evidence
+        if: always()
+        run: |
+          {
+            echo "EXPERIMENT=9ROUTER_LATEST_PAIR"
+            echo "DEVICE_TOUCHED=NO"
+            echo "INSTALLED_TO_PHONE=NO"
+            echo "MAIN_BRANCH_CHANGED=NO"
+            echo "DJAEGER_BASE=fb72df1235635d3691ab300671bf1a7f4443824e"
+            echo "9ROUTER_BASE=25df5e6a9d209906dc8a3d8691fba99a1094b05f"
+            test -f out/9router-used-model.txt && cat out/9router-used-model.txt || true
+          } > out/EXPERIMENT_REPORT.txt
+
+      - name: Upload experiment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: djaeger-9router-latest-pair-experiment
+          path: out/
+          if-no-files-found: error
