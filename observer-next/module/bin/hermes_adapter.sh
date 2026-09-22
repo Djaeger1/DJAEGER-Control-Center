@@ -13,6 +13,9 @@ if [ -r "$BIN_DIR/singleton.sh" ]; then
   . "$BIN_DIR/singleton.sh"
   djaeger_singleton_claim hermes_adapter
 fi
+if [ -r "$BIN_DIR/neuron_accounting.sh" ]; then
+  . "$BIN_DIR/neuron_accounting.sh"
+fi
 SNAP="$ROOT/runtime/snapshot.env"
 WORKLOAD="$ROOT/runtime/workload.env"
 LEARN="$ROOT/history/learned_envelope.env"
@@ -205,7 +208,11 @@ cloud_review(){
   chmod 600 "$curlcfg"
   HTTP=$(curl --http1.1 --connect-timeout 5 -m 15 -sS -o "$resp" -w '%{http_code}' -K "$curlcfg" -H 'Content-Type: application/json' --data-binary "@$req" "$url" 2>/dev/null)
   unset token
-  rm -f "$curlcfg" "$req"
+  rm -f "$curlcfg"
+  if [ "$HTTP" = 200 ] && [ -r "$resp" ] && grep -Eq '"ok"[[:space:]]*:[[:space:]]*true|"text"[[:space:]]*:' "$resp" 2>/dev/null; then
+    command -v neuron_record_success >/dev/null 2>&1 && neuron_record_success SMART "$req" "$resp"
+  fi
+  rm -f "$req"
   {
     echo "AT=$now"
     echo "DIGEST=$d"
@@ -406,7 +413,11 @@ cloud_takeover(){
   printf 'header = "Authorization: Bearer %s"\n' "$_token" > "$_cfg"; chmod 600 "$_cfg"
   HTTP=$(curl --http1.1 --connect-timeout 5 -m 18 -sS -o "$_resp" -w '%{http_code}' -K "$_cfg" -H 'Content-Type: application/json' --data-binary "@$_req" "$_url" 2>/dev/null)
   unset _token
-  rm -f "$_cfg" "$_req"
+  rm -f "$_cfg"
+  if [ "$HTTP" = 200 ] && [ -r "$_resp" ] && grep -Eq '"ok"[[:space:]]*:[[:space:]]*true|"text"[[:space:]]*:' "$_resp" 2>/dev/null; then
+    command -v neuron_record_success >/dev/null 2>&1 && neuron_record_success "$_mode" "$_req" "$_resp"
+  fi
+  rm -f "$_req"
   { echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$"; chmod 600 "$LAST.tmp.$"; mv -f "$LAST.tmp.$" "$LAST"
   [ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"; rm -f "$_resp"; return 1; }
   HAUTH=CONFIGURED
