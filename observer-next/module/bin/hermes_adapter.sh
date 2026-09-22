@@ -332,6 +332,26 @@ write_local_vote(){
 write_hermes_plan(){
   _src="$1"; _source="$2"; _conf="$3"; _reason="$4"; _intent="$5"
   [ -n "$_intent" ] || _intent=FRAME_FIRST_BALANCED
+
+  # Keep the same plan file/digest stable while the strategy is unchanged.
+  # Shadow/approval/executor bind to this digest, so needless AT rewrites would
+  # continuously invalidate an otherwise valid candidate.
+  _hat=$(kv AT "$HPLAN"); case "$_hat" in ''|*[!0-9]*) _hat=0;; esac
+  _hage=$(( $(date +%s) - _hat )); [ "$_hage" -ge 0 ] 2>/dev/null || _hage=999999
+  if [ -r "$HPLAN" ] && [ "$_hage" -le 900 ] 2>/dev/null &&
+     [ "$(kv PACKAGE "$HPLAN")" = "$(kv PACKAGE "$_src")" ] &&
+     [ "$(kv BRAIN_SOURCE "$HPLAN")" = "$_source" ] &&
+     [ "$(kv INTENT "$HPLAN")" = "$_intent" ] &&
+     [ "$(kv REASON "$HPLAN")" = "$_reason" ] &&
+     [ "$(kv LITTLE_MIN_KHZ "$HPLAN")" = "$(kv LITTLE_MIN_KHZ "$_src")" ] &&
+     [ "$(kv LITTLE_MAX_KHZ "$HPLAN")" = "$(kv LITTLE_MAX_KHZ "$_src")" ] &&
+     [ "$(kv BIG_MIN_KHZ "$HPLAN")" = "$(kv BIG_MIN_KHZ "$_src")" ] &&
+     [ "$(kv BIG_MAX_KHZ "$HPLAN")" = "$(kv BIG_MAX_KHZ "$_src")" ] &&
+     [ "$(kv GPU_MIN_HZ "$HPLAN")" = "$(kv GPU_MIN_HZ "$_src")" ] &&
+     [ "$(kv GPU_MAX_HZ "$HPLAN")" = "$(kv GPU_MAX_HZ "$_src")" ]; then
+    return 0
+  fi
+
   _t="$HPLAN.tmp.$"
   {
     echo "SCHEMA=DJAEGER_ONE_HERMES_TAKEOVER_V1"
@@ -359,7 +379,7 @@ write_hermes_plan(){
 local_history_takeover(){
   [ -r "$OUTCOMES" ] || return 1
   _pkg=$(kv ACTIVE_PACKAGE "$SNAP")
-  _line=$(awk -F, -v p="$_pkg" 'NR>1&&$2==p&&($4=="KEPT"||$4=="APPLIED_VERIFIED"){x=$0}END{print x}' "$OUTCOMES" 2>/dev/null)
+  _line=$(awk -F, -v p="$_pkg" 'NR>1&&$2==p&&$4=="KEPT"{x=$0}END{print x}' "$OUTCOMES" 2>/dev/null)
   [ -n "$_line" ] || return 1
   _lr=$(printf '%s\n' "$_line" | cut -d, -f11)
   _br=$(printf '%s\n' "$_line" | cut -d, -f12)
