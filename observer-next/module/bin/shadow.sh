@@ -43,6 +43,7 @@ publish(){
       echo "EXECUTOR_ALLOWED=YES"
       echo "PACKAGE=$(kv PACKAGE "$POLICY")"
       echo "INTENT=$(kv INTENT "$POLICY")"
+      echo "ACTUATORS=$(kv ACTUATORS "$POLICY")"
       echo "CANDIDATE_DIGEST=$(kv CANDIDATE_DIGEST "$POLICY")"
       echo "LITTLE_MIN_KHZ=$(kv LITTLE_MIN_KHZ "$POLICY")"
       echo "LITTLE_MAX_KHZ=$(kv LITTLE_MAX_KHZ "$POLICY")"
