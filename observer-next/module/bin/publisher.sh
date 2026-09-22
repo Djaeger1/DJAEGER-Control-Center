@@ -230,7 +230,7 @@ publish_cc() {
   unset _h_access
   _hermes_connection=WAITING
   case "$_hcloud" in
-    ONLINE|APPROVED|REJECTED) _hermes_connection=ONLINE ;;
+    ONLINE|APPROVED|REJECTED|TAKEOVER_READY|OBSERVE) _hermes_connection=ONLINE ;;
     REACHABLE_IDLE) _hermes_connection=REACHABLE ;;
     NO_KEY) _hermes_connection=NOT_CONFIGURED ;;
     AUTH_ERROR) _hermes_connection=AUTH_ERROR ;;
@@ -242,13 +242,13 @@ publish_cc() {
   _module_code=$(sed -n 's/^versionCode=//p' "${MODDIR:-/data/adb/modules/djaeger_ai_observer}/module.prop" 2>/dev/null | head -n1)
   case "$_module_code" in ''|*[!0-9]*) _module_code=0;; esac
   _apk_ver="$(pub_kv APK_VERSION_CODE "$_handshake")"
-  _expected_apk="$(pub_kv EXPECTED_APK_VERSION_CODE "$_handshake")"; [ -n "$_expected_apk" ] || _expected_apk=107
+  _expected_apk="$(pub_kv EXPECTED_APK_VERSION_CODE "$_handshake")"; [ -n "$_expected_apk" ] || _expected_apk=108
   _hand_schema="$(pub_kv SCHEMA "$_handshake")"
   _ack_id="$(pub_kv ACK_ID "$_handshake")"
   _ack_at="$(pub_kv ACK_AT "$_handshake")"; case "$_ack_at" in ''|*[!0-9]*) _ack_at=0;; esac
   _hand_age=$((_now-_ack_at)); [ "$_hand_age" -ge 0 ] 2>/dev/null || _hand_age=999999
   _pair="$(pub_kv PAIR_VERIFIED "$_handshake")"
-  [ "$_pair" = YES ] && [ "$_hand_schema" = DJAEGER_AI_ADAPTIVE_V2 ] && [ "$_hand_age" -le 86400 ] 2>/dev/null || _pair=NO
+  [ "$_pair" = YES ] && [ "$_hand_schema" = DJAEGER_AI_ADAPTIVE_V3 ] && [ "$_hand_age" -le 86400 ] 2>/dev/null || _pair=NO
   _generation=$(cat "$_genfile" 2>/dev/null | head -n1); case "$_generation" in ''|*[!0-9]*) _generation=0;; esac
   _generation=$((_generation+1))
   _gen_tmp="$(mktemp "${_genfile}.tmp.XXXXXX" 2>/dev/null)"
@@ -426,7 +426,7 @@ publish_cc() {
   _tmp="$_out.tmp.$$"
   {
     echo "__INSTALLED__"; echo 1
-    echo "__VERSION__"; echo "1.1.3-runtimefix"
+    echo "__VERSION__"; echo "1.1.4-braincontract"
     echo "__RUNTIME__"
     echo "UPDATED_AT=$_epoch"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
     echo "CONTROLLER_PID=${OBSERVER_PID:-UNKNOWN}"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
@@ -441,6 +441,7 @@ publish_cc() {
     echo "CURRENT_BRAIN=$_brain"
     echo "PRIMARY_BRAIN=GEMINI"
     echo "DEPUTY_BRAIN=HERMES_H2"
+    echo "THIRD_BRAIN=NONE"
     echo "ONE_HERMES=LOCAL_PLUS_CLOUD_ONE_IDENTITY"
     echo "HERMES_MODE=$_hmode"
     echo "HERMES_ACTIVE_SOURCE=$_hactive"
@@ -459,7 +460,9 @@ publish_cc() {
     echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=MULTI"
     echo "GEMINI_CONNECTION_STATUS=$_gem_connection"; echo "GEMINI_HTTP_CODE=$_gem_http"; echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"
     echo "HERMES_CONNECTION_STATUS=$_hermes_connection"
-    echo "CLOUD_IN_CONTROL=NO"; echo "CLOUD_CONTROL_PROVIDER=NONE"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
+    _cloud_control=NO; _cloud_controller=NONE
+    case "$_active_brain_source" in GEMINI) _cloud_control=YES; _cloud_controller=GEMINI;; HERMES_CLOUD) _cloud_control=YES; _cloud_controller=HERMES_CLOUD;; esac
+    echo "CLOUD_IN_CONTROL=$_cloud_control"; echo "CLOUD_CONTROL_PROVIDER=$_cloud_controller"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
     echo "CLOUD_PLAN_STATE=$_cloud_plan_state"; echo "CLOUD_PLAN_SCORE=$_cloud_plan_score"; echo "CLOUD_PLAN_REASON=$(pub_clean "$_cloud_plan_reason")"
     echo "HERMES_PROPOSAL_STATE=$_hlocal"; echo "HERMES_PROPOSAL_CONFIDENCE=$_hconf"; echo "HERMES_PROFILE=ADAPTIVE_NO_FIXED_PROFILE"
     echo "HERMES_REASON=$(pub_clean "$_hreason")"; echo "HERMES_BACKEND=$([ "$_hroute" = LOCAL ] && echo LOCAL || echo CLOUD)"
@@ -471,7 +474,7 @@ publish_cc() {
     echo "AGENT_HARDWARE_AUTHORITY=FULL_LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=AI_AGENT_SYSFS_READBACK"
     echo "AGENT_HARDWARE_TRUTH_AUTHORITY=MEASURED"; echo "AGENT_MUST_OBEY_ACTIVE_BRAIN=YES_WITH_SAFETY_GATES"
     echo "AGENT_CAN_CHOOSE_BRAIN=FAILOVER_CONTRACT_ONLY"; echo "AGENT_CAN_OVERRIDE_BRAIN=SAFETY_ONLY"; echo "AGENT_EXECUTION_BACKEND=INTERNAL_EXECUTOR_WORKER"
-    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "DECISION_PRIORITY=FRAME_STABILITY>MINIMUM_POWER>SAFETY_GATES"
+    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>MINIMUM_POWER"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
     echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
@@ -505,7 +508,7 @@ publish_cc() {
     echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=$_cap_count"; echo "ACTUATORS=$_actuator_truth"
     echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$_action_count"; echo "APPLIED_COUNT=$_action_count"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
     echo "__CONTROL_CENTER_SYNC__"
-    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=107"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
+    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V3"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=108"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
     echo "PAIR_VERIFIED=$_pair"; echo "HANDSHAKE_SCHEMA=${_hand_schema:-UNVERIFIED}"; echo "HANDSHAKE_ACK_ID=${_ack_id:-NONE}"; echo "HANDSHAKE_AGE_SEC=$_hand_age"
     echo "SNAPSHOT_GENERATION=$_generation"; echo "SNAPSHOT_FRESH=YES"
     echo "SHARED_INTELLIGENCE=GEMINI_PRIMARY_PLUS_ONE_HERMES_DEPUTY"; echo "GEMINI_INTELLIGENCE_SCOPE=PRIMARY_HIGHEST_FULL_REASONING_STRATEGY"; echo "HERMES_INTELLIGENCE_SCOPE=ONE_HERMES_FULL_DEPUTY_LOCAL_PLUS_CLOUD"
@@ -523,7 +526,7 @@ publish_cc() {
     echo "__LOG__"; [ -r "$_root/runtime/events.log" ] && tail -n 80 "$_root/runtime/events.log" || true
     echo "__NETWORK__"; echo "SESSION_ACTIVE=0"; echo "QUALITY=UNMEASURED"
     echo "__REASONING__"; echo "STATE=$_cons_state"
-    echo "__RESYNC__"; echo "STATE=$([ "$_pair" = YES ] && echo VERIFIED || echo UNVERIFIED)"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "ACK_ID=${_ack_id:-NONE}"; echo "GENERATION=$_generation"
+    echo "__RESYNC__"; echo "STATE=$([ "$_pair" = YES ] && echo VERIFIED || echo UNVERIFIED)"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V3"; echo "ACK_ID=${_ack_id:-NONE}"; echo "GENERATION=$_generation"
     echo "__EXECUTION__"; echo "STATUS=$_exec_state"; echo "READBACK=$_readback"; echo "ROLLBACK=$_rollback"; echo "RAILWAY=$_railway_state"
     echo "__POLICY_CONTEXT__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "BASELINE=$_learning"
     echo "__ATTRIBUTION__"; echo "SOURCE=MEASURED_STOCK"
