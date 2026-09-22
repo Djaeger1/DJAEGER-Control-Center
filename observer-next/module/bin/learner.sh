@@ -110,6 +110,7 @@ while true; do
 
   OUTCOME_ROWS=0; KEEP_ROWS=0; ROLLBACK_ROWS=0
   RECENT_OUTCOME_ROWS=0; RECENT_KEEP_ROWS=0; RECENT_ROLLBACK_ROWS=0; RECENT_ROLLBACK_FAILED_ROWS=0
+  VALIDATION_OUTCOME_ROWS=0; VALIDATION_KEEP_ROWS=0; VALIDATION_ROLLBACK_ROWS=0; VALIDATION_ROLLBACK_FAILED_ROWS=0; VALIDATION_SUPERSEDED_DRIFT_ROWS=0
   OUTCOME_FEEDBACK=NONE; LAST_OUTCOME=NONE; LAST_OUTCOME_REASON=NONE
   if [ -r "$OUTCOMES" ]; then
     OUTCOME_ROWS=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
@@ -119,7 +120,7 @@ while true; do
     LAST_OUTCOME_REASON=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{v=$5}END{print v}' "$OUTCOMES" 2>/dev/null); [ -n "$LAST_OUTCOME_REASON" ] || LAST_OUTCOME_REASON=NONE
 
     _recent=$(awk -F, -v p="$PKG" '
-      NR>1&&$2==p { r[++n]=$4 }
+      NR>1&&$2==p { d[++n]=$3; r[n]=$4; q[n]=$5 }
       END {
         s=n-9; if(s<1)s=1;
         for(i=s;i<=n;i++){
@@ -136,10 +137,38 @@ while true; do
     RECENT_ROLLBACK_ROWS="${3:-0}"
     RECENT_ROLLBACK_FAILED_ROWS="${4:-0}"
 
-    if [ "$RECENT_ROLLBACK_ROWS" -gt "$RECENT_KEEP_ROWS" ] 2>/dev/null && [ "$RECENT_OUTCOME_ROWS" -ge 3 ] 2>/dev/null; then
+    _validation=$(awk -F, -v p="$PKG" '
+      NR>1&&$2==p { d[++n]=$3; r[n]=$4; q[n]=$5 }
+      END {
+        s=n-9; if(s<1)s=1;
+        for(i=s;i<=n;i++){
+          total++;
+          superseded=0;
+          if(r[i]=="ROLLBACK_FAILED" && q[i]=="SYSFS_DRIFT"){
+            for(j=i+1;j<=n;j++){
+              if(d[j]==d[i] && r[j]=="RELEASED" && q[j]=="SYSFS_EXTERNAL_OVERRIDE"){
+                superseded=1; break;
+              }
+            }
+          }
+          if(superseded){ sup++; continue; }
+          if(r[i]=="KEPT") keep++;
+          if(r[i]=="ROLLED_BACK"||r[i]=="ROLLBACK_FAILED") rb++;
+          if(r[i]=="ROLLBACK_FAILED") rbf++;
+        }
+        printf "%d %d %d %d %d\n", total+0, keep+0, rb+0, rbf+0, sup+0
+      }' "$OUTCOMES" 2>/dev/null)
+    set -- $_validation
+    VALIDATION_OUTCOME_ROWS="${1:-0}"
+    VALIDATION_KEEP_ROWS="${2:-0}"
+    VALIDATION_ROLLBACK_ROWS="${3:-0}"
+    VALIDATION_ROLLBACK_FAILED_ROWS="${4:-0}"
+    VALIDATION_SUPERSEDED_DRIFT_ROWS="${5:-0}"
+
+    if [ "$VALIDATION_ROLLBACK_ROWS" -gt "$VALIDATION_KEEP_ROWS" ] 2>/dev/null && [ "$VALIDATION_OUTCOME_ROWS" -ge 3 ] 2>/dev/null; then
       OUTCOME_FEEDBACK=CAUTION
       [ "$CONF" -le 75 ] || CONF=75
-    elif [ "$RECENT_KEEP_ROWS" -ge 3 ] 2>/dev/null && [ "$RECENT_ROLLBACK_FAILED_ROWS" -eq 0 ] 2>/dev/null; then
+    elif [ "$VALIDATION_KEEP_ROWS" -ge 3 ] 2>/dev/null && [ "$VALIDATION_ROLLBACK_FAILED_ROWS" -eq 0 ] 2>/dev/null; then
       OUTCOME_FEEDBACK=STABLE
     fi
   fi
@@ -173,6 +202,11 @@ while true; do
     echo "RECENT_KEEP_ROWS=$RECENT_KEEP_ROWS"
     echo "RECENT_ROLLBACK_ROWS=$RECENT_ROLLBACK_ROWS"
     echo "RECENT_ROLLBACK_FAILED_ROWS=$RECENT_ROLLBACK_FAILED_ROWS"
+    echo "VALIDATION_OUTCOME_ROWS=$VALIDATION_OUTCOME_ROWS"
+    echo "VALIDATION_KEEP_ROWS=$VALIDATION_KEEP_ROWS"
+    echo "VALIDATION_ROLLBACK_ROWS=$VALIDATION_ROLLBACK_ROWS"
+    echo "VALIDATION_ROLLBACK_FAILED_ROWS=$VALIDATION_ROLLBACK_FAILED_ROWS"
+    echo "VALIDATION_SUPERSEDED_DRIFT_ROWS=$VALIDATION_SUPERSEDED_DRIFT_ROWS"
     echo "OUTCOME_FEEDBACK=$OUTCOME_FEEDBACK"
     echo "LAST_OUTCOME=$LAST_OUTCOME"
     echo "LAST_OUTCOME_REASON=$LAST_OUTCOME_REASON"
