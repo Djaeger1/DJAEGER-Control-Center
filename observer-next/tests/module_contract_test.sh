@@ -687,7 +687,7 @@ for _i in 1 2 3 4 5; do
   sleep 1
 done
 test -r "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid"
-printf '%s\n' "$" > "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid"
+printf '%s\n' "424242" > "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid"
 kill -TERM "$OLD_OWNER_PID"
 for _i in 1 2 3 4 5; do
   kill -0 "$OLD_OWNER_PID" 2>/dev/null || break
@@ -699,11 +699,11 @@ if kill -0 "$OLD_OWNER_PID" 2>/dev/null; then
   exit 1
 fi
 test -d "$OWN_ROOT/runtime/locks/ownership_probe.lock"
-grep -Fqx "$" "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid"
+grep -Fqx "424242" "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid"
 rm -rf "$OWN_ROOT/runtime/locks/ownership_probe.lock"
 
 grep -Fq 'djaeger_singleton_cleanup()' "$MODULE/bin/singleton.sh"
-grep -Fq '[ "$_dj_owner" = "$" ]' "$MODULE/bin/singleton.sh"
+grep -Fq '[ "$_dj_owner" = "$_dj_self" ]' "$MODULE/bin/singleton.sh"
 
 grep -Fq 'djaeger_singleton_claim gemini_reasoner' "$MODULE/bin/gemini_reasoner.sh"
 grep -Fq 'djaeger_singleton_claim hermes_adapter' "$MODULE/bin/hermes_adapter.sh"
