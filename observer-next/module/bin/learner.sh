@@ -89,17 +89,38 @@ while true; do
     CONF=$((50 + (N-120)*20/480))
   fi
 
-  OUTCOME_ROWS=0; KEEP_ROWS=0; ROLLBACK_ROWS=0; OUTCOME_FEEDBACK=NONE; LAST_OUTCOME=NONE; LAST_OUTCOME_REASON=NONE
+  OUTCOME_ROWS=0; KEEP_ROWS=0; ROLLBACK_ROWS=0
+  RECENT_OUTCOME_ROWS=0; RECENT_KEEP_ROWS=0; RECENT_ROLLBACK_ROWS=0; RECENT_ROLLBACK_FAILED_ROWS=0
+  OUTCOME_FEEDBACK=NONE; LAST_OUTCOME=NONE; LAST_OUTCOME_REASON=NONE
   if [ -r "$OUTCOMES" ]; then
     OUTCOME_ROWS=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
     KEEP_ROWS=$(awk -F, -v p="$PKG" 'NR>1&&$2==p&&$4=="KEPT"{n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
     ROLLBACK_ROWS=$(awk -F, -v p="$PKG" 'NR>1&&$2==p&&($4=="ROLLED_BACK"||$4=="ROLLBACK_FAILED"){n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
     LAST_OUTCOME=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{v=$4}END{print v}' "$OUTCOMES" 2>/dev/null); [ -n "$LAST_OUTCOME" ] || LAST_OUTCOME=NONE
     LAST_OUTCOME_REASON=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{v=$5}END{print v}' "$OUTCOMES" 2>/dev/null); [ -n "$LAST_OUTCOME_REASON" ] || LAST_OUTCOME_REASON=NONE
-    if [ "$ROLLBACK_ROWS" -gt "$KEEP_ROWS" ] 2>/dev/null && [ "$OUTCOME_ROWS" -ge 3 ] 2>/dev/null; then
+
+    _recent=$(awk -F, -v p="$PKG" '
+      NR>1&&$2==p { r[++n]=$4 }
+      END {
+        s=n-9; if(s<1)s=1;
+        for(i=s;i<=n;i++){
+          total++;
+          if(r[i]=="KEPT") keep++;
+          if(r[i]=="ROLLED_BACK"||r[i]=="ROLLBACK_FAILED") rb++;
+          if(r[i]=="ROLLBACK_FAILED") rbf++;
+        }
+        printf "%d %d %d %d\n", total+0, keep+0, rb+0, rbf+0
+      }' "$OUTCOMES" 2>/dev/null)
+    set -- $_recent
+    RECENT_OUTCOME_ROWS="${1:-0}"
+    RECENT_KEEP_ROWS="${2:-0}"
+    RECENT_ROLLBACK_ROWS="${3:-0}"
+    RECENT_ROLLBACK_FAILED_ROWS="${4:-0}"
+
+    if [ "$RECENT_ROLLBACK_ROWS" -gt "$RECENT_KEEP_ROWS" ] 2>/dev/null && [ "$RECENT_OUTCOME_ROWS" -ge 3 ] 2>/dev/null; then
       OUTCOME_FEEDBACK=CAUTION
       [ "$CONF" -le 75 ] || CONF=75
-    elif [ "$KEEP_ROWS" -ge 3 ] 2>/dev/null; then
+    elif [ "$RECENT_KEEP_ROWS" -ge 3 ] 2>/dev/null && [ "$RECENT_ROLLBACK_FAILED_ROWS" -eq 0 ] 2>/dev/null; then
       OUTCOME_FEEDBACK=STABLE
     fi
   fi
@@ -129,6 +150,10 @@ while true; do
     echo "OUTCOME_ROWS=$OUTCOME_ROWS"
     echo "KEEP_ROWS=$KEEP_ROWS"
     echo "ROLLBACK_ROWS=$ROLLBACK_ROWS"
+    echo "RECENT_OUTCOME_ROWS=$RECENT_OUTCOME_ROWS"
+    echo "RECENT_KEEP_ROWS=$RECENT_KEEP_ROWS"
+    echo "RECENT_ROLLBACK_ROWS=$RECENT_ROLLBACK_ROWS"
+    echo "RECENT_ROLLBACK_FAILED_ROWS=$RECENT_ROLLBACK_FAILED_ROWS"
     echo "OUTCOME_FEEDBACK=$OUTCOME_FEEDBACK"
     echo "LAST_OUTCOME=$LAST_OUTCOME"
     echo "LAST_OUTCOME_REASON=$LAST_OUTCOME_REASON"
