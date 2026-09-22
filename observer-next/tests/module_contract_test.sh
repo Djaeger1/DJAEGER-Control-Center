@@ -519,6 +519,77 @@ grep -Fqx '1800000' "$LP/scaling_max_freq"
 grep -Fqx '2400000' "$BP/scaling_max_freq"
 grep -Fqx '900000000' "$GP/max_freq"
 
+# Transaction-aware cleanup regression: BIG is already externally owned
+# while LITTLE still equals the DJAEGER-applied value. Make LITTLE unwritable
+# so its single restore attempt loses; cleanup must relinquish rather than
+# hard-latch merely because LITTLE still reads as APPLIED.
+rm -f "$TEST_ROOT/runtime/execution_suppress.env"
+printf '600000\n' > "$LP/scaling_min_freq"; printf '1800000\n' > "$LP/scaling_max_freq"
+printf '900000\n' > "$BP/scaling_min_freq"; printf '2400000\n' > "$BP/scaling_max_freq"
+printf '300000000\n' > "$GP/min_freq"; printf '900000000\n' > "$GP/max_freq"
+chmod 666 "$LP/"* "$BP/"* "$GP/"*
+
+cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+SHADOW_STATE=PASS
+CANDIDATE_DIGEST=cleanuporder123
+SHADOW_WINDOWS=80
+UPDATED_AT=$NOW
+EOF
+cat > "$TEST_ROOT/policy/candidate.env" <<EOF
+SCHEMA=DJAEGER_ADAPTIVE_POLICY_V3
+AT=$NOW
+PACKAGE=sts.al
+CONFIDENCE=90
+INTENT=FRAME_FIRST_BALANCED
+ACTUATORS=ALL
+CANDIDATE_DIGEST=cleanuporder123
+LITTLE_MIN_KHZ=600000
+LITTLE_MAX_KHZ=1400000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=1800000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=600000000
+EOF
+cat > "$TEST_ROOT/policy/approved.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_V2
+AT=$NOW
+EXPIRES_AT=$((NOW+180))
+EXECUTOR_ALLOWED=YES
+PACKAGE=sts.al
+INTENT=FRAME_FIRST_BALANCED
+ACTUATORS=ALL
+CANDIDATE_DIGEST=cleanuporder123
+LITTLE_MIN_KHZ=600000
+LITTLE_MAX_KHZ=1400000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=1800000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=600000000
+EOF
+
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+grep -Fqx 'EXECUTOR_STATE=APPLIED' "$TEST_ROOT/runtime/execution.env"
+chmod 444 "$LP/scaling_min_freq" "$LP/scaling_max_freq"
+printf '2000000\n' > "$BP/scaling_max_freq"
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once || true
+
+grep -Fqx 'EXECUTOR_STATE=IDLE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=SYSFS_EXTERNAL_OVERRIDE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'ROLLBACK_STATE=RELINQUISHED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'LITTLE_PRE_STATE=APPLIED' "$TEST_ROOT/runtime/execution_restore.env"
+grep -Fqx 'LITTLE_STATUS=RELINQUISHED_APPLIED_AFTER_EXTERNAL_RACE' "$TEST_ROOT/runtime/execution_restore.env"
+grep -Fqx 'BIG_PRE_STATE=EXTERNAL' "$TEST_ROOT/runtime/execution_restore.env"
+grep -Fqx 'BIG_STATUS=RELINQUISHED' "$TEST_ROOT/runtime/execution_restore.env"
+! grep -Fq 'cleanuporder123,ROLLBACK_FAILED,SYSFS_EXTERNAL_OVERRIDE_CLEANUP' "$TEST_ROOT/history/outcomes.csv"
+grep -Fq 'cleanuporder123,RELEASED,SYSFS_EXTERNAL_OVERRIDE' "$TEST_ROOT/history/outcomes.csv"
+test ! -e "$TEST_ROOT/runtime/execution_backup.env"
+
+chmod 666 "$LP/scaling_min_freq" "$LP/scaling_max_freq"
+printf '600000\n' > "$LP/scaling_min_freq"; printf '1800000\n' > "$LP/scaling_max_freq"
+printf '900000\n' > "$BP/scaling_min_freq"; printf '2400000\n' > "$BP/scaling_max_freq"
+printf '300000000\n' > "$GP/min_freq"; printf '900000000\n' > "$GP/max_freq"
+rm -f "$TEST_ROOT/runtime/execution_suppress.env"
+
 # Simulate a legacy latched SYSFS-drift restore failure from a previous runtime.
 # Explicit relinquish must clear the stale backup WITHOUT writing old values.
 printf '700000000\n' > "$GP/max_freq"
