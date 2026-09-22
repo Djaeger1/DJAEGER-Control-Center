@@ -549,26 +549,73 @@ release_external_override(){
   _pkg="$APPLIED_PACKAGE"; _digest="$ACTIVE_DIGEST"
   _little="$APPLIED_LITTLE"; _big="$APPLIED_BIG"; _gpu="$APPLIED_GPU"
 
-  # A transaction was initially verified, then a different kernel/vendor owner
-  # changed one of the owned SYSFS values. Do not fight that owner by forcing
-  # the stale backup back into sysfs. Relinquish DJAEGER ownership and let the
-  # next coherent decision start from fresh device truth.
+  # One owned axis may be changed by native thermal/kernel control while other
+  # axes still contain DJAEGER values. Never discard the whole transaction
+  # blindly: leave externally changed axes untouched and restore only axes that
+  # still exactly match DJAEGER's applied value.
   LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
-  _restore_act="$(kv ACTUATORS "$BACKUP")"; [ -n "$_restore_act" ] || _restore_act="$APPLIED_ACTUATORS"
+  _ltmin="$(kv LITTLE_MIN "$BACKUP")"; _ltmax="$(kv LITTLE_MAX "$BACKUP")"
+  _btmin="$(kv BIG_MIN "$BACKUP")"; _btmax="$(kv BIG_MAX "$BACKUP")"
+  _gtmin="$(kv GPU_MIN "$BACKUP")"; _gtmax="$(kv GPU_MAX "$BACKUP")"
+  _act="$(kv ACTUATORS "$BACKUP")"; [ -n "$_act" ] || _act="$APPLIED_ACTUATORS"
+  valid_actuators "$_act" || return 1
+
+  _ok=1; _external=0
+  _ls=SKIP; _bs=SKIP; _gs=SKIP
+
+  if act_has "$_act" LITTLE; then
+    _state="$(pair_post_restore_state "$LP" scaling_min_freq scaling_max_freq "$_little" "$_ltmin" "$_ltmax")"
+    case "$_state" in
+      BACKUP) _ls=ALREADY_BACKUP ;;
+      EXTERNAL) _ls=RELINQUISHED; _external=1 ;;
+      APPLIED)
+        if pair_restore "$LP" scaling_min_freq scaling_max_freq "$_ltmin" "$_ltmax"; then _ls=RESTORED; else _ls=FAIL; _ok=0; fi ;;
+      *) _ls="FAIL_$_state"; _ok=0 ;;
+    esac
+  fi
+  if act_has "$_act" BIG; then
+    _state="$(pair_post_restore_state "$BP" scaling_min_freq scaling_max_freq "$_big" "$_btmin" "$_btmax")"
+    case "$_state" in
+      BACKUP) _bs=ALREADY_BACKUP ;;
+      EXTERNAL) _bs=RELINQUISHED; _external=1 ;;
+      APPLIED)
+        if pair_restore "$BP" scaling_min_freq scaling_max_freq "$_btmin" "$_btmax"; then _bs=RESTORED; else _bs=FAIL; _ok=0; fi ;;
+      *) _bs="FAIL_$_state"; _ok=0 ;;
+    esac
+  fi
+  if act_has "$_act" GPU; then
+    _state="$(pair_post_restore_state "$GP" min_freq max_freq "$_gpu" "$_gtmin" "$_gtmax")"
+    case "$_state" in
+      BACKUP) _gs=ALREADY_BACKUP ;;
+      EXTERNAL) _gs=RELINQUISHED; _external=1 ;;
+      APPLIED)
+        if pair_restore "$GP" min_freq max_freq "$_gtmin" "$_gtmax"; then _gs=RESTORED; else _gs=FAIL; _ok=0; fi ;;
+      *) _gs="FAIL_$_state"; _ok=0 ;;
+    esac
+  fi
 
   _rtmp="$RESTORE_DIAG.tmp.$PPID"
   {
     echo "UPDATED_AT=$(date +%s)"
-    echo "ACTUATORS=$_restore_act"
+    echo "ACTUATORS=$_act"
     echo "RELEASE_REASON=SYSFS_EXTERNAL_OVERRIDE"
-    echo "LITTLE_STATUS=RELINQUISHED"
+    echo "LITTLE_STATUS=$_ls"
     echo "LITTLE_READBACK=$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
-    echo "BIG_STATUS=RELINQUISHED"
+    echo "BIG_STATUS=$_bs"
     echo "BIG_READBACK=$(readv "$BP/scaling_min_freq")-$(readv "$BP/scaling_max_freq")"
-    echo "GPU_STATUS=RELINQUISHED"
+    echo "GPU_STATUS=$_gs"
     echo "GPU_READBACK=$(readv "$GP/min_freq")-$(readv "$GP/max_freq")"
   } > "$_rtmp"
   chmod 600 "$_rtmp"; mv -f "$_rtmp" "$RESTORE_DIAG"
+
+  if [ "$_ok" -ne 1 ]; then
+    READBACK=RESTORE_FAILED
+    ROLLBACK_STATE=RESTORE_FAILED
+    record_outcome ROLLBACK_FAILED SYSFS_EXTERNAL_OVERRIDE_CLEANUP "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+    suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE_CLEANUP 180
+    publish ROLLBACK_FAILED EXTERNAL_OVERRIDE_CLEANUP_FAILED
+    return 1
+  fi
 
   READBACK=EXTERNAL_OVERRIDE
   ROLLBACK_STATE=RELINQUISHED
@@ -587,6 +634,40 @@ release_external_override(){
   MONITOR_BAD_COUNT=0
   MONITOR_SAMPLES=0
 
+  publish IDLE SYSFS_EXTERNAL_OVERRIDE
+  return 0
+}
+
+relinquish_no_write(){
+  _pkg="$APPLIED_PACKAGE"; _digest="$ACTIVE_DIGEST"
+  _little="$APPLIED_LITTLE"; _big="$APPLIED_BIG"; _gpu="$APPLIED_GPU"
+  [ -r "$BACKUP" ] || return 1
+
+  LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
+  _act="$(kv ACTUATORS "$BACKUP")"; [ -n "$_act" ] || _act="$APPLIED_ACTUATORS"
+
+  _rtmp="$RESTORE_DIAG.tmp.$PPID"
+  {
+    echo "UPDATED_AT=$(date +%s)"
+    echo "ACTUATORS=$_act"
+    echo "RELEASE_REASON=EXPLICIT_NO_WRITE_RELINQUISH"
+    echo "LITTLE_STATUS=RELINQUISHED_NO_WRITE"
+    echo "LITTLE_READBACK=$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
+    echo "BIG_STATUS=RELINQUISHED_NO_WRITE"
+    echo "BIG_READBACK=$(readv "$BP/scaling_min_freq")-$(readv "$BP/scaling_max_freq")"
+    echo "GPU_STATUS=RELINQUISHED_NO_WRITE"
+    echo "GPU_READBACK=$(readv "$GP/min_freq")-$(readv "$GP/max_freq")"
+  } > "$_rtmp"
+  chmod 600 "$_rtmp"; mv -f "$_rtmp" "$RESTORE_DIAG"
+
+  READBACK=EXTERNAL_OVERRIDE
+  ROLLBACK_STATE=RELINQUISHED
+  record_outcome RELEASED SYSFS_EXTERNAL_OVERRIDE "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+  suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE 120
+  rm -f "$BACKUP" "$MONITOR"
+  ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_ACTUATORS=NONE
+  APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; APPLIED_AT=0
+  MONITOR_BAD_COUNT=0; MONITOR_SAMPLES=0
   publish IDLE SYSFS_EXTERNAL_OVERRIDE
   return 0
 }
@@ -750,7 +831,7 @@ case "$MODE" in
     # discards the stale rollback backup and resumes from fresh Device Truth.
     load_active
     if [ -r "$BACKUP" ]; then
-      release_external_override
+      relinquish_no_write
       exit 0
     fi
     READBACK=NA; ROLLBACK_STATE=NO_BACKUP
