@@ -19,12 +19,6 @@ VISIBLE_GAME=NONE
 PKG_SOURCE=UNCLASSIFIED
 PKG_SAMPLES=0
 LAST_COUNT_PKG=""
-PUBLISHER_READY=0
-if [ -r "$MODDIR/bin/publisher.sh" ]; then
-  . "$MODDIR/bin/publisher.sh"
-  PUBLISHER_READY=1
-fi
-
 read_one() {
   for p in "$@"; do
     [ -r "$p" ] || continue
@@ -294,7 +288,6 @@ while true; do
     { head -n1 "$HISTORY"; tail -n 7500 "$HISTORY"; } > "$HISTORY.trim"
     mv -f "$HISTORY.trim" "$HISTORY"
   fi
-  [ "$PUBLISHER_READY" = 1 ] && publish_cc "$ROOT"
   WORKLOAD_CLASS=$(sed -n 's/^WORKLOAD_CLASS=//p' "$ROOT/runtime/workload.env" 2>/dev/null | head -n1)
   [ "$WORKLOAD_CLASS" = GAME ] && sleep 3 || sleep 10
 done
