@@ -209,7 +209,7 @@ while true; do
   {
     echo "SCHEMA=DJAEGER_OBSERVER_V4"
     echo "ENGINE=OBSERVER_FIRST"
-    echo "MODULE_VERSION=1.1.3-runtimefix"
+    echo "MODULE_VERSION=1.1.5-startupfix"
     echo "SAMPLE_SEQ=$SEQ"
     echo "PACKAGE_SAMPLES=$PKG_SAMPLES"
     echo "EPOCH=$EPOCH"
