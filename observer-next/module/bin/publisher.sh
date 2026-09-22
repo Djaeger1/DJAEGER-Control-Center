@@ -62,6 +62,7 @@ publish_cc() {
   _execution="$_root/runtime/execution.env"
   _outcomes="$_root/history/outcomes.csv"
   _railway="$_root/runtime/railway.env"
+  _network="$_root/runtime/network.env"
   _recovery="$_root/runtime/credential_recovery.env"
   _neuron="$_root/config/hermes_neuron_legacy.env"
   _migration="$_root/recovery/migration.env"
@@ -182,11 +183,11 @@ publish_cc() {
   _railway_state="$(pub_kv RAILWAY_STATE "$_railway")"; [ -n "$_railway_state" ] || _railway_state=WAITING
   _migration_state="$(pub_kv MIGRATION_STATE "$_migration")"; [ -n "$_migration_state" ] || _migration_state=UNKNOWN
   _credential_count="$(pub_kv CREDENTIAL_FILE_COUNT "$_migration")"; case "$_credential_count" in ''|*[!0-9]*) _credential_count=0;; esac
-  _neuron_used="$(pub_kv USED_EST "$_neuron")"; _neuron_limit="$(pub_kv LIMIT "$_neuron")"
-  case "$_neuron_used:$_neuron_limit" in
-    *[!0-9:]*|:*) _neuron_used=UNAVAILABLE; _neuron_limit=UNAVAILABLE; _neuron_tier=UNREPORTED ;;
-    *) _neuron_tier=LOCAL_DEVICE_ESTIMATE ;;
-  esac
+  # Provider quota truth only. Legacy local estimates are preserved for migration
+  # forensics but must never be presented as Hermes provider usage/quota.
+  _neuron_used=UNAVAILABLE
+  _neuron_limit=UNAVAILABLE
+  _neuron_tier=PROVIDER_UNREPORTED
 
   _gem_count=$(sed -n 's/^KEY_[1-4]=//p' "$_gem_vault" 2>/dev/null | awk 'NF{n++}END{print n+0}')
   case "$_gem_count" in ''|*[!0-9]*) _gem_count=0;; esac
@@ -468,7 +469,7 @@ publish_cc() {
     echo "HERMES_REASON=$(pub_clean "$_hreason")"; echo "HERMES_BACKEND=$([ "$_hroute" = LOCAL ] && echo LOCAL || echo CLOUD)"
     echo "HERMES_CLOUD_STATE=$_hcloud"; echo "HERMES_CLOUD_AUTH=$_hauth"
     echo "HERMES_CLOUD_ROUTE=$_hroute"; echo "HERMES_CLOUD_MODEL=$_hmodel"; echo "HERMES_CLOUD_HTTP_CODE=$_hhttp"
-    echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=$_neuron_used"; echo "HERMES_NEURON_LIMIT=$_neuron_limit"; echo "HERMES_NEURON_TIER=$_neuron_tier"; echo "HERMES_NEURON_ACCOUNTING=DEVICE_ESTIMATE_SEPARATE_FROM_PROVIDER_QUOTA"
+    echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=$_neuron_used"; echo "HERMES_NEURON_LIMIT=$_neuron_limit"; echo "HERMES_NEURON_TIER=$_neuron_tier"; echo "HERMES_NEURON_ACCOUNTING=PROVIDER_UNREPORTED_NO_FAKE_QUOTA"
     echo "AGENT_VERSION=ADAPTIVE_V3"; echo "AGENT_ROLE=DEVICE_TRUTH_ORCHESTRATOR_AND_HARDWARE_CONTROLLER"; echo "AGENT_STATE=$_cons_state"
     echo "AGENT_INPUT_SOURCE=DEVICE_TRUTH"; echo "AGENT_DECISION_AUTHORITY=ACTIVE_BRAIN_BOUND_TO_EVIDENCE"; echo "AGENT_EXECUTION_OWNER=AI_AGENT"
     echo "AGENT_HARDWARE_AUTHORITY=FULL_LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=AI_AGENT_SYSFS_READBACK"
@@ -524,7 +525,7 @@ publish_cc() {
     echo "__PLANS__"; [ -n "$_plan_line" ] && echo "$_plan_line"
     echo "__FRAME__"; echo "$_frame_line"
     echo "__LOG__"; [ -r "$_root/runtime/events.log" ] && tail -n 80 "$_root/runtime/events.log" || true
-    echo "__NETWORK__"; echo "SESSION_ACTIVE=0"; echo "QUALITY=UNMEASURED"
+    echo "__NETWORK__"; if [ -r "$_network" ]; then cat "$_network"; else echo "SESSION_ACTIVE=0"; echo "QUALITY=UNAVAILABLE"; echo "SOURCE=NETWORK_OBSERVER_MISSING"; echo "UPDATED_AT=$_now"; fi
     echo "__REASONING__"; echo "STATE=$_cons_state"
     echo "__RESYNC__"; echo "STATE=$([ "$_pair" = YES ] && echo VERIFIED || echo UNVERIFIED)"; echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V3"; echo "ACK_ID=${_ack_id:-NONE}"; echo "GENERATION=$_generation"
     echo "__EXECUTION__"; echo "STATUS=$_exec_state"; echo "READBACK=$_readback"; echo "ROLLBACK=$_rollback"; echo "RAILWAY=$_railway_state"
