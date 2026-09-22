@@ -1,6 +1,11 @@
 #!/system/bin/sh
 # Read-only telemetry bridge to the dedicated DJAEGER AI clean core.
 ROOT="$1"
+BIN_DIR="${0%/*}"
+if [ "${2:-once}" = daemon ] && [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim railway_bridge
+fi
 CFG="$ROOT/config/railway.env"
 SNAP="$ROOT/runtime/snapshot.env"
 STATE="$ROOT/runtime/railway.env"
