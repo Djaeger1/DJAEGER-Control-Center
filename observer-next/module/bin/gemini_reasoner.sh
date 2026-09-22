@@ -199,12 +199,23 @@ EOF
   TEXT=$(tr '\n' ' ' < "$RESP" 2>/dev/null | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g;s/\\r//g')
   rm -f "$RESP"
   gv(){ printf '%s\n' "$TEXT" | sed -n "s/^$1=//p" | head -n1; }
+  trim(){ printf '%s' "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+  numv(){
+    _raw="$(trim "$(gv "$1")")"
+    _norm="$(printf '%s' "$_raw" | tr -d ',[:space:]')"
+    case "$_norm" in ''|*[!0-9]*) return 1;; esac
+    printf '%s' "$_norm"
+  }
 
-  VERDICT=$(gv VERDICT); CONF=$(gv CONFIDENCE)
-  GLMIN=$(gv LITTLE_MIN_KHZ); GLMAX=$(gv LITTLE_MAX_KHZ)
-  GBMIN=$(gv BIG_MIN_KHZ); GBMAX=$(gv BIG_MAX_KHZ)
-  GGMIN=$(gv GPU_MIN_HZ); GGMAX=$(gv GPU_MAX_HZ)
-  REASON=$(gv REASON | tr -cd 'A-Za-z0-9_.:-' | cut -c1-96)
+  VERDICT=$(trim "$(gv VERDICT)")
+  CONF=$(numv CONFIDENCE) || CONF=""
+  GLMIN=$(numv LITTLE_MIN_KHZ) || GLMIN=""
+  GLMAX=$(numv LITTLE_MAX_KHZ) || GLMAX=""
+  GBMIN=$(numv BIG_MIN_KHZ) || GBMIN=""
+  GBMAX=$(numv BIG_MAX_KHZ) || GBMAX=""
+  GGMIN=$(numv GPU_MIN_HZ) || GGMIN=""
+  GGMAX=$(numv GPU_MAX_HZ) || GGMAX=""
+  REASON=$(trim "$(gv REASON)" | tr -cd 'A-Za-z0-9_.:-' | cut -c1-96)
   echo "$(date +%s)" > "$LAST_SUCCESS"; chmod 600 "$LAST_SUCCESS"
 
   case "$VERDICT" in
