@@ -426,6 +426,16 @@ power_pressure(){
   }'
 }
 
+thermal_pressure(){
+  _s=$(num "$(kv SKIN_TEMP_C "$SNAP")")
+  _b=$(num "$(kv BATTERY_TEMP_C "$SNAP")")
+  _c=$(num "$(kv CPU_TEMP_C "$SNAP")")
+  _g=$(num "$(kv GPU_TEMP_C "$SNAP")")
+  awk -v s="$_s" -v b="$_b" -v c="$_c" -v g="$_g" 'BEGIN{
+    exit !((s>0&&s>=44)||(b>0&&b>=42)||(c>0&&c>=70)||(g>0&&g>=68))
+  }'
+}
+
 frame_critical(){
   _fps=$(num "$(kv FPS_EST "$SNAP")"); _j=$(num "$(kv JANK_PCT "$SNAP")")
   _p95=$(num "$(kv P95_MS "$SNAP")"); _p99=$(num "$(kv P99_MS "$SNAP")")
@@ -448,9 +458,12 @@ local_synthesize_takeover(){
 
   _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")")
   _cpu=$(num "$(kv CPU_TEMP_C "$SNAP")"); _gpu_t=$(num "$(kv GPU_TEMP_C "$SNAP")")
+  # 44C skin is a pressure signal, not an absolute planning ban. The hard
+  # local safety ceiling remains below 46C skin / 45C battery / 75C CPU+GPU;
+  # executor re-checks this continuously and rolls back if crossed.
   awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu_t" 'BEGIN{
-    exit !((s<=0||s<44)&&(b<=0||b<43)&&(c<=0||c<75)&&(g<=0||g<75))
-  }' || { HDETAIL=local_synth_wait_thermal_safe; return 1; }
+    exit !((s<=0||s<46)&&(b<=0||b<45)&&(c<=0||c<75)&&(g<=0||g<75))
+  }' || { HDETAIL=local_synth_hard_thermal_guard; return 1; }
 
   _l0=$(kv LITTLE_MIN_KHZ "$LEARN"); _l1=$(kv LITTLE_MAX_KHZ "$LEARN")
   _b0=$(kv BIG_MIN_KHZ "$LEARN"); _b1=$(kv BIG_MAX_KHZ "$LEARN")
@@ -473,10 +486,11 @@ local_synthesize_takeover(){
       _intent=FRAME_RECOVERY
       _reason=LOCAL_FRAME_DEGRADED_RECOVERY
     fi
-  elif power_pressure; then
+  elif power_pressure || thermal_pressure; then
     _n=$(opp_prev_in_range "$_gav" "$_g1" "$_g0")
     if [ -n "$_n" ]; then
-      _ng1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_POWER_TRIM_GPU
+      _ng1="$_n"; _intent=POWER_EFFICIENCY
+      if thermal_pressure; then _reason=LOCAL_THERMAL_POWER_TRIM_GPU; else _reason=LOCAL_POWER_TRIM_GPU; fi
     else
       _n=$(opp_prev_in_range "$_bav" "$_b1" "$_b0")
       if [ -n "$_n" ]; then
@@ -528,8 +542,8 @@ cloud_takeover(){
   _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")")
   _cpu=$(num "$(kv CPU_TEMP_C "$SNAP")"); _gpu_t=$(num "$(kv GPU_TEMP_C "$SNAP")")
   awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu_t" 'BEGIN{
-    exit !((s<=0||s<44)&&(b<=0||b<43)&&(c<=0||c<75)&&(g<=0||g<75))
-  }' || { HCLOUD_STATE=OBSERVE; HDETAIL=cloud_takeover_deferred_thermal_guard; return 1; }
+    exit !((s<=0||s<46)&&(b<=0||b<45)&&(c<=0||c<75)&&(g<=0||g<75))
+  }' || { HCLOUD_STATE=OBSERVE; HDETAIL=cloud_takeover_deferred_hard_thermal_guard; return 1; }
 
   _now=$(date +%s)
   _last=$(kv AT "$LAST"); case "$_last" in ''|*[!0-9]*) _last=0;; esac
