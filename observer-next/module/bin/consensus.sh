@@ -6,6 +6,11 @@
 # AI Agent remains the only device/hardware controller; this file only binds strategy.
 
 ROOT="$1"
+BIN_DIR="${0%/*}"
+if [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim consensus
+fi
 SNAP="$ROOT/runtime/snapshot.env"
 WORKLOAD="$ROOT/runtime/workload.env"
 LEARN="$ROOT/history/learned_envelope.env"
