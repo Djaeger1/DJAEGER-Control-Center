@@ -574,10 +574,10 @@ release_external_override(){
   _pkg="$APPLIED_PACKAGE"; _digest="$ACTIVE_DIGEST"
   _little="$APPLIED_LITTLE"; _big="$APPLIED_BIG"; _gpu="$APPLIED_GPU"
 
-  # One owned axis may be changed by native thermal/kernel control while other
-  # axes still contain DJAEGER values. Never discard the whole transaction
-  # blindly: leave externally changed axes untouched and restore only axes that
-  # still exactly match DJAEGER's applied value.
+  # First classify every owned axis before writing anything. Native power/
+  # thermal control may take one policy while another still exactly matches
+  # DJAEGER. Knowing the whole transaction state up front prevents ordering
+  # artifacts (for example LITTLE restore failing before BIG is seen external).
   LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
   _ltmin="$(kv LITTLE_MIN "$BACKUP")"; _ltmax="$(kv LITTLE_MAX "$BACKUP")"
   _btmin="$(kv BIG_MIN "$BACKUP")"; _btmax="$(kv BIG_MAX "$BACKUP")"
@@ -586,34 +586,50 @@ release_external_override(){
   valid_actuators "$_act" || return 1
 
   _ok=1; _external=0
+  _lpre=SKIP; _bpre=SKIP; _gpre=SKIP
   _ls=SKIP; _bs=SKIP; _gs=SKIP
 
   if act_has "$_act" LITTLE; then
-    _state="$(pair_post_restore_state "$LP" scaling_min_freq scaling_max_freq "$_little" "$_ltmin" "$_ltmax")"
-    case "$_state" in
+    _lpre="$(pair_post_restore_state "$LP" scaling_min_freq scaling_max_freq "$_little" "$_ltmin" "$_ltmax")"
+    case "$_lpre" in EXTERNAL) _external=1;; BACKUP|APPLIED) :;; *) _ok=0;; esac
+  fi
+  if act_has "$_act" BIG; then
+    _bpre="$(pair_post_restore_state "$BP" scaling_min_freq scaling_max_freq "$_big" "$_btmin" "$_btmax")"
+    case "$_bpre" in EXTERNAL) _external=1;; BACKUP|APPLIED) :;; *) _ok=0;; esac
+  fi
+  if act_has "$_act" GPU; then
+    _gpre="$(pair_post_restore_state "$GP" min_freq max_freq "$_gpu" "$_gtmin" "$_gtmax")"
+    case "$_gpre" in EXTERNAL) _external=1;; BACKUP|APPLIED) :;; *) _ok=0;; esac
+  fi
+
+  if [ "$_ok" -eq 1 ] && act_has "$_act" LITTLE; then
+    case "$_lpre" in
       BACKUP) _ls=ALREADY_BACKUP ;;
-      EXTERNAL) _ls=RELINQUISHED; _external=1 ;;
+      EXTERNAL) _ls=RELINQUISHED ;;
       APPLIED)
         if pair_restore "$LP" scaling_min_freq scaling_max_freq "$_ltmin" "$_ltmax"; then
           _ls=RESTORED
         else
-          # Native power/thermal ownership can win between our pre-restore
-          # read and immediate readback. Re-read before declaring failure.
           _post="$(pair_post_restore_state "$LP" scaling_min_freq scaling_max_freq "$_little" "$_ltmin" "$_ltmax")"
           case "$_post" in
             BACKUP) _ls=RESTORED_AFTER_RACE ;;
             EXTERNAL) _ls=RELINQUISHED_AFTER_RACE; _external=1 ;;
+            APPLIED)
+              if [ "$_external" -eq 1 ]; then
+                _ls=RELINQUISHED_APPLIED_AFTER_EXTERNAL_RACE
+              else
+                _ls=FAIL_AFTER_RESTORE_APPLIED; _ok=0
+              fi ;;
             *) _ls="FAIL_AFTER_RESTORE_$_post"; _ok=0 ;;
           esac
         fi ;;
-      *) _ls="FAIL_$_state"; _ok=0 ;;
     esac
   fi
-  if act_has "$_act" BIG; then
-    _state="$(pair_post_restore_state "$BP" scaling_min_freq scaling_max_freq "$_big" "$_btmin" "$_btmax")"
-    case "$_state" in
+
+  if [ "$_ok" -eq 1 ] && act_has "$_act" BIG; then
+    case "$_bpre" in
       BACKUP) _bs=ALREADY_BACKUP ;;
-      EXTERNAL) _bs=RELINQUISHED; _external=1 ;;
+      EXTERNAL) _bs=RELINQUISHED ;;
       APPLIED)
         if pair_restore "$BP" scaling_min_freq scaling_max_freq "$_btmin" "$_btmax"; then
           _bs=RESTORED
@@ -622,17 +638,22 @@ release_external_override(){
           case "$_post" in
             BACKUP) _bs=RESTORED_AFTER_RACE ;;
             EXTERNAL) _bs=RELINQUISHED_AFTER_RACE; _external=1 ;;
+            APPLIED)
+              if [ "$_external" -eq 1 ]; then
+                _bs=RELINQUISHED_APPLIED_AFTER_EXTERNAL_RACE
+              else
+                _bs=FAIL_AFTER_RESTORE_APPLIED; _ok=0
+              fi ;;
             *) _bs="FAIL_AFTER_RESTORE_$_post"; _ok=0 ;;
           esac
         fi ;;
-      *) _bs="FAIL_$_state"; _ok=0 ;;
     esac
   fi
-  if act_has "$_act" GPU; then
-    _state="$(pair_post_restore_state "$GP" min_freq max_freq "$_gpu" "$_gtmin" "$_gtmax")"
-    case "$_state" in
+
+  if [ "$_ok" -eq 1 ] && act_has "$_act" GPU; then
+    case "$_gpre" in
       BACKUP) _gs=ALREADY_BACKUP ;;
-      EXTERNAL) _gs=RELINQUISHED; _external=1 ;;
+      EXTERNAL) _gs=RELINQUISHED ;;
       APPLIED)
         if pair_restore "$GP" min_freq max_freq "$_gtmin" "$_gtmax"; then
           _gs=RESTORED
@@ -641,10 +662,15 @@ release_external_override(){
           case "$_post" in
             BACKUP) _gs=RESTORED_AFTER_RACE ;;
             EXTERNAL) _gs=RELINQUISHED_AFTER_RACE; _external=1 ;;
+            APPLIED)
+              if [ "$_external" -eq 1 ]; then
+                _gs=RELINQUISHED_APPLIED_AFTER_EXTERNAL_RACE
+              else
+                _gs=FAIL_AFTER_RESTORE_APPLIED; _ok=0
+              fi ;;
             *) _gs="FAIL_AFTER_RESTORE_$_post"; _ok=0 ;;
           esac
         fi ;;
-      *) _gs="FAIL_$_state"; _ok=0 ;;
     esac
   fi
 
@@ -653,10 +679,13 @@ release_external_override(){
     echo "UPDATED_AT=$(date +%s)"
     echo "ACTUATORS=$_act"
     echo "RELEASE_REASON=SYSFS_EXTERNAL_OVERRIDE"
+    echo "LITTLE_PRE_STATE=$_lpre"
     echo "LITTLE_STATUS=$_ls"
     echo "LITTLE_READBACK=$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
+    echo "BIG_PRE_STATE=$_bpre"
     echo "BIG_STATUS=$_bs"
     echo "BIG_READBACK=$(readv "$BP/scaling_min_freq")-$(readv "$BP/scaling_max_freq")"
+    echo "GPU_PRE_STATE=$_gpre"
     echo "GPU_STATUS=$_gs"
     echo "GPU_READBACK=$(readv "$GP/min_freq")-$(readv "$GP/max_freq")"
   } > "$_rtmp"
