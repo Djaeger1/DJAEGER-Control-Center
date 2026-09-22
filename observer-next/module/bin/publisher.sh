@@ -64,7 +64,7 @@ publish_cc() {
   _railway="$_root/runtime/railway.env"
   _network="$_root/runtime/network.env"
   _recovery="$_root/runtime/credential_recovery.env"
-  _neuron="$_root/config/hermes_neuron_legacy.env"
+  _neuron="$_root/config/hermes_neuron_live.env"
   _migration="$_root/recovery/migration.env"
   _handshake="$_root/runtime/handshake.env"
   _gem_vault="$_root/config/gemini_vault.env"
@@ -183,11 +183,13 @@ publish_cc() {
   _railway_state="$(pub_kv RAILWAY_STATE "$_railway")"; [ -n "$_railway_state" ] || _railway_state=WAITING
   _migration_state="$(pub_kv MIGRATION_STATE "$_migration")"; [ -n "$_migration_state" ] || _migration_state=UNKNOWN
   _credential_count="$(pub_kv CREDENTIAL_FILE_COUNT "$_migration")"; case "$_credential_count" in ''|*[!0-9]*) _credential_count=0;; esac
-  # Provider quota truth only. Legacy local estimates are preserved for migration
-  # forensics but must never be presented as Hermes provider usage/quota.
-  _neuron_used=UNAVAILABLE
-  _neuron_limit=UNAVAILABLE
-  _neuron_tier=PROVIDER_UNREPORTED
+  # Neurons is DJAEGER's current-day Hermes Cloud usage ledger, not provider quota.
+  # It resets at 00:00 UTC / 07:00 WIB and only successful Cloud inference increments it.
+  _neuron_used="$(pub_kv USED_EST "$_neuron")"
+  _neuron_limit="$(pub_kv LIMIT "$_neuron")"
+  case "$_neuron_used" in ''|*[!0-9]*) _neuron_used=0;; esac
+  case "$_neuron_limit" in ''|*[!0-9]*) _neuron_limit=10000;; esac
+  _neuron_tier=LIVE_DAILY_HERMES_CLOUD_USAGE
 
   _gem_count=$(sed -n 's/^KEY_[1-4]=//p' "$_gem_vault" 2>/dev/null | awk 'NF{n++}END{print n+0}')
   case "$_gem_count" in ''|*[!0-9]*) _gem_count=0;; esac
@@ -469,7 +471,7 @@ publish_cc() {
     echo "HERMES_REASON=$(pub_clean "$_hreason")"; echo "HERMES_BACKEND=$([ "$_hroute" = LOCAL ] && echo LOCAL || echo CLOUD)"
     echo "HERMES_CLOUD_STATE=$_hcloud"; echo "HERMES_CLOUD_AUTH=$_hauth"
     echo "HERMES_CLOUD_ROUTE=$_hroute"; echo "HERMES_CLOUD_MODEL=$_hmodel"; echo "HERMES_CLOUD_HTTP_CODE=$_hhttp"
-    echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=$_neuron_used"; echo "HERMES_NEURON_LIMIT=$_neuron_limit"; echo "HERMES_NEURON_TIER=$_neuron_tier"; echo "HERMES_NEURON_STATUS=PROVIDER_DOES_NOT_REPORT_USAGE"; echo "HERMES_NEURON_ACCOUNTING=PROVIDER_UNREPORTED_NO_FAKE_QUOTA"
+    echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=$_neuron_used"; echo "HERMES_NEURON_LIMIT=$_neuron_limit"; echo "HERMES_NEURON_TIER=$_neuron_tier"; echo "HERMES_NEURON_STATUS=LIVE_DAILY_USAGE"; echo "HERMES_NEURON_RESET=00:00_UTC_07:00_WIB"; echo "HERMES_NEURON_ACCOUNTING=SUCCESSFUL_HERMES_CLOUD_ONLY_NO_FORCED_QUOTA"
     echo "AGENT_VERSION=ADAPTIVE_V3"; echo "AGENT_ROLE=DEVICE_TRUTH_ORCHESTRATOR_AND_HARDWARE_CONTROLLER"; echo "AGENT_STATE=$_cons_state"
     echo "AGENT_INPUT_SOURCE=DEVICE_TRUTH"; echo "AGENT_DECISION_AUTHORITY=ACTIVE_BRAIN_BOUND_TO_EVIDENCE"; echo "AGENT_EXECUTION_OWNER=AI_AGENT"
     echo "AGENT_HARDWARE_AUTHORITY=FULL_LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=AI_AGENT_SYSFS_READBACK"
