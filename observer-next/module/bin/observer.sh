@@ -150,7 +150,7 @@ while true; do
   CPUC=$(thermal_by_type 'cpu-.*-usr|cpuss-.*-usr|cpu|soc|ap|tsens')
   GPUC=$(thermal_by_type 'gpuss-.*-usr|gpu')
   BATC=$(temp_c "$(read_one /sys/class/power_supply/battery/temp)")
-  [ "$BATC" != NA ] || BATC=$(thermal_by_type '^battery$|^sm5602_bat
+  [ "$BATC" != NA ] || BATC=$(thermal_by_type 'battery|sm5602_bat')
   CUR=$(read_one /sys/class/power_supply/battery/current_now)
   VOLT=$(read_one /sys/class/power_supply/battery/voltage_now)
   PCT=$(read_one /sys/class/power_supply/battery/capacity)
