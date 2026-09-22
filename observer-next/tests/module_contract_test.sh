@@ -673,6 +673,34 @@ if kill -0 "$TERM_PID" 2>/dev/null; then
 fi
 ! test -e "$TERM_ROOT/runtime/locks/term_probe.lock"
 
+# A late-exiting old worker must never delete a replacement worker's lock.
+OWN_ROOT="$TEST_ROOT/ownership-root"
+mkdir -p "$OWN_ROOT/runtime/locks"
+sh -c 'ROOT="$1"; . "$2"; djaeger_singleton_claim ownership_probe; while :; do sleep 1; done' sh "$OWN_ROOT" "$MODULE/bin/singleton.sh" &
+OLD_OWNER_PID=$!
+for _i in 1 2 3 4 5; do
+  test -r "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid" && break
+  sleep 1
+done
+test -r "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid"
+printf '%s\n' "$" > "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid"
+kill -TERM "$OLD_OWNER_PID"
+for _i in 1 2 3 4 5; do
+  kill -0 "$OLD_OWNER_PID" 2>/dev/null || break
+  sleep 1
+done
+if kill -0 "$OLD_OWNER_PID" 2>/dev/null; then
+  echo "old singleton owner did not terminate" >&2
+  kill -KILL "$OLD_OWNER_PID" 2>/dev/null || true
+  exit 1
+fi
+test -d "$OWN_ROOT/runtime/locks/ownership_probe.lock"
+grep -Fqx "$" "$OWN_ROOT/runtime/locks/ownership_probe.lock/pid"
+rm -rf "$OWN_ROOT/runtime/locks/ownership_probe.lock"
+
+grep -Fq 'djaeger_singleton_cleanup()' "$MODULE/bin/singleton.sh"
+grep -Fq '[ "$_dj_owner" = "$" ]' "$MODULE/bin/singleton.sh"
+
 grep -Fq 'djaeger_singleton_claim gemini_reasoner' "$MODULE/bin/gemini_reasoner.sh"
 grep -Fq 'djaeger_singleton_claim hermes_adapter' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'djaeger_singleton_claim consensus' "$MODULE/bin/consensus.sh"
