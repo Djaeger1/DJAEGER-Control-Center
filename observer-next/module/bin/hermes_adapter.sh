@@ -255,12 +255,27 @@ cloud_review(){
 }
 
 
+gemini_context_current(){
+  [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || return 1
+  _wp=$(kv PACKAGE "$WORKLOAD")
+  _gp=$(kv GEMINI_CONTEXT_PACKAGE "$GSTATE")
+  _gc=$(kv GEMINI_CONTEXT_CLASS "$GSTATE")
+  _ga=$(kv UPDATED_AT "$GSTATE"); case "$_ga" in ''|*[!0-9]*) return 1;; esac
+  _gage=$(( $(date +%s) - _ga ))
+  [ "$_gage" -ge 0 ] && [ "$_gage" -le 30 ] || return 1
+  [ "$_gc" = GAME ] && [ -n "$_wp" ] && [ "$_gp" = "$_wp" ]
+}
+
 gemini_live(){
+  gemini_context_current || return 1
   _gs=$(kv GEMINI_STATE "$GSTATE")
   case "$_gs" in CANDIDATE|OBSERVE|READY) return 0;; *) return 1;; esac
 }
 
 gemini_failed(){
+  # Context-stale/mismatched primary is unavailable for the current game even
+  # if its last state was READY/OBSERVE for another app.
+  gemini_context_current || return 0
   _gs=$(kv GEMINI_STATE "$GSTATE")
   case "$_gs" in ALL_KEYS_COOLDOWN|AUTH_ERROR|HTTP_ERROR|NO_KEY|UNAVAILABLE) return 0;; *) return 1;; esac
 }
