@@ -22,5 +22,10 @@ djaeger_singleton_claim(){
     printf '%s\n' "$$" > "$_dj_lock/pid"
   fi
   chmod 700 "$_dj_lock" 2>/dev/null
-  trap 'rm -rf "$_dj_lock" 2>/dev/null' EXIT INT TERM HUP
+
+  # EXIT only cleans the lock. Signal traps must also terminate the worker.
+  # Previously TERM/HUP only removed the lock and then returned to the worker
+  # loop, so timeout/service stop could hang indefinitely.
+  trap 'rm -rf "$_dj_lock" 2>/dev/null' EXIT
+  trap 'rm -rf "$_dj_lock" 2>/dev/null; trap - EXIT INT TERM HUP; exit 0' INT TERM HUP
 }
