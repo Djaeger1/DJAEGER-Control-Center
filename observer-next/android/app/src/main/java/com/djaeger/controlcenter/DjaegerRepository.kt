@@ -23,7 +23,7 @@ class DjaegerRepository {
     private var lastGoodNetwork:NetworkState?=null
     private var lastGoodNetworkAt:Long=0L
     private val module="/data/adb/modules/djaeger_ai_observer"; private val persistent="/data/adb/djaeger_observer"
-    private val apkVersionCode=108
+    private val apkVersionCode=109
     private val syncSchema="DJAEGER_AI_ADAPTIVE_V3"
     private fun su(command:String,timeoutMs:Long=2500):Pair<Int,String> {
         val readerExecutor=Executors.newSingleThreadExecutor()
