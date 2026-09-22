@@ -13,11 +13,11 @@ NEURON_LIMIT=10000
 
 neuron_kv(){ sed -n "s/^$1=//p" "$NEURON_STATE" 2>/dev/null | head -n1; }
 neuron_num(){ case "$1" in ''|*[!0-9]*) echo 0;; *) echo "$1";; esac; }
-utc_day(){ date -u +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d; }
+neuron_utc_day(){ date -u +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d; }
 
-write_state(){
+neuron_write_state(){
   _day="$1"; _used="$2"; _fast="$3"; _smart="$4"; _deep="$5"; _calls="$6"; _delta="$7"; _method="$8"
-  _tmp="$STATE.tmp.$$"
+  _tmp="$NEURON_STATE.tmp.$"
   {
     echo "SCHEMA=DJAEGER_NEURON_LIVE_V1"
     echo "UTC_DAY=$_day"
@@ -40,12 +40,12 @@ write_state(){
 }
 
 neuron_reset_if_needed(){
-  _today="$(utc_day)"
+  _today="$(neuron_utc_day)"
   _day="$(neuron_kv UTC_DAY)"
   if [ "$_day" != "$_today" ]; then
-    write_state "$_today" 0 0 0 0 0 0 DAILY_ROLLOVER
+    neuron_write_state "$_today" 0 0 0 0 0 0 DAILY_ROLLOVER
   elif [ ! -s "$NEURON_STATE" ]; then
-    write_state "$_today" 0 0 0 0 0 0 INITIALIZED
+    neuron_write_state "$_today" 0 0 0 0 0 0 INITIALIZED
   fi
 }
 
@@ -79,7 +79,7 @@ neuron_record_success(){
   [ "$_used" -gt "$NEURON_LIMIT" ] && _used="$NEURON_LIMIT"
   _calls=$((_calls+1))
 
-  write_state "$(utc_day)" "$_used" "$_fast" "$_smart" "$_deep" "$_calls" "$_delta" "TOKEN_ESTIMATE_${_mode}"
+  neuron_write_state "$(neuron_utc_day)" "$_used" "$_fast" "$_smart" "$_deep" "$_calls" "$_delta" "TOKEN_ESTIMATE_${_mode}"
 }
 
 neuron_reset_if_needed
