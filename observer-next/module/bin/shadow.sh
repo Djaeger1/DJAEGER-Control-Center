@@ -1,6 +1,7 @@
 #!/system/bin/sh
-# Counterfactual shadow evaluator. It compares naturally occurring stock
-# samples inside the proposed envelope. It never writes hardware.
+# Counterfactual shadow evaluator owned by AI Agent policy.
+# Objective is lexicographic: frame stability first, minimum power second.
+# This worker never writes hardware.
 
 ROOT="$1"
 HISTORY="$ROOT/history/telemetry.csv"
@@ -31,7 +32,7 @@ publish(){
   if [ "$_state" = PASS ] && [ -r "$POLICY" ]; then
     _a="$APPROVAL.tmp.$$"
     {
-      echo "SCHEMA=DJAEGER_EXEC_APPROVAL_V1"
+      echo "SCHEMA=DJAEGER_EXEC_APPROVAL_V2"
       echo "AT=$_now"
       echo "EXPIRES_AT=$((_now+120))"
       echo "EXECUTOR_ALLOWED=YES"
@@ -43,7 +44,8 @@ publish(){
       echo "BIG_MAX_KHZ=$(kv BIG_MAX_KHZ "$POLICY")"
       echo "GPU_MIN_HZ=$(kv GPU_MIN_HZ "$POLICY")"
       echo "GPU_MAX_HZ=$(kv GPU_MAX_HZ "$POLICY")"
-      echo "AUTHORITY=LOCAL_EXECUTOR_ONLY"
+      echo "AUTHORITY=AI_AGENT_LOCAL_CONTROLLER"
+      echo "OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
     } > "$_a"
     chmod 600 "$_a"; mv -f "$_a" "$APPROVAL"
   else
@@ -86,11 +88,15 @@ while true; do
   BASE_FPS=$(kv FPS_P50 "$LEARN"); BASE_JANK=$(kv JANK_P95 "$LEARN"); BASE_P95=$(kv FRAME_P95_P95_MS "$LEARN"); BASE_POWER=$(kv POWER_P95_MW "$LEARN")
   case "$BASE_FPS:$BASE_JANK:$BASE_P95:$BASE_POWER" in *[!0-9.:]*|:*) publish WAITING baseline_metric_missing; sleep 60; continue;; esac
   if awk -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v bw="$BASE_POWER" 'BEGIN{
-    ok=(bf>0&&bp>0&&bw>0&&f>=bf*0.98&&p<=bp*1.05&&w<=bw&&((bj<=0&&j<=1)||(bj>0&&j<=bj*1.05))); exit !ok
+    frame_ok=(bf>0&&bp>0&&f>=bf*0.98&&p<=bp*1.05&&((bj<=0&&j<=1)||(bj>0&&j<=bj*1.05)));
+    frame_better=(p<=bp*0.95)||((bj>0)&&(j<=bj*0.85));
+    power_ok=(bw>0)&&(w<=bw || (frame_better && w<=bw*1.10));
+    ok=frame_ok&&power_ok;
+    exit !ok
   }'; then
-    publish PASS frame_and_power_not_worse
+    publish PASS frame_priority_then_minimum_power
   else
-    publish REJECT frame_or_power_regression
+    publish REJECT frame_first_contract_failed
   fi
   sleep 60
 done
