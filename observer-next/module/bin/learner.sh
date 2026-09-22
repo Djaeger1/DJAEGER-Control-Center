@@ -92,7 +92,7 @@ while true; do
   OUTCOME_ROWS=0; KEEP_ROWS=0; ROLLBACK_ROWS=0; OUTCOME_FEEDBACK=NONE; LAST_OUTCOME=NONE; LAST_OUTCOME_REASON=NONE
   if [ -r "$OUTCOMES" ]; then
     OUTCOME_ROWS=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
-    KEEP_ROWS=$(awk -F, -v p="$PKG" 'NR>1&&$2==p&&($4=="KEPT"||$4=="APPLIED_VERIFIED"){n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
+    KEEP_ROWS=$(awk -F, -v p="$PKG" 'NR>1&&$2==p&&$4=="KEPT"{n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
     ROLLBACK_ROWS=$(awk -F, -v p="$PKG" 'NR>1&&$2==p&&($4=="ROLLED_BACK"||$4=="ROLLBACK_FAILED"){n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
     LAST_OUTCOME=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{v=$4}END{print v}' "$OUTCOMES" 2>/dev/null); [ -n "$LAST_OUTCOME" ] || LAST_OUTCOME=NONE
     LAST_OUTCOME_REASON=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{v=$5}END{print v}' "$OUTCOMES" 2>/dev/null); [ -n "$LAST_OUTCOME_REASON" ] || LAST_OUTCOME_REASON=NONE
