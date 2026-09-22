@@ -17,7 +17,7 @@ mkdir -p "$LEGACY_ROOT/hermes" "$LEGACY_ROOT/config" "$FOREIGN_A" "$FOREIGN_B"  
 cat > "$LEGACY_ROOT/config/identity.env" <<'EOF'
 DEVICE_ID=adaptive-migration-test
 EOF
-cat > "$LEGACY_ROOT/gemini_keys.vault" <<'EOF'
+cat > "$LEGACY_ROOT/gemini_keys.vault.pre-adaptive.bak" <<'EOF'
 AIzaAdaptiveLegacyRawKey1111111111111111
 AIzaAdaptiveLegacyRawKey2222222222222222
 AIzaAdaptiveLegacyRawKey3333333333333333
@@ -30,7 +30,7 @@ EOF
 cat > "$LEGACY_ROOT/gemini_key_cooldowns" <<EOF
 2|$(( $(date +%s) + 1800 ))|HTTP_429
 EOF
-cat > "$LEGACY_ROOT/hermes_cloud.conf" <<'EOF'
+cat > "$LEGACY_ROOT/hermes_cloud.conf.pre-adaptive.bak" <<'EOF'
 HERMES_SHARED_TOKEN=hermes-legacy-shared-token-1234567890
 ENDPOINT=https://hermes.example.invalid
 EOF
@@ -76,7 +76,7 @@ grep -Fqx 'DJAEGER_ACCESS_TOKEN=railway-clean-token-1234567890' "$TEST_ROOT/conf
 grep -Fqx 'DJAEGER_RAILWAY_URL=https://djaeger.example.invalid' "$TEST_ROOT/config/railway.env"
 ! grep -R -F 'ForeignProjectKey' "$TEST_ROOT/config" "$TEST_ROOT/recovery"
 ! grep -R -F 'foreign-device-must-never-import' "$TEST_ROOT/config" "$TEST_ROOT/recovery"
-grep -Fqx 'MIGRATION_SCHEMA=8' "$TEST_ROOT/recovery/migration.env"
+grep -Fqx 'MIGRATION_SCHEMA=9' "$TEST_ROOT/recovery/migration.env"
 grep -Fqx 'MIGRATION_STATE=RECOVERED' "$TEST_ROOT/recovery/migration.env"
 grep -Fqx 'RAW_GEMINI_VAULT_FOUND=YES' "$TEST_ROOT/recovery/migration.env"
 grep -Fqx 'GEMINI_COOLDOWN_FOUND=YES' "$TEST_ROOT/recovery/migration.env"
@@ -261,13 +261,13 @@ grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx 'EXECUTOR_REASON=SYSFS_DRIFT' "$TEST_ROOT/runtime/execution.env"
 
 # ---- APK/module atomic snapshot contract ----
-SYNC_OUT=$(run_ctl sync-request 106 DJAEGER_AI_ADAPTIVE_V2 contract-test-1)
+SYNC_OUT=$(run_ctl sync-request 107 DJAEGER_AI_ADAPTIVE_V2 contract-test-1)
 grep -Fqx 'SYNC_STATUS=VERIFIED' <<<"$SYNC_OUT"
 grep -Fqx 'PAIR_VERIFIED=YES' <<<"$SYNC_OUT"
 SNAPSHOT="$TEST_ROOT/cc_snapshot"
 grep -Fqx 'CONTRACT=DJAEGER_AI_ADAPTIVE_V2' "$SNAPSHOT"
-grep -Fqx 'MODULE_VERSION_CODE=205' "$SNAPSHOT"
-grep -Fqx 'CONTROL_CENTER_VERSION_CODE=106' "$SNAPSHOT"
+grep -Fqx 'MODULE_VERSION_CODE=206' "$SNAPSHOT"
+grep -Fqx 'CONTROL_CENTER_VERSION_CODE=107' "$SNAPSHOT"
 grep -Fqx 'PAIR_VERIFIED=YES' "$SNAPSHOT"
 grep -Fqx 'WORKLOAD_CLASS=GAME' "$SNAPSHOT"
 grep -Fqx 'CLOUD_HARDWARE_AUTHORITY=NONE' "$SNAPSHOT"
@@ -280,5 +280,13 @@ grep -Fq '[ "$WCLASS" != GAME ]' "$MODULE/bin/frame_observer.sh"
 grep -Fq '[ "$WCLASS" != APP ]' "$MODULE/bin/frame_observer.sh"
 test -r "$MODULE/uninstall.sh"
 grep -Fq 'UNINSTALL_RESTORE=FAILED' "$MODULE/uninstall.sh"
+
+# RUNTIMEFIX1 regressions.
+! grep -Fq 'SKIN=$(temp_c "$(thermal_by_type' "$MODULE/bin/observer.sh"
+grep -Fq 'sdm-skin-therm-usr' "$MODULE/bin/observer.sh"
+grep -Fq 'gpuss-.*-usr' "$MODULE/bin/observer.sh"
+grep -Fq 'VALID_PRESENTATION_LAYER' "$MODULE/bin/frame_observer.sh"
+grep -Fq 'NO_PRESENTATION_LAYER' "$MODULE/bin/frame_observer.sh"
+grep -Fqx 'CREDENTIAL_SCAN_SCOPE=LEGACY_BACKUPS_TERMUX_DOWNLOAD' "$TEST_ROOT/recovery/migration.env"
 
 echo 'module-contract-tests=PASS'
