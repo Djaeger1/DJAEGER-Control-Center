@@ -44,6 +44,20 @@ writev(){
 valid_cpu(){ case "$1" in /sys/devices/system/cpu/cpufreq/policy[0-9]|/sys/devices/system/cpu/cpufreq/policy[0-9][0-9]) return 0;; *) return 1;; esac; }
 valid_gpu(){ case "$1" in /sys/class/kgsl/kgsl-3d0/devfreq|/sys/class/devfreq/*gpu*|/sys/class/devfreq/*mali*) return 0;; *) return 1;; esac; }
 contains_freq(){ _v="$1"; _list="$2"; for _x in $_list; do [ "$_x" = "$_v" ] && return 0; done; return 1; }
+act_has(){
+  _mask="$1"; _axis="$2"
+  [ "$_mask" = ALL ] && return 0
+  case ",$_mask," in
+    *,"$_axis",*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+valid_actuators(){
+  case "$1" in
+    ALL|LITTLE|BIG|GPU|LITTLE,BIG|LITTLE,GPU|BIG,GPU|LITTLE,BIG,GPU) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 clean_csv(){ printf '%s' "$1" | tr '\r\n,' '   ' | tr -cd 'A-Za-z0-9._:+/%= @-'; }
 
 record_outcome(){
@@ -74,6 +88,7 @@ publish(){
     echo "ACTIVE_DIGEST=${ACTIVE_DIGEST:-NONE}"
     echo "APPLIED_PACKAGE=${APPLIED_PACKAGE:-NONE}"
     echo "APPLIED_INTENT=${APPLIED_INTENT:-NONE}"
+    echo "APPLIED_ACTUATORS=${APPLIED_ACTUATORS:-NONE}"
     echo "APPLIED_LITTLE=${APPLIED_LITTLE:-NA}"
     echo "APPLIED_BIG=${APPLIED_BIG:-NA}"
     echo "APPLIED_GPU=${APPLIED_GPU:-NA}"
@@ -112,16 +127,26 @@ restore_all(){
   _btmin="$(kv BIG_MIN "$BACKUP")"; _btmax="$(kv BIG_MAX "$BACKUP")"
   _gtmin="$(kv GPU_MIN "$BACKUP")"; _gtmax="$(kv GPU_MAX "$BACKUP")"
 
-  _ok=1
-  _ls=FAIL; _bs=FAIL; _gs=FAIL
+  _restore_act="$(kv ACTUATORS "$BACKUP")"; [ -n "$_restore_act" ] || _restore_act=ALL
+  valid_actuators "$_restore_act" || { ROLLBACK_STATE=RESTORE_FAILED; return 1; }
 
-  if valid_cpu "$LP" && pair_restore "$LP" scaling_min_freq scaling_max_freq "$_ltmin" "$_ltmax"; then _ls=OK; else _ok=0; fi
-  if valid_cpu "$BP" && pair_restore "$BP" scaling_min_freq scaling_max_freq "$_btmin" "$_btmax"; then _bs=OK; else _ok=0; fi
-  if valid_gpu "$GP" && pair_restore "$GP" min_freq max_freq "$_gtmin" "$_gtmax"; then _gs=OK; else _ok=0; fi
+  _ok=1
+  _ls=SKIP; _bs=SKIP; _gs=SKIP
+
+  if act_has "$_restore_act" LITTLE; then
+    if valid_cpu "$LP" && pair_restore "$LP" scaling_min_freq scaling_max_freq "$_ltmin" "$_ltmax"; then _ls=OK; else _ls=FAIL; _ok=0; fi
+  fi
+  if act_has "$_restore_act" BIG; then
+    if valid_cpu "$BP" && pair_restore "$BP" scaling_min_freq scaling_max_freq "$_btmin" "$_btmax"; then _bs=OK; else _bs=FAIL; _ok=0; fi
+  fi
+  if act_has "$_restore_act" GPU; then
+    if valid_gpu "$GP" && pair_restore "$GP" min_freq max_freq "$_gtmin" "$_gtmax"; then _gs=OK; else _gs=FAIL; _ok=0; fi
+  fi
 
   _rtmp="$RESTORE_DIAG.tmp.$"
   {
     echo "UPDATED_AT=$(date +%s)"
+    echo "ACTUATORS=$_restore_act"
     echo "LITTLE_STATUS=$_ls"
     echo "LITTLE_TARGET=$_ltmin-$_ltmax"
     echo "LITTLE_READBACK=$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
@@ -136,7 +161,7 @@ restore_all(){
 
   if [ "$_ok" = 1 ]; then
     rm -f "$BACKUP" "$MONITOR"
-    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA
+    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_ACTUATORS=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA
     APPLIED_AT=0; MONITOR_BAD_COUNT=0; MONITOR_SAMPLES=0
     ROLLBACK_STATE=RESTORED
     return 0
@@ -183,6 +208,10 @@ gate(){
   _pi="$(kv INTENT "$POLICY")"; [ -n "$_pi" ] || _pi=FRAME_FIRST_BALANCED
   _ai="$(kv INTENT "$APPROVAL")"; [ -n "$_ai" ] || _ai=FRAME_FIRST_BALANCED
   [ "$_ai" = "$_pi" ] || { GATE_REASON=APPROVAL_INTENT_MISMATCH; return 1; }
+  ACTUATORS="$(kv ACTUATORS "$POLICY")"; [ -n "$ACTUATORS" ] || ACTUATORS=ALL
+  _aa="$(kv ACTUATORS "$APPROVAL")"; [ -n "$_aa" ] || _aa=ALL
+  valid_actuators "$ACTUATORS" || { GATE_REASON=INVALID_ACTUATOR_MASK; return 1; }
+  [ "$_aa" = "$ACTUATORS" ] || { GATE_REASON=APPROVAL_ACTUATOR_MISMATCH; return 1; }
   _exp="$(kv EXPIRES_AT "$APPROVAL")"; num "$_exp" && [ "$_exp" -ge "$(date +%s)" ] || { GATE_REASON=APPROVAL_EXPIRED; return 1; }
   [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { GATE_REASON=NON_GAME; return 1; }
   [ "$(kv PACKAGE "$WORKLOAD")" = "$(kv PACKAGE "$POLICY")" ] && [ "$(kv ACTIVE_PACKAGE "$SNAP")" = "$(kv PACKAGE "$POLICY")" ] || { GATE_REASON=PACKAGE_MISMATCH; return 1; }
@@ -214,20 +243,24 @@ gate(){
 apply_all(){
   _tmp="$BACKUP.tmp.$$"
   {
+    echo "ACTUATORS=$ACTUATORS"
     echo "LITTLE_PATH=$LP"; echo "LITTLE_MIN=$(readv "$LP/scaling_min_freq")"; echo "LITTLE_MAX=$(readv "$LP/scaling_max_freq")"
     echo "BIG_PATH=$BP"; echo "BIG_MIN=$(readv "$BP/scaling_min_freq")"; echo "BIG_MAX=$(readv "$BP/scaling_max_freq")"
     echo "GPU_PATH=$GP"; echo "GPU_MIN=$(readv "$GP/min_freq")"; echo "GPU_MAX=$(readv "$GP/max_freq")"
   } > "$_tmp"
   chmod 600 "$_tmp"; mv -f "$_tmp" "$BACKUP"
 
-  pair_apply "$LP" scaling_min_freq scaling_max_freq "$LMIN" "$LMAX" || return 1
-  pair_apply "$BP" scaling_min_freq scaling_max_freq "$BMIN" "$BMAX" || return 1
-  pair_apply "$GP" min_freq max_freq "$GMIN" "$GMAX" || return 1
+  if act_has "$ACTUATORS" LITTLE; then pair_apply "$LP" scaling_min_freq scaling_max_freq "$LMIN" "$LMAX" || return 1; fi
+  if act_has "$ACTUATORS" BIG; then pair_apply "$BP" scaling_min_freq scaling_max_freq "$BMIN" "$BMAX" || return 1; fi
+  if act_has "$ACTUATORS" GPU; then pair_apply "$GP" min_freq max_freq "$GMIN" "$GMAX" || return 1; fi
 
   ACTIVE_DIGEST="$GATE_DIGEST"
   APPLIED_PACKAGE="$(kv PACKAGE "$POLICY")"
   APPLIED_INTENT="$(kv INTENT "$POLICY")"; [ -n "$APPLIED_INTENT" ] || APPLIED_INTENT=FRAME_FIRST_BALANCED
-  APPLIED_LITTLE="$LMIN-$LMAX"; APPLIED_BIG="$BMIN-$BMAX"; APPLIED_GPU="$GMIN-$GMAX"
+  APPLIED_ACTUATORS="$ACTUATORS"
+  APPLIED_LITTLE="$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
+  APPLIED_BIG="$(readv "$BP/scaling_min_freq")-$(readv "$BP/scaling_max_freq")"
+  APPLIED_GPU="$(readv "$GP/min_freq")-$(readv "$GP/max_freq")"
   READBACK=VERIFIED; ROLLBACK_STATE=ARMED
   APPLIED_AT=$(date +%s); MONITOR_BAD_COUNT=0; MONITOR_SAMPLES=0
   _mtmp="$(mktemp "${MONITOR}.tmp.XXXXXX" 2>/dev/null)"; [ -n "$_mtmp" ] || _mtmp="${MONITOR}.tmp.$(date +%s).0"
@@ -245,6 +278,7 @@ load_active(){
   ACTIVE_DIGEST="$(kv ACTIVE_DIGEST "$STATE")"; [ -n "$ACTIVE_DIGEST" ] || ACTIVE_DIGEST=NONE
   APPLIED_PACKAGE="$(kv APPLIED_PACKAGE "$STATE")"; [ -n "$APPLIED_PACKAGE" ] || APPLIED_PACKAGE=NONE
   APPLIED_INTENT="$(kv APPLIED_INTENT "$STATE")"; [ -n "$APPLIED_INTENT" ] || APPLIED_INTENT=FRAME_FIRST_BALANCED
+  APPLIED_ACTUATORS="$(kv APPLIED_ACTUATORS "$STATE")"; [ -n "$APPLIED_ACTUATORS" ] || APPLIED_ACTUATORS=ALL
   APPLIED_LITTLE="$(kv APPLIED_LITTLE "$STATE")"; [ -n "$APPLIED_LITTLE" ] || APPLIED_LITTLE=NA
   APPLIED_BIG="$(kv APPLIED_BIG "$STATE")"; [ -n "$APPLIED_BIG" ] || APPLIED_BIG=NA
   APPLIED_GPU="$(kv APPLIED_GPU "$STATE")"; [ -n "$APPLIED_GPU" ] || APPLIED_GPU=NA
@@ -256,12 +290,16 @@ load_active(){
 }
 
 active_readback_ok(){
-  [ "$(readv "$LP/scaling_min_freq")" = "$LMIN" ] &&
-  [ "$(readv "$LP/scaling_max_freq")" = "$LMAX" ] &&
-  [ "$(readv "$BP/scaling_min_freq")" = "$BMIN" ] &&
-  [ "$(readv "$BP/scaling_max_freq")" = "$BMAX" ] &&
-  [ "$(readv "$GP/min_freq")" = "$GMIN" ] &&
-  [ "$(readv "$GP/max_freq")" = "$GMAX" ]
+  if act_has "$ACTUATORS" LITTLE; then
+    [ "$(readv "$LP/scaling_min_freq")" = "$LMIN" ] && [ "$(readv "$LP/scaling_max_freq")" = "$LMAX" ] || return 1
+  fi
+  if act_has "$ACTUATORS" BIG; then
+    [ "$(readv "$BP/scaling_min_freq")" = "$BMIN" ] && [ "$(readv "$BP/scaling_max_freq")" = "$BMAX" ] || return 1
+  fi
+  if act_has "$ACTUATORS" GPU; then
+    [ "$(readv "$GP/min_freq")" = "$GMIN" ] && [ "$(readv "$GP/max_freq")" = "$GMAX" ] || return 1
+  fi
+  return 0
 }
 
 post_apply_monitor(){
@@ -391,7 +429,7 @@ reconcile(){
   if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
     rollback_active "$GATE_REASON"
   else
-    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; READBACK=NA; ROLLBACK_STATE=STANDBY
+    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_ACTUATORS=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; READBACK=NA; ROLLBACK_STATE=STANDBY
     publish IDLE "$GATE_REASON"
   fi
 }
