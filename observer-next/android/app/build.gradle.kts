@@ -12,8 +12,8 @@ android {
         applicationId = "com.djaeger.observer"
         minSdk = 26
         targetSdk = 33
-        versionCode = 106
-        versionName = "1.1.2-credrestore"
+        versionCode = 107
+        versionName = "1.1.3-runtimefix"
     }
 
     buildFeatures {
