@@ -75,6 +75,10 @@ write_state(){
     echo "GEMINI_GUARD_SEC=${GUARD_SEC:-$STABLE_GUARD_SEC}"
     echo "GEMINI_GUARD_REASON=${GUARD_REASON:-STABLE}"
     echo "GEMINI_LAST_SUCCESS_AGE_SEC=${LAST_SUCCESS_AGE:-999999}"
+    _ctx_pkg=$(kv ACTIVE_PACKAGE "$SNAP"); [ -n "$_ctx_pkg" ] || _ctx_pkg=UNKNOWN
+    _ctx_class=$(kv WORKLOAD_CLASS "$WORKLOAD"); [ -n "$_ctx_class" ] || _ctx_class=UNKNOWN
+    echo "GEMINI_CONTEXT_PACKAGE=$_ctx_pkg"
+    echo "GEMINI_CONTEXT_CLASS=$_ctx_class"
     echo "UPDATED_AT=$(date +%s)"
   } > "$_t"
   chmod 600 "$_t"; mv -f "$_t" "$STATE"
