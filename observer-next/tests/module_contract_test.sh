@@ -407,7 +407,9 @@ GPU_MIN_HZ=300000000
 GPU_MAX_HZ=600000000
 EOF
 
-# Re-apply and prove active SYSFS drift is reconciled by rollback.
+# Re-apply and prove a later external SYSFS override is not fought.
+# Once a verified transaction is changed by another kernel/vendor owner,
+# DJAEGER relinquishes ownership and leaves the external value untouched.
 cat > "$TEST_ROOT/policy/approved.env" <<EOF
 SCHEMA=DJAEGER_EXEC_APPROVAL_V2
 AT=$NOW
@@ -425,12 +427,14 @@ GPU_MAX_HZ=600000000
 EOF
 DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
 printf '1800000\n' > "$LP/scaling_max_freq"
-if DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once; then
-  echo "expected SYSFS drift to fail reconciliation" >&2
-  exit 1
-fi
-grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
-grep -Fqx 'EXECUTOR_REASON=SYSFS_DRIFT' "$TEST_ROOT/runtime/execution.env"
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once || true
+grep -Fqx 'EXECUTOR_STATE=IDLE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=SYSFS_EXTERNAL_OVERRIDE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'READBACK=EXTERNAL_OVERRIDE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'ROLLBACK_STATE=RELINQUISHED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx '1800000' "$LP/scaling_max_freq"
+test ! -e "$TEST_ROOT/runtime/execution_backup.env"
+grep -Fq ',RELEASED,SYSFS_EXTERNAL_OVERRIDE,' "$TEST_ROOT/history/outcomes.csv"
 
 # ---- APK/module atomic snapshot contract ----
 SYNC_OUT=$(run_ctl sync-request 110 DJAEGER_AI_ADAPTIVE_V3 contract-test-1)
@@ -550,6 +554,9 @@ grep -Fq 'echo "ACTUATORS=$(kv ACTUATORS "$POLICY")"' "$MODULE/bin/shadow.sh"
 grep -Fq '_approved_digest="$(kv CANDIDATE_DIGEST "$APPROVAL")"' "$MODULE/bin/shadow.sh"
 grep -Fq 'rm -f "$APPROVAL"' "$MODULE/bin/shadow.sh"
 grep -Fq 'RESTORE_FAILURE_LATCHED' "$MODULE/bin/executor.sh"
+grep -Fq 'release_external_override()' "$MODULE/bin/executor.sh"
+grep -Fq 'SYSFS_EXTERNAL_OVERRIDE' "$MODULE/bin/executor.sh"
+grep -Fq 'ROLLBACK_STATE=RELINQUISHED' "$MODULE/bin/executor.sh"
 grep -Fq 'execution_restore.env' "$MODULE/bin/executor.sh"
 grep -Fq 'STALE_BACKUP_RECOVERY' "$MODULE/bin/executor.sh"
 grep -Fq 'LITTLE_STATUS=' "$MODULE/bin/executor.sh"
