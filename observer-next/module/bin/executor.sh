@@ -3,6 +3,11 @@
 # AI Agent is the controller; this file only performs its gated SYSFS write/readback/rollback transactions.
 ROOT="$1"
 MODE="${2:-daemon}"
+BIN_DIR="${0%/*}"
+if [ "$MODE" = daemon ] && [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim executor
+fi
 SYSROOT="${DJAEGER_SYSFS_ROOT:-}"
 SNAP="$ROOT/runtime/snapshot.env"
 WORKLOAD="$ROOT/runtime/workload.env"
