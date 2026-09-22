@@ -55,6 +55,7 @@ publish_cc() {
   _hermes_state="$_root/runtime/hermes_adapter.env"
   _local_vote="$_root/policy/hermes_local_vote.env"
   _cloud_vote="$_root/policy/hermes_cloud_vote.env"
+  _hermes_plan="$_root/policy/hermes_proposal.env"
   _cons="$_root/runtime/consensus.env"
   _candidate="$_root/policy/candidate.env"
   _shadow="$_root/runtime/shadow.env"
@@ -163,8 +164,12 @@ publish_cc() {
   _hhttp="$(pub_kv HERMES_CLOUD_HTTP "$_hermes_state")"; [ -n "$_hhttp" ] || _hhttp=NA
   _hauth="$(pub_kv HERMES_CLOUD_AUTH "$_hermes_state")"; [ -n "$_hauth" ] || _hauth=UNKNOWN
   _hreason="$(pub_kv HERMES_CLOUD_DETAIL "$_hermes_state")"; [ -n "$_hreason" ] || _hreason=NO_REVIEW_YET
+  _hmode="$(pub_kv HERMES_MODE "$_hermes_state")"; [ -n "$_hmode" ] || _hmode=DEPUTY_STANDBY
+  _hactive="$(pub_kv HERMES_ACTIVE_SOURCE "$_hermes_state")"; [ -n "$_hactive" ] || _hactive=NONE
+  _hcloud_used="$(pub_kv HERMES_CLOUD_USED "$_hermes_state")"; [ -n "$_hcloud_used" ] || _hcloud_used=NO
   _hconf="$(pub_kv CONFIDENCE "$_local_vote")"; case "$_hconf" in ''|*[!0-9]*) _hconf=0;; esac
   _cons_state="$(pub_kv CONSENSUS_STATE "$_cons")"; [ -n "$_cons_state" ] || _cons_state=OBSERVING
+  _active_brain_source="$(pub_kv ACTIVE_BRAIN_SOURCE "$_cons")"; [ -n "$_active_brain_source" ] || _active_brain_source=NONE
   _shadow_state="$(pub_kv SHADOW_STATE "$_shadow")"; [ -n "$_shadow_state" ] || _shadow_state=WAITING
   _shadow_n="$(pub_kv SHADOW_WINDOWS "$_shadow")"; case "$_shadow_n" in ''|*[!0-9]*) _shadow_n=0;; esac
   _exec_state="$(pub_kv EXECUTOR_STATE "$_execution")"; [ -n "$_exec_state" ] || _exec_state=IDLE
@@ -252,33 +257,33 @@ publish_cc() {
 
   _cloud_connection="GEMINI_$_gem_connection|HERMES_$_hermes_connection"
 
-  # Cloud plan truth is separate from provider connectivity and hardware authority.
+  # Brain plan truth. Gemini is primary; ONE HERMES is deputy takeover.
   _plan_provider=NONE
   _cloud_plan_state=NOT_USED
   _cloud_plan_score=0
-  _cloud_plan_reason=NO_ACTIVE_CLOUD_PLAN
-  if [ -r "$_gem_prop" ] && [ "$_gem_prop_age" -le 180 ] 2>/dev/null && [ "$(pub_kv PACKAGE "$_gem_prop")" = "$_pkg" ]; then
-    _plan_provider=GEMINI
+  _cloud_plan_reason=NO_ACTIVE_BRAIN_PLAN
+  if [ -r "$_candidate" ] && [ "$(pub_kv PACKAGE "$_candidate")" = "$_pkg" ]; then
+    _plan_provider="$(pub_kv BRAIN_SOURCE "$_candidate")"; [ -n "$_plan_provider" ] || _plan_provider=UNKNOWN
     _cloud_plan_state=PROPOSED
-    _cloud_plan_score="$_gem_conf"
-    _cloud_plan_reason="$_gem_reason"
-  fi
-  if [ -r "$_cloud_vote" ] && [ "$_cloud_vote_age" -le 180 ] 2>/dev/null && [ "$(pub_kv PACKAGE "$_cloud_vote")" = "$_pkg" ]; then
-    _plan_provider=HERMES_CLOUD
-    _cloud_plan_score="$(pub_kv CONFIDENCE "$_cloud_vote")"; case "$_cloud_plan_score" in ''|*[!0-9]*) _cloud_plan_score=0;; esac
-    _cloud_plan_reason="$(pub_kv REASON "$_cloud_vote")"; [ -n "$_cloud_plan_reason" ] || _cloud_plan_reason=HERMES_CLOUD_REVIEW
-    case "$(pub_kv VERDICT "$_cloud_vote")" in
-      APPROVE) _cloud_plan_state=ACCEPTED ;;
-      REJECT) _cloud_plan_state=REJECTED ;;
-      *) _cloud_plan_state=REVIEWED ;;
+    _cloud_plan_score="$(pub_kv CONFIDENCE "$_candidate")"; case "$_cloud_plan_score" in ''|*[!0-9]*) _cloud_plan_score=0;; esac
+    case "$_plan_provider" in
+      GEMINI) _cloud_plan_reason="$_gem_reason" ;;
+      HERMES_LOCAL|HERMES_CLOUD|HERMES_H2) _cloud_plan_reason="$(pub_kv REASON "$_hermes_plan")"; [ -n "$_cloud_plan_reason" ] || _cloud_plan_reason="$_hreason" ;;
+      *) _cloud_plan_reason=UNKNOWN_SOURCE ;;
     esac
-  fi
-  if [ "$_plan_provider" != NONE ]; then
-    case "$_cons_state" in PENDING_SHADOW) _cloud_plan_state=ACCEPTED_FOR_SHADOW;; REJECT*|NO_CONSENSUS*) _cloud_plan_state=REJECTED;; esac
+    [ "$_cons_state" = PENDING_SHADOW ] && _cloud_plan_state=ACCEPTED_FOR_SHADOW
     [ "$_shadow_state" = PASS ] && _cloud_plan_state=SHADOW_PASS
-    [ "$_exec_state" = APPLIED ] && _cloud_plan_state=APPLIED_LOCAL
-    [ "$_exec_state" = ROLLED_BACK ] && _cloud_plan_state=ROLLED_BACK_LOCAL
-    [ "$_exec_state" = ROLLBACK_FAILED ] && _cloud_plan_state=ROLLBACK_FAILED_LOCAL
+    [ "$_exec_state" = APPLIED ] && _cloud_plan_state=APPLIED_BY_AI_AGENT
+    [ "$_exec_state" = ROLLED_BACK ] && _cloud_plan_state=ROLLED_BACK_BY_AI_AGENT
+    [ "$_exec_state" = ROLLBACK_FAILED ] && _cloud_plan_state=ROLLBACK_FAILED
+  elif [ "$_active_brain_source" = GEMINI ]; then
+    _plan_provider=GEMINI
+    _cloud_plan_state=OBSERVE
+    _cloud_plan_reason=PRIMARY_ONLINE_NO_CHANGE
+  elif [ "$_hmode" = TAKEOVER ] || [ "$_hmode" = TAKEOVER_CLOUD_ESCALATED ]; then
+    _plan_provider=HERMES_H2
+    _cloud_plan_state=OBSERVE
+    _cloud_plan_reason="$_hreason"
   fi
 
   _cap_count=0
@@ -308,74 +313,79 @@ publish_cc() {
     _bug_action="Continue observing before any new approval"
   fi
 
-  # Dynamic, context-bound THOUGHT. It reports current evidence; it is not a second decision engine.
+  # Dynamic THOUGHT follows the actual brain hierarchy and Agent outcome.
   _thought_source=OBSERVER_LOCAL
   _thought_status=OBSERVING
   _thought_age=$((_now-_epoch)); [ "$_thought_age" -ge 0 ] 2>/dev/null || _thought_age=999999
   _thought_conf="$_confidence"
   _thought_reason=MEASURED_DEVICE
   _thought_evidence="telemetry=$_seq frame=$_frame_evidence learning=$_learning samples=$_samples"
-  _thought="$_workload $_pkg sedang diamati dari perangkat: Little $_little kHz, Big $_big kHz, GPU $_gpu Hz, CPU $_cpu_t C, Skin $_skin_t C, daya $_power mW, FPS $_fps, jank $_jank%. Learning=$_learning dengan $_samples sampel; executor=$_exec_state ($_exec_reason)."
+  _thought="AI Agent mengumpulkan Device Truth untuk $_pkg. Tujuan tetap: kestabilan frame terlebih dahulu, lalu daya serendah mungkin tanpa mengorbankan kestabilan."
 
-  if [ -r "$_gem_prop" ] && [ "$_gem_prop_age" -le 180 ] 2>/dev/null && [ "$(pub_kv PACKAGE "$_gem_prop")" = "$_pkg" ]; then
-    _thought_source=GEMINI
-    _thought_status=PROPOSAL
-    _thought_age="$_gem_prop_age"
-    _thought_conf="$_gem_conf"
-    _thought_reason="$_gem_reason"
-    _thought_evidence="package=$_pkg frame=$_frame_evidence candidate=MEASURED_ENVELOPE"
-    _thought="Gemini meninjau GAME $_pkg dari telemetry perangkat dan mengusulkan kandidat terukur dengan confidence $_gem_conf% (alasan: $_gem_reason). Proposal ini advisory; SYSFS tetap milik executor lokal."
-  fi
-  if [ -r "$_local_vote" ] && [ "$_local_vote_age" -le 180 ] 2>/dev/null && [ "$(pub_kv PACKAGE "$_local_vote")" = "$_pkg" ]; then
-    _thought_source=HERMES_LOCAL
-    _thought_status="$(pub_kv VOTE "$_local_vote")"; [ -n "$_thought_status" ] || _thought_status=LOCAL_REVIEW
-    _thought_age="$_local_vote_age"
-    _thought_conf="$(pub_kv CONFIDENCE "$_local_vote")"; case "$_thought_conf" in ''|*[!0-9]*) _thought_conf="$_confidence";; esac
-    _thought_reason="$(pub_kv REASON "$_local_vote")"; [ -n "$_thought_reason" ] || _thought_reason=LOCAL_VALIDATION
-    _thought_evidence="package=$_pkg opp=VALIDATED thermal=LOCAL_GUARD frame=$_frame_evidence"
-    _thought="Hermes Local memvalidasi kandidat GAME $_pkg terhadap envelope hasil belajar, OPP kernel, thermal dan frame. Hasil=$_thought_status, confidence=$_thought_conf%, alasan=$_thought_reason. AI tetap tidak memiliki hak tulis hardware."
-  fi
-  if [ -r "$_cloud_vote" ] && [ "$_cloud_vote_age" -le 180 ] 2>/dev/null && [ "$(pub_kv PACKAGE "$_cloud_vote")" = "$_pkg" ]; then
-    _thought_source=HERMES_CLOUD
-    _thought_status="$(pub_kv VERDICT "$_cloud_vote")"; [ -n "$_thought_status" ] || _thought_status=CLOUD_REVIEW
-    _thought_age="$_cloud_vote_age"
-    _thought_conf="$(pub_kv CONFIDENCE "$_cloud_vote")"; case "$_thought_conf" in ''|*[!0-9]*) _thought_conf="$_confidence";; esac
-    _thought_reason="$(pub_kv REASON "$_cloud_vote")"; [ -n "$_thought_reason" ] || _thought_reason=HERMES_CLOUD_REVIEW
-    _thought_evidence="package=$_pkg route=$_hroute model=$_hmodel http=$_hhttp"
-    _thought="Hermes Cloud selesai mereview kandidat GAME $_pkg: $_thought_status, confidence=$_thought_conf%, alasan=$_thought_reason. Cloud hanya reviewer; apply tetap melalui consensus, shadow dan executor lokal."
-  fi
+  case "$_active_brain_source" in
+    GEMINI)
+      _thought_source=GEMINI
+      _thought_status=PRIMARY
+      _thought_conf="$_gem_conf"
+      _thought_reason="$_gem_reason"
+      _thought_evidence="brain=GEMINI role=PRIMARY frame=$_frame_evidence"
+      _thought="Gemini adalah otak utama dan sedang memimpin reasoning untuk $_pkg. Hasilnya diteruskan ke ONE HERMES sebagai deputy continuity sebelum AI Agent melakukan shadow, safety, dan kontrol hardware."
+      ;;
+    HERMES_LOCAL)
+      _thought_source=HERMES_H2
+      _thought_status=DEPUTY_LOCAL_TAKEOVER
+      _thought_conf="$_hconf"
+      _thought_reason="$_hreason"
+      _thought_evidence="brain=ONE_HERMES source=LOCAL gemini=$_gem"
+      _thought="Gemini tidak tersedia. ONE HERMES mengambil alih melalui Hermes Local menggunakan memory dan strategi proven tanpa memakai neuron Cloud."
+      ;;
+    HERMES_CLOUD)
+      _thought_source=HERMES_H2
+      _thought_status=DEPUTY_CLOUD_TAKEOVER
+      _thought_conf="$_cloud_plan_score"
+      _thought_reason="$_hreason"
+      _thought_evidence="brain=ONE_HERMES source=CLOUD route=$_hroute model=$_hmodel cloud_used=$_hcloud_used"
+      _thought="Gemini tidak tersedia dan Hermes Local tidak memiliki strategi proven yang cukup. ONE HERMES menyalakan Hermes Cloud secara selektif untuk reasoning takeover; penggunaan Cloud tetap neuron-guarded."
+      ;;
+    HERMES_H2)
+      _thought_source=HERMES_H2
+      _thought_status=DEPUTY_OBSERVE
+      _thought_reason="$_hreason"
+      _thought_evidence="brain=ONE_HERMES mode=$_hmode"
+      _thought="Gemini tidak tersedia. ONE HERMES aktif sebagai deputy tetapi memilih tidak mengubah hardware karena evidence belum membutuhkan perubahan."
+      ;;
+  esac
+
   if [ "$_cons_state" = PENDING_SHADOW ]; then
     _thought_status=PENDING_SHADOW
-    _thought="Kandidat GAME $_pkg lolos review AI dan validator lokal. DJAEGER sekarang menunggu bukti shadow dari frame, jank dan daya sebelum executor lokal boleh melakukan apply."
+    _thought="Strategi dari $_active_brain_source sedang diuji shadow. Frame stability adalah syarat pertama; daya minimum dinilai setelah kestabilan frame terpenuhi."
   fi
   if [ "$_shadow_state" = PASS ]; then
     _thought_status=SHADOW_PASS
-    _thought="Shadow GAME $_pkg lulus dengan $_shadow_n window. Kandidat belum dianggap berhasil sampai executor lokal menulis range dan membaca balik keenam batas SYSFS secara exact."
+    _thought="Shadow lulus kontrak frame-first/minimum-power. AI Agent boleh menjalankan transaksi hardware lokal yang terikat digest dan tetap wajib exact readback."
   fi
   if [ "$_exec_state" = APPLIED ] && [ "$_readback" = VERIFIED ]; then
-    _thought_source=LOCAL_EXECUTOR
+    _thought_source=AI_AGENT
     _thought_status=APPLIED_VERIFIED
     _thought_age="$_exec_age"
-    _thought_conf="$_confidence"
     _thought_reason="$_exec_reason"
     _thought_evidence="little=$_exec_little big=$_exec_big gpu=$_exec_gpu readback=$_readback"
-    _thought="Range adaptive GAME $_pkg aktif setelah exact SYSFS readback VERIFIED: Little $_exec_little, Big $_exec_big, GPU $_exec_gpu. DJAEGER memonitor FPS $_fps, jank $_jank%, thermal dan daya $_power mW untuk KEEP atau ROLLBACK."
+    _thought="AI Agent menerapkan strategi $_active_brain_source dan readback VERIFIED: Little $_exec_little, Big $_exec_big, GPU $_exec_gpu. Outcome frame dan daya terus dipantau untuk KEEP atau ROLLBACK."
   elif [ "$_exec_state" = ROLLED_BACK ]; then
-    _thought_source=LOCAL_EXECUTOR
+    _thought_source=AI_AGENT
     _thought_status=ROLLED_BACK
     _thought_age="$_exec_age"
-    _thought_conf="$_confidence"
     _thought_reason="$_exec_reason"
     _thought_evidence="rollback=$_rollback readback=$_readback"
-    _thought="Range adaptive $_pkg dibatalkan dan dipulihkan executor lokal karena $_exec_reason. Backup baru dibuang setelah restore exact-readback berhasil; DJAEGER kembali mengamati."
+    _thought="AI Agent membatalkan strategi karena $_exec_reason dan mengembalikan hardware ke state sebelumnya."
   elif [ "$_exec_state" = ROLLBACK_FAILED ]; then
-    _thought_source=LOCAL_EXECUTOR
+    _thought_source=AI_AGENT
     _thought_status=ROLLBACK_FAILED
     _thought_age="$_exec_age"
     _thought_conf=0
     _thought_reason="$_exec_reason"
     _thought_evidence="rollback=$_rollback readback=$_readback"
-    _thought="Recovery SYSFS $_pkg belum terverifikasi. Eksekusi adaptive diblokir fail-closed dan backup recovery dipertahankan sampai restore readback berhasil."
+    _thought="AI Agent fail-closed karena recovery SYSFS belum terverifikasi."
   fi
   _thought_fresh=0; [ "$_thought_age" -le 180 ] 2>/dev/null && _thought_fresh=1
 
@@ -424,15 +434,28 @@ publish_cc() {
     echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
     echo "__TEL__"; echo "$_tel"
     echo "__BRAIN__"
-    if [ "$_exec_state" = APPLIED ]; then
-      echo "CURRENT_BRAIN=AI_CONSENSUS"; echo "FINAL_SOURCE=LOCAL_VALIDATED_EXECUTOR"; echo "BRAIN_MODE=ADAPTIVE"; echo "BRAIN_PROFILE=LEARNED"
-      echo "FINAL_PROFILE=ADAPTIVE_LEARNED"; echo "FINAL_ADJUSTMENT=ACTIVE"; echo "EXEC_MODE=ADAPTIVE_AUTO"
-      echo "EXEC_LITTLE=$_exec_little"; echo "EXEC_BIG=$_exec_big"; echo "EXEC_GPU=$_exec_gpu"
-    else
-      echo "CURRENT_BRAIN=OBSERVER"; echo "FINAL_SOURCE=MEASURED_DEVICE"; echo "BRAIN_MODE=LEARN"; echo "BRAIN_PROFILE=LEARNED_PENDING"
-      echo "FINAL_PROFILE=LEARNED_PENDING"; echo "FINAL_ADJUSTMENT=NONE"; echo "EXEC_MODE=GATED_AUTO"
-      echo "EXEC_LITTLE=$_lmin-$_lmax"; echo "EXEC_BIG=$_bmin-$_bmax"; echo "EXEC_GPU=$_gmin-$_gmax"
-    fi
+    _brain="$_active_brain_source"
+    [ "$_brain" = NONE ] && {
+      case "$_gem" in CANDIDATE|OBSERVE|READY) _brain=GEMINI;; *) _brain=$([ "$_hmode" = TAKEOVER ] || [ "$_hmode" = TAKEOVER_CLOUD_ESCALATED ] && echo HERMES_H2 || echo OBSERVER);; esac
+    }
+    echo "CURRENT_BRAIN=$_brain"
+    echo "PRIMARY_BRAIN=GEMINI"
+    echo "DEPUTY_BRAIN=HERMES_H2"
+    echo "ONE_HERMES=LOCAL_PLUS_CLOUD_ONE_IDENTITY"
+    echo "HERMES_MODE=$_hmode"
+    echo "HERMES_ACTIVE_SOURCE=$_hactive"
+    echo "HERMES_CLOUD_USED=$_hcloud_used"
+    echo "HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED"
+    echo "OPTIMIZATION_OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
+    echo "FINAL_SOURCE=$([ "$_exec_state" = APPLIED ] && echo AI_AGENT_LOCAL_CONTROLLER || echo MEASURED_DEVICE)"
+    echo "BRAIN_MODE=ADAPTIVE"
+    echo "BRAIN_PROFILE=LEARNED"
+    echo "FINAL_PROFILE=$([ "$_exec_state" = APPLIED ] && echo ADAPTIVE_LEARNED || echo LEARNED_PENDING)"
+    echo "FINAL_ADJUSTMENT=$([ "$_exec_state" = APPLIED ] && echo ACTIVE || echo NONE)"
+    echo "EXEC_MODE=$([ "$_exec_state" = APPLIED ] && echo ADAPTIVE_AUTO || echo GATED_AUTO)"
+    echo "EXEC_LITTLE=$([ "$_exec_state" = APPLIED ] && echo "$_exec_little" || echo "$_lmin-$_lmax")"
+    echo "EXEC_BIG=$([ "$_exec_state" = APPLIED ] && echo "$_exec_big" || echo "$_bmin-$_bmax")"
+    echo "EXEC_GPU=$([ "$_exec_state" = APPLIED ] && echo "$_exec_gpu" || echo "$_gmin-$_gmax")"
     echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=MULTI"
     echo "GEMINI_CONNECTION_STATUS=$_gem_connection"; echo "GEMINI_HTTP_CODE=$_gem_http"; echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"
     echo "HERMES_CONNECTION_STATUS=$_hermes_connection"
@@ -443,16 +466,16 @@ publish_cc() {
     echo "HERMES_CLOUD_STATE=$_hcloud"; echo "HERMES_CLOUD_AUTH=$_hauth"
     echo "HERMES_CLOUD_ROUTE=$_hroute"; echo "HERMES_CLOUD_MODEL=$_hmodel"; echo "HERMES_CLOUD_HTTP_CODE=$_hhttp"
     echo "HERMES_CLOUD_REASON=$(pub_clean "$_hreason")"; echo "HERMES_NEURON_USED_EST=$_neuron_used"; echo "HERMES_NEURON_LIMIT=$_neuron_limit"; echo "HERMES_NEURON_TIER=$_neuron_tier"; echo "HERMES_NEURON_ACCOUNTING=DEVICE_ESTIMATE_SEPARATE_FROM_PROVIDER_QUOTA"
-    echo "AGENT_VERSION=ADAPTIVE_V2"; echo "AGENT_ROLE=MEASURE_LEARN_REVIEW_SHADOW_EXECUTE"; echo "AGENT_STATE=$_cons_state"
-    echo "AGENT_INPUT_SOURCE=DEVICE_TELEMETRY"; echo "AGENT_DECISION_AUTHORITY=LOCAL_VALIDATOR"; echo "AGENT_EXECUTION_OWNER=LOCAL_EXECUTOR"
-    echo "AGENT_HARDWARE_AUTHORITY=LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=OBSERVER_SYSFS_READBACK"
-    echo "AGENT_HARDWARE_TRUTH_AUTHORITY=MEASURED"; echo "AGENT_MUST_OBEY_ACTIVE_BRAIN=CONSENSUS_AND_SAFETY"
-    echo "AGENT_CAN_CHOOSE_BRAIN=NO"; echo "AGENT_CAN_OVERRIDE_BRAIN=NO"; echo "AGENT_EXECUTION_BACKEND=LOCAL_VALIDATED_SYSFS"
-    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "DECISION_PRIORITY=SAFETY>MEASURED_EVIDENCE>AI_REVIEW"
+    echo "AGENT_VERSION=ADAPTIVE_V3"; echo "AGENT_ROLE=DEVICE_TRUTH_ORCHESTRATOR_AND_HARDWARE_CONTROLLER"; echo "AGENT_STATE=$_cons_state"
+    echo "AGENT_INPUT_SOURCE=DEVICE_TRUTH"; echo "AGENT_DECISION_AUTHORITY=ACTIVE_BRAIN_BOUND_TO_EVIDENCE"; echo "AGENT_EXECUTION_OWNER=AI_AGENT"
+    echo "AGENT_HARDWARE_AUTHORITY=FULL_LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=AI_AGENT_SYSFS_READBACK"
+    echo "AGENT_HARDWARE_TRUTH_AUTHORITY=MEASURED"; echo "AGENT_MUST_OBEY_ACTIVE_BRAIN=YES_WITH_SAFETY_GATES"
+    echo "AGENT_CAN_CHOOSE_BRAIN=FAILOVER_CONTRACT_ONLY"; echo "AGENT_CAN_OVERRIDE_BRAIN=SAFETY_ONLY"; echo "AGENT_EXECUTION_BACKEND=INTERNAL_EXECUTOR_WORKER"
+    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "DECISION_PRIORITY=FRAME_STABILITY>MINIMUM_POWER>SAFETY_GATES"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
     echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
-    echo "__AUTHORITY__"; echo "STATE=LOCAL_GATED"; echo "HARDWARE_AUTHORITY=LOCAL_VALIDATED_EXECUTOR"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
+    echo "__AUTHORITY__"; echo "STATE=AI_AGENT_LOCAL_GATED"; echo "HARDWARE_AUTHORITY=AI_AGENT"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=AI_AGENT_INTERNAL_EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
     echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
     echo "__SUPERVISOR__"
     if [ "$_exec_age" -le 10 ] 2>/dev/null && [ "$_cons_age" -le 90 ] 2>/dev/null && [ "$_hermes_age" -le 180 ] 2>/dev/null && [ "$_gem_age" -le 180 ] 2>/dev/null; then echo "STATE=HEALTHY"; else echo "STATE=DEGRADED"; fi
@@ -465,7 +488,7 @@ publish_cc() {
     echo "RAILWAY=$(pub_fresh "$_railway" UPDATED_AT 90)"
     echo "__HERMES_CTX1_STATUS__"; echo "STATE=$_hlocal"; echo "MIGRATION=$_migration_state"
     echo "__HERMES_CTX1_RUNTIME__"; echo "PACKAGE=$_pkg"; echo "WORKLOAD=$_workload"; echo "WINDOW=$_window"
-    echo "__HERMES_CTX1_SAFETY__"; echo "SYSFS=LOCAL_EXECUTOR_ONLY"; echo "CONSENSUS=$_cons_state"; echo "SHADOW=$_shadow_state"; echo "EXECUTOR=$_exec_state"
+    echo "__HERMES_CTX1_SAFETY__"; echo "SYSFS=AI_AGENT_INTERNAL_EXECUTOR_ONLY"; echo "CONSENSUS=$_cons_state"; echo "SHADOW=$_shadow_state"; echo "EXECUTOR=$_exec_state"
     echo "__HERMES_CTX1_HARDWARE__"; echo "LITTLE=$_little"; echo "BIG=$_big"; echo "GPU=$_gpu"; echo "SKIN=$_skin_t"; echo "POWER=$_power"
     echo "__HERMES_CTX1_MEMORY__"; echo "SAMPLES=$_samples"; echo "BYTES=$_history_bytes"; echo "CREDENTIAL_FILES=$_credential_count"; echo "GEMINI_KEY_COUNT=$(pub_kv GEMINI_KEY_COUNT "$_migration")"; echo "HERMES_ACCESS_KEY_PRESENT=$(pub_kv HERMES_ACCESS_KEY_PRESENT "$_migration")"; echo "NEURON_LOCAL_ESTIMATE_PRESENT=$(pub_kv NEURON_LOCAL_ESTIMATE_PRESENT "$_migration")"
     echo "__HERMES_CTX1_LEARNING__"; echo "STATE=$_learning"; echo "CONFIDENCE=$_confidence"; echo "FRAME_EVIDENCE=$_frame_evidence"
@@ -485,11 +508,11 @@ publish_cc() {
     echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V2"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=107"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
     echo "PAIR_VERIFIED=$_pair"; echo "HANDSHAKE_SCHEMA=${_hand_schema:-UNVERIFIED}"; echo "HANDSHAKE_ACK_ID=${_ack_id:-NONE}"; echo "HANDSHAKE_AGE_SEC=$_hand_age"
     echo "SNAPSHOT_GENERATION=$_generation"; echo "SNAPSHOT_FRESH=YES"
-    echo "SHARED_INTELLIGENCE=MEASURED_DEVICE_CONTEXT_V2"; echo "GEMINI_INTELLIGENCE_SCOPE=PROPOSE_DEVICE_BOUNDED"; echo "HERMES_INTELLIGENCE_SCOPE=LOCAL_VALIDATE_PLUS_CLOUD_REVIEW"
-    echo "GEMINI_REASONING_LIMIT=ADVISORY_NO_SYSFS"; echo "HERMES_TEACHER_LOOP=EVIDENCE_FEEDBACK_ONLY"
+    echo "SHARED_INTELLIGENCE=GEMINI_PRIMARY_PLUS_ONE_HERMES_DEPUTY"; echo "GEMINI_INTELLIGENCE_SCOPE=PRIMARY_HIGHEST_FULL_REASONING_STRATEGY"; echo "HERMES_INTELLIGENCE_SCOPE=ONE_HERMES_FULL_DEPUTY_LOCAL_PLUS_CLOUD"
+    echo "GEMINI_REASONING_LIMIT=NO_DIRECT_SYSFS"; echo "HERMES_TEACHER_LOOP=CONTINUITY_MEMORY_OUTCOME_FEEDBACK"; echo "HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED"; echo "OPTIMIZATION_OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
     echo "GEMINI_CONNECTION=$_gem_connection"; echo "HERMES_CONNECTION=$_hermes_connection"
     echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"; echo "HERMES_AUTH=$_hauth"
-    echo "HERMES_CLOUD=ADVISORY_REVIEW"; echo "HERMES_CLOUD_ROLE=ONE_HERMES_REVIEWER"; echo "HERMES_BACKEND_PRIORITY=LOCAL_GUARD_THEN_CLOUD_REVIEW"; echo "WORKLOAD_FINAL=ADAPTIVE_CLASSIFIER_V2"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=ACTIVE_LOCAL_GATED"
+    echo "HERMES_CLOUD=ONE_HERMES_CLOUD_COGNITION"; echo "HERMES_CLOUD_ROLE=STRONGEST_HERMES_CLOUD_BRAIN_ON_DEMAND"; echo "HERMES_BACKEND_PRIORITY=LOCAL_CONTINUITY_THEN_CLOUD_ESCALATION_WHEN_NEEDED"; echo "WORKLOAD_FINAL=ADAPTIVE_CLASSIFIER_V2"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=ACTIVE_LOCAL_GATED"
     echo "__STRATEGY_RESULT__"; echo "VALIDATION=$_cons_state"; echo "READBACK=$_readback"; echo "OUTCOME=$_outcome_last"; echo "OUTCOME_REASON=$(pub_clean "$_outcome_reason")"; echo "SHADOW=$_shadow_state"
     echo "__ENV__"; [ -r "$_learn" ] && cat "$_learn"
     echo "__HTTP__"; [ -r "$_gem_state" ] && cat "$_gem_state" || true
