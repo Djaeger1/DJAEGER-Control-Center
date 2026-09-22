@@ -435,7 +435,9 @@ publish_cc() {
   else _history_bytes=0
   fi
   case "$_history_bytes" in ''|*[!0-9]*) _history_bytes=0;; esac
-  _outcome_rows=0; _outcome_keep=0; _outcome_rollback=0; _outcome_rollback_failed=0; _outcome_last=NONE; _outcome_reason=NONE
+  _outcome_rows=0; _outcome_keep=0; _outcome_rollback=0; _outcome_rollback_failed=0
+  _recent_outcome_rows=0; _recent_keep=0; _recent_rollback=0; _recent_rollback_failed=0
+  _outcome_last=NONE; _outcome_reason=NONE
   if [ -r "$_outcomes" ]; then
     _outcome_rows="$(awk -F, 'NR>1{n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
     _outcome_keep="$(awk -F, 'NR>1&&$4=="KEPT"{n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
@@ -443,6 +445,25 @@ publish_cc() {
     _outcome_rollback_failed="$(awk -F, 'NR>1&&$4=="ROLLBACK_FAILED"{n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
     _outcome_last="$(awk -F, 'NR>1{v=$4}END{print v}' "$_outcomes" 2>/dev/null)"; [ -n "$_outcome_last" ] || _outcome_last=NONE
     _outcome_reason="$(awk -F, 'NR>1{v=$5}END{print v}' "$_outcomes" 2>/dev/null)"; [ -n "$_outcome_reason" ] || _outcome_reason=NONE
+
+    _maturity_pkg="$_learn_pkg"; [ -n "$_maturity_pkg" ] || _maturity_pkg="$_pkg"
+    _recent="$(awk -F, -v p="$_maturity_pkg" '
+      NR>1&&$2==p { r[++n]=$4 }
+      END {
+        s=n-9; if(s<1)s=1;
+        for(i=s;i<=n;i++){
+          total++;
+          if(r[i]=="KEPT") keep++;
+          if(r[i]=="ROLLED_BACK"||r[i]=="ROLLBACK_FAILED") rb++;
+          if(r[i]=="ROLLBACK_FAILED") rbf++;
+        }
+        printf "%d %d %d %d\n", total+0, keep+0, rb+0, rbf+0
+      }' "$_outcomes" 2>/dev/null)"
+    set -- $_recent
+    _recent_outcome_rows="${1:-0}"
+    _recent_keep="${2:-0}"
+    _recent_rollback="${3:-0}"
+    _recent_rollback_failed="${4:-0}"
   fi
   case "$_outcome_rows" in ''|*[!0-9]*) _outcome_rows=0;; esac
   case "$_outcome_keep" in ''|*[!0-9]*) _outcome_keep=0;; esac
@@ -451,7 +472,7 @@ publish_cc() {
   _permanent_readiness=LEARNING
   if [ "$_learning" = READY_HARDWARE_MODEL ] && [ "$_samples" -ge 1000 ] 2>/dev/null && [ "$_confidence" -ge 90 ] 2>/dev/null; then
     _permanent_readiness=LIVE_VALIDATION_REQUIRED
-    if [ "$_outcome_keep" -ge 5 ] 2>/dev/null && [ "$_outcome_rollback_failed" -eq 0 ] 2>/dev/null && [ "$_outcome_keep" -gt "$_outcome_rollback" ] 2>/dev/null; then
+    if [ "$_recent_keep" -ge 5 ] 2>/dev/null && [ "$_recent_rollback_failed" -eq 0 ] 2>/dev/null && [ "$_recent_keep" -gt "$_recent_rollback" ] 2>/dev/null; then
       _permanent_readiness=MATURE_CANDIDATE
     fi
   fi
@@ -540,7 +561,7 @@ publish_cc() {
     echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "AGENT_ACTIVE_INTENT=$_exec_intent"; echo "AGENT_ACTIVE_ACTUATORS=$_exec_actuators"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>MINIMUM_POWER"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
-    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
+    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "RECENT_OUTCOME_ROWS=$_recent_outcome_rows"; echo "RECENT_KEEP_ROWS=$_recent_keep"; echo "RECENT_ROLLBACK_ROWS=$_recent_rollback"; echo "RECENT_ROLLBACK_FAILED_ROWS=$_recent_rollback_failed"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
     echo "__AUTHORITY__"; echo "STATE=AI_AGENT_LOCAL_GATED"; echo "HARDWARE_AUTHORITY=AI_AGENT"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=AI_AGENT_INTERNAL_EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
     echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
     echo "__SUPERVISOR__"
