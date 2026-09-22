@@ -202,7 +202,12 @@ while true; do
   FE=UNAVAILABLE; FPS=NA; JANK=NA; P95=NA; P99=NA; FN=0; FAT=0
   if [ -r "$FRAMEFILE" ] && [ "$(fv FRAME_PACKAGE)" = "$PKG" ]; then
     FAT=$(fv FRAME_AT); case "$FAT" in ''|*[!0-9]*) FAT=0;; esac
-    FAGE=$((EPOCH-FAT))
+    # EPOCH is captured at the start of the observer cycle. frame_observer can
+    # legitimately publish a newer sample while this cycle is still running.
+    # Validate frame freshness against current time, not the older cycle start,
+    # otherwise a fresh frame becomes a false UNAVAILABLE because FAGE < 0.
+    FRAME_NOW=$(date +%s)
+    FAGE=$((FRAME_NOW-FAT))
     if [ "$FAGE" -ge 0 ] && [ "$FAGE" -le 10 ]; then
       FE=$(fv FRAME_EVIDENCE)
       FPS=$(fv FPS_EST); JANK=$(fv JANK_PCT); P95=$(fv P95_MS); P99=$(fv P99_MS); FN=$(fv FRAME_N)
