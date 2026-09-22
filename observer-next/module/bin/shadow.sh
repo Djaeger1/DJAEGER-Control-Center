@@ -42,6 +42,7 @@ publish(){
       echo "EXPIRES_AT=$((_now+120))"
       echo "EXECUTOR_ALLOWED=YES"
       echo "PACKAGE=$(kv PACKAGE "$POLICY")"
+      echo "INTENT=$(kv INTENT "$POLICY")"
       echo "CANDIDATE_DIGEST=$(kv CANDIDATE_DIGEST "$POLICY")"
       echo "LITTLE_MIN_KHZ=$(kv LITTLE_MIN_KHZ "$POLICY")"
       echo "LITTLE_MAX_KHZ=$(kv LITTLE_MAX_KHZ "$POLICY")"
@@ -91,18 +92,21 @@ while true; do
   [ "$WINDOWS" -ge 60 ] 2>/dev/null || { publish WAITING insufficient_matching_frame_windows; sleep 20; continue; }
   [ "$POWER_N" -ge 20 ] 2>/dev/null || { publish WAITING insufficient_power_evidence; sleep 20; continue; }
 
-  BASE_FPS=$(kv FPS_P50 "$LEARN"); BASE_JANK=$(kv JANK_P95 "$LEARN"); BASE_P95=$(kv FRAME_P95_P95_MS "$LEARN"); BASE_POWER=$(kv POWER_P95_MW "$LEARN")
-  case "$BASE_FPS:$BASE_JANK:$BASE_P95:$BASE_POWER" in *[!0-9.:]*|:*) publish WAITING baseline_metric_missing; sleep 20; continue;; esac
-  if awk -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v bw="$BASE_POWER" 'BEGIN{
+  INTENT=$(kv INTENT "$POLICY"); [ -n "$INTENT" ] || INTENT=FRAME_FIRST_BALANCED
+  BASE_FPS=$(kv FPS_P50 "$LEARN"); BASE_JANK=$(kv JANK_P95 "$LEARN"); BASE_P95=$(kv FRAME_P95_P95_MS "$LEARN")
+  BASE_POWER50=$(kv POWER_P50_MW "$LEARN"); BASE_POWER95=$(kv POWER_P95_MW "$LEARN")
+  case "$BASE_FPS:$BASE_JANK:$BASE_P95:$BASE_POWER50:$BASE_POWER95" in *[!0-9.:]*|:*) publish WAITING baseline_metric_missing; sleep 20; continue;; esac
+  if awk -v intent="$INTENT" -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v p50="$BASE_POWER50" -v p95="$BASE_POWER95" 'BEGIN{
     frame_ok=(bf>0&&bp>0&&f>=bf*0.98&&p<=bp*1.05&&((bj<=0&&j<=1)||(bj>0&&j<=bj*1.05)));
-    frame_better=(p<=bp*0.95)||((bj>0)&&(j<=bj*0.85));
-    power_ok=(bw>0)&&(w<=bw || (frame_better && w<=bw*1.10));
-    ok=frame_ok&&power_ok;
+    frame_better=(f>=bf*1.02)||(p<=bp*0.95)||((bj>0)&&(j<=bj*0.85));
+    if(intent=="FRAME_RECOVERY") ok=frame_ok&&frame_better&&(p95>0&&w<=p95*1.10);
+    else if(intent=="POWER_EFFICIENCY") ok=frame_ok&&(p50>0&&w<=p50*1.05);
+    else ok=frame_ok&&((frame_better&&(p95>0&&w<=p95*1.10))||(!frame_better&&(p50>0&&w<=p50*1.05)));
     exit !ok
   }'; then
-    publish PASS frame_priority_then_minimum_power
+    publish PASS "frame_priority_then_minimum_power_${INTENT}"
   else
-    publish REJECT frame_first_contract_failed
+    publish REJECT "frame_first_contract_failed_${INTENT}"
   fi
   # Re-evaluate a live candidate promptly without busy-looping over history.
   sleep 20
