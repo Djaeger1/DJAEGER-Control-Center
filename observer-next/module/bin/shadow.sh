@@ -67,6 +67,10 @@ while true; do
   [ "$(kv EXECUTOR_ENABLED "$POLICY")" = 0 ] || { publish REJECT candidate_must_not_self_enable; sleep 20; continue; }
 
   DIGEST=$(kv CANDIDATE_DIGEST "$POLICY"); PKG=$(kv PACKAGE "$POLICY")
+  _approved_digest="$(kv CANDIDATE_DIGEST "$APPROVAL")"
+  if [ -n "$_approved_digest" ] && [ "$_approved_digest" != "$DIGEST" ]; then
+    rm -f "$APPROVAL"
+  fi
   CANDIDATE_AT=$(kv AT "$POLICY"); case "$CANDIDATE_AT" in ''|*[!0-9]*) publish REJECT candidate_time_invalid; sleep 20; continue;; esac
   NOW=$(date +%s); AGE=$((NOW-CANDIDATE_AT))
   [ "$AGE" -ge 0 ] && [ "$AGE" -le 900 ] || { publish REJECT candidate_stale; sleep 20; continue; }
