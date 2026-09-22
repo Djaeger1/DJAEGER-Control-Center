@@ -234,14 +234,9 @@ private fun planRange(a:String,b:String,unit:String):String{
     val cloud=envField(s.brain,"HERMES_CONNECTION_STATUS").ifBlank{
         when(cloudState){ "ONLINE","APPROVED","REJECTED"->"ONLINE";"REACHABLE_IDLE"->"REACHABLE • AUTH UNVERIFIED";"NO_KEY"->"NOT_CONFIGURED";"AUTH_ERROR"->"AUTH_ERROR";"HTTP_ERROR","FAILED","UNAVAILABLE","OFFLINE"->"OFFLINE";else->if(cloudAuth=="CONFIGURED")"READY" else if(cloudAuth=="CONFIGURED_UNVERIFIED")"REACHABLE • AUTH UNVERIFIED" else "NOT_CONFIGURED" }
     }
-    val used=envField(s.brain,"HERMES_NEURON_USED_EST").ifBlank{"UNAVAILABLE"}
-    val limit=envField(s.brain,"HERMES_NEURON_LIMIT").ifBlank{"UNAVAILABLE"}
-    val neuronStatus=envField(s.brain,"HERMES_NEURON_STATUS")
-    val neuronLine=when{
-        used.toLongOrNull()!=null&&limit.toLongOrNull()!=null -> "$used / $limit"
-        neuronStatus=="PROVIDER_DOES_NOT_REPORT_USAGE" -> "Tidak dilaporkan provider"
-        else -> "Status pemakaian belum tersedia"
-    }
+    val used=envField(s.brain,"HERMES_NEURON_USED_EST").toLongOrNull() ?: 0L
+    val limit=envField(s.brain,"HERMES_NEURON_LIMIT").toLongOrNull() ?: 10000L
+    val neuronLine="$used / $limit"
     val hermesFresh=envField(s.supervisor,"HERMES").startsWith("FRESH:")
     val localState=when{!s.installed->"OFFLINE";hermesFresh->"ONLINE";else->"STALE"}
     BoxCard("HERMES: $localState","Local    $localState\nRoute    $route\nCloud    $cloud\nNeurons  $neuronLine",true)
