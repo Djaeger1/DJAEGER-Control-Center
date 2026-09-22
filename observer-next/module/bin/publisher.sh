@@ -439,7 +439,11 @@ publish_cc() {
     _plan_line="$_epoch,$_plan_state,$_pc,AI_CONSENSUS_MEASURED_ENVELOPE,ADAPTIVE,LEARNED,$_plmin,$_plmax,$_pbmin,$_pbmax,$_pgmin,$_pgmax"
   fi
 
-  _tmp="$_out.tmp.$$"
+  _publish_at=$(date +%s)
+  _observer_pid="$(cat "$_root/runtime/locks/observer.lock/pid" 2>/dev/null | head -n1)"
+  case "$_observer_pid" in ''|*[!0-9]*) _observer_pid=UNKNOWN;; esac
+
+  _tmp="$_out.tmp.$"
   {
     echo "__INSTALLED__"; echo 1
     echo "__VERSION__"; echo "1.1.6-singletonfix"
@@ -447,8 +451,8 @@ publish_cc() {
     # Runtime freshness tracks publication time; telemetry sample time stays in __TEL__.
     # Using observer cycle-start EPOCH here made a newly published snapshot appear
     # artificially old and could cross the APK's 15s runtime TTL.
-    echo "UPDATED_AT=$_now"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
-    echo "CONTROLLER_PID=${OBSERVER_PID:-UNKNOWN}"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
+    echo "UPDATED_AT=$_publish_at"; echo "ACTIVE=$_active"; echo "GAME=$([ "$_workload" = GAME ] && echo "$_pkg" || echo NA)"; echo "WINDOW_MODE=$_window"
+    echo "CONTROLLER_PID=$_observer_pid"; echo "PREDICTOR_PID="; echo "USER_MODE=$_exec_mode"
     echo "TOP_PACKAGE=$_top_pkg"; echo "PACKAGE_SOURCE=$_pkg_source"; echo "VISIBLE_GAME=$_visible_game"; echo "SNAPSHOT_GENERATION=$_generation"
     echo "LEARNING_SAMPLES=$_samples"; echo "LEARNING_CONFIDENCE=$_confidence"; echo "LEARNED_STATE=$_learning"
     echo "__TEL__"; echo "$_tel"
