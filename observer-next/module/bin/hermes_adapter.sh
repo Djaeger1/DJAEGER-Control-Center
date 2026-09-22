@@ -8,6 +8,11 @@
 # No cloud path has hardware-write authority.
 
 ROOT="$1"
+BIN_DIR="${0%/*}"
+if [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim hermes_adapter
+fi
 SNAP="$ROOT/runtime/snapshot.env"
 WORKLOAD="$ROOT/runtime/workload.env"
 LEARN="$ROOT/history/learned_envelope.env"
