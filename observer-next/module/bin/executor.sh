@@ -98,6 +98,11 @@ record_outcome(){
   [ "$(cat "$OUTCOME_MARK" 2>/dev/null)" = "$_sig" ] && return 0
   mkdir -p "$ROOT/history" 2>/dev/null
   [ -f "$OUTCOMES" ] || echo "epoch,package,digest,result,reason,fps,jank,p95_ms,power_mw,readback,little,big,gpu" > "$OUTCOMES"
+  # Preserve CSV row boundaries even if an older/interrupted writer left EOF
+  # without a terminating newline. A fused row breaks validation supersession.
+  if [ -s "$OUTCOMES" ] && ! tail -c 1 "$OUTCOMES" 2>/dev/null | grep -q "^$"; then
+    printf '\n' >> "$OUTCOMES"
+  fi
   printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$(date +%s)" "$(clean_csv "$_pkg")" "$(clean_csv "$_digest")" "$(clean_csv "$_result")" "$(clean_csv "$_reason")" \
     "$(clean_csv "$(kv FPS_EST "$SNAP")")" "$(clean_csv "$(kv JANK_PCT "$SNAP")")" "$(clean_csv "$(kv P95_MS "$SNAP")")" "$(clean_csv "$(kv POWER_MW "$SNAP")")" \
