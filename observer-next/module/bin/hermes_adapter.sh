@@ -1,8 +1,11 @@
 #!/system/bin/sh
 
-# ONE HERMES adapter for Observer Next.
-# HERMES Local is a deterministic, measured-envelope validator. HERMES Cloud
-# reviews the exact Gemini candidate. Neither path can write hardware state.
+# ONE HERMES deputy runtime.
+# Gemini is the primary/highest brain. Hermes Local + Hermes Cloud are ONE HERMES:
+# one deputy identity with local continuity and on-demand cloud cognition.
+# Hermes Cloud is neuron-guarded and escalated only when Gemini is unavailable,
+# frame evidence is degraded, and local continuity has no proven safe strategy.
+# No cloud path has hardware-write authority.
 
 ROOT="$1"
 SNAP="$ROOT/runtime/snapshot.env"
@@ -13,6 +16,10 @@ LOCAL_OUT="$ROOT/policy/hermes_local_vote.env"
 CLOUD_OUT="$ROOT/policy/hermes_cloud_vote.env"
 STATE="$ROOT/runtime/hermes_adapter.env"
 LAST="$ROOT/config/hermes_review_last.env"
+GSTATE="$ROOT/runtime/gemini_reasoner.env"
+HPLAN="$ROOT/policy/hermes_proposal.env"
+OUTCOMES="$ROOT/history/outcomes.csv"
+CLOUD_MIN_INTERVAL=900
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 num(){ case "$1" in ''|*[!0-9.-]*) echo 0;; *) echo "$1";; esac; }
@@ -54,6 +61,14 @@ write_state(){
     echo "HERMES_CLOUD_ROUTE=${HROUTE:-LOCAL}"
     echo "HERMES_CLOUD_MODEL=${HMODEL:-NA}"
     echo "HERMES_CLOUD_AUTH=${HAUTH:-UNKNOWN}"
+    echo "HERMES_MODE=${HMODE:-DEPUTY_STANDBY}"
+    echo "HERMES_ACTIVE_SOURCE=${HACTIVE_SOURCE:-NONE}"
+    echo "HERMES_CLOUD_USED=${HCLOUD_USED:-NO}"
+    echo "HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED"
+    echo "PRIMARY_BRAIN=GEMINI"
+    echo "DEPUTY_BRAIN=HERMES_H2"
+    echo "ONE_HERMES=LOCAL_PLUS_CLOUD_ONE_IDENTITY"
+    echo "OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
     echo "UPDATED_AT=$(date +%s)"
   } > "$t"
   chmod 600 "$t"; mv -f "$t" "$STATE"
@@ -227,20 +242,313 @@ cloud_review(){
   [ "$verdict" = APPROVE ]
 }
 
-while true; do
-  HLOCAL_STATE=WAITING; HCLOUD_STATE=STANDBY; HDETAIL=waiting_for_candidate; HTTP=NA; HROUTE=LOCAL; HMODEL=NA; HAUTH=UNKNOWN
-  cloud_probe >/dev/null 2>&1 || true
-  if [ ! -r "$SNAP" ] || [ ! -r "$LEARN" ]; then write_state WAITING; sleep 30; continue; fi
-  if [ ! -r "$GEM" ]; then write_state OBSERVING; sleep 30; continue; fi
 
-  if ! local_validate; then
-    rm -f "$LOCAL_OUT" "$CLOUD_OUT"
-    write_state LOCAL_REJECTED
-    sleep 60
+gemini_live(){
+  _gs=$(kv GEMINI_STATE "$GSTATE")
+  case "$_gs" in CANDIDATE|OBSERVE|READY) return 0;; *) return 1;; esac
+}
+
+gemini_failed(){
+  _gs=$(kv GEMINI_STATE "$GSTATE")
+  case "$_gs" in ALL_KEYS_COOLDOWN|AUTH_ERROR|HTTP_ERROR|NO_KEY|UNAVAILABLE) return 0;; *) return 1;; esac
+}
+
+frame_degraded(){
+  _fps=$(num "$(kv FPS_EST "$SNAP")"); _jank=$(num "$(kv JANK_PCT "$SNAP")"); _p95=$(num "$(kv P95_MS "$SNAP")")
+  _bfps=$(num "$(kv FPS_P50 "$LEARN")"); _bjank=$(num "$(kv JANK_P95 "$LEARN")"); _bp95=$(num "$(kv FRAME_P95_P95_MS "$LEARN")")
+  awk -v f="$_fps" -v j="$_jank" -v p="$_p95" -v bf="$_bfps" -v bj="$_bjank" -v bp="$_bp95" 'BEGIN{
+    if(bf<=0 || bp<=0) exit 1;
+    bad=(f>0 && f<bf*0.98) || (p>0 && p>bp*1.08);
+    if(j>=0 && bj>0 && j>bj*1.20+1) bad=1;
+    exit bad?0:1
+  }'
+}
+
+validate_candidate_file(){
+  _src="$1"
+  [ -r "$_src" ] || { HDETAIL=candidate_missing; return 1; }
+  [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { HDETAIL=non_game_workload; return 1; }
+  _pkg=$(kv PACKAGE "$_src")
+  [ "$_pkg" = "$(kv PACKAGE "$WORKLOAD")" ] || { HDETAIL=active_workload_mismatch; return 1; }
+  [ "$_pkg" = "$(kv PACKAGE "$LEARN")" ] || { HDETAIL=context_mismatch; return 1; }
+  [ "$(kv STATE "$LEARN")" = READY_HARDWARE_MODEL ] || { HDETAIL=baseline_not_mature; return 1; }
+  [ "$(kv FRAME_EVIDENCE "$LEARN")" = VALID ] || { HDETAIL=frame_baseline_not_mature; return 1; }
+
+  _glmin=$(kv LITTLE_MIN_KHZ "$_src"); _glmax=$(kv LITTLE_MAX_KHZ "$_src")
+  _gbmin=$(kv BIG_MIN_KHZ "$_src"); _gbmax=$(kv BIG_MAX_KHZ "$_src")
+  _ggmin=$(kv GPU_MIN_HZ "$_src"); _ggmax=$(kv GPU_MAX_HZ "$_src")
+  _lmin=$(kv LITTLE_MIN_KHZ "$LEARN"); _lmax=$(kv LITTLE_MAX_KHZ "$LEARN")
+  _bmin=$(kv BIG_MIN_KHZ "$LEARN"); _bmax=$(kv BIG_MAX_KHZ "$LEARN")
+  _gmin=$(kv GPU_MIN_HZ "$LEARN"); _gmax=$(kv GPU_MAX_HZ "$LEARN")
+  case "$_glmin:$_glmax:$_gbmin:$_gbmax:$_ggmin:$_ggmax:$_lmin:$_lmax:$_bmin:$_bmax:$_gmin:$_gmax" in
+    *[!0-9:]*) HDETAIL=non_numeric_candidate; return 1;;
+  esac
+  [ "$_glmin" -ge "$_lmin" ] && [ "$_glmax" -le "$_lmax" ] && [ "$_glmin" -le "$_glmax" ] || { HDETAIL=little_outside_measured_envelope; return 1; }
+  [ "$_gbmin" -ge "$_bmin" ] && [ "$_gbmax" -le "$_bmax" ] && [ "$_gbmin" -le "$_gbmax" ] || { HDETAIL=big_outside_measured_envelope; return 1; }
+  [ "$_ggmin" -ge "$_gmin" ] && [ "$_ggmax" -le "$_gmax" ] && [ "$_ggmin" -le "$_ggmax" ] || { HDETAIL=gpu_outside_measured_envelope; return 1; }
+
+  _lav=$(kv LITTLE_AVAILABLE_KHZ "$SNAP"); _bav=$(kv BIG_AVAILABLE_KHZ "$SNAP"); _gav=$(kv GPU_AVAILABLE_HZ "$SNAP")
+  contains_freq "$_glmin" "$_lav" && contains_freq "$_glmax" "$_lav" || { HDETAIL=unsupported_little_opp; return 1; }
+  contains_freq "$_gbmin" "$_bav" && contains_freq "$_gbmax" "$_bav" || { HDETAIL=unsupported_big_opp; return 1; }
+  contains_freq "$_ggmin" "$_gav" && contains_freq "$_ggmax" "$_gav" || { HDETAIL=unsupported_gpu_opp; return 1; }
+
+  _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")"); _cpu=$(num "$(kv CPU_TEMP_C "$SNAP")")
+  awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" 'BEGIN{exit !((s<=0||s<46)&&(b<=0||b<45)&&(c<=0||c<75))}' || { HDETAIL=thermal_guard_active; return 1; }
+  return 0
+}
+
+write_local_vote(){
+  _src="$1"; _vote="$2"; _reason="$3"
+  _d=$(digest "$_src"); [ -n "$_d" ] || return 1
+  _base=$(kv CONFIDENCE "$LEARN"); case "$_base" in ''|*[!0-9]*) _base=75;; esac
+  _conf=$((_base+5)); [ "$_conf" -gt 95 ] && _conf=95
+  _t="$LOCAL_OUT.tmp.$"
+  {
+    echo "SCHEMA=DJAEGER_ONE_HERMES_LOCAL_V2"
+    echo "AT=$(date +%s)"
+    echo "PACKAGE=$(kv PACKAGE "$_src")"
+    echo "VOTE=$_vote"
+    echo "CONFIDENCE=$_conf"
+    echo "CANDIDATE_DIGEST=$_d"
+    echo "REASON=$_reason"
+    echo "ROLE=DEPUTY_LOCAL_CONTINUITY"
+    echo "APPLY_AUTHORITY=NONE"
+  } > "$_t"
+  chmod 600 "$_t"; mv -f "$_t" "$LOCAL_OUT"
+}
+
+write_hermes_plan(){
+  _src="$1"; _source="$2"; _conf="$3"; _reason="$4"
+  _t="$HPLAN.tmp.$"
+  {
+    echo "SCHEMA=DJAEGER_ONE_HERMES_TAKEOVER_V1"
+    echo "AT=$(date +%s)"
+    echo "PACKAGE=$(kv PACKAGE "$_src")"
+    echo "VERDICT=CANDIDATE"
+    echo "CONFIDENCE=$_conf"
+    echo "LITTLE_MIN_KHZ=$(kv LITTLE_MIN_KHZ "$_src")"
+    echo "LITTLE_MAX_KHZ=$(kv LITTLE_MAX_KHZ "$_src")"
+    echo "BIG_MIN_KHZ=$(kv BIG_MIN_KHZ "$_src")"
+    echo "BIG_MAX_KHZ=$(kv BIG_MAX_KHZ "$_src")"
+    echo "GPU_MIN_HZ=$(kv GPU_MIN_HZ "$_src")"
+    echo "GPU_MAX_HZ=$(kv GPU_MAX_HZ "$_src")"
+    echo "REASON=$_reason"
+    echo "BRAIN_SOURCE=$_source"
+    echo "BRAIN_ROLE=DEPUTY_TAKEOVER"
+    echo "ONE_HERMES=LOCAL_PLUS_CLOUD_ONE_IDENTITY"
+    echo "OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
+    echo "APPLY_AUTHORITY=NONE"
+  } > "$_t"
+  chmod 600 "$_t"; mv -f "$_t" "$HPLAN"
+}
+
+local_history_takeover(){
+  [ -r "$OUTCOMES" ] || return 1
+  _pkg=$(kv ACTIVE_PACKAGE "$SNAP")
+  _line=$(awk -F, -v p="$_pkg" 'NR>1&&$2==p&&($4=="KEPT"||$4=="APPLIED_VERIFIED"){x=$0}END{print x}' "$OUTCOMES" 2>/dev/null)
+  [ -n "$_line" ] || return 1
+  _lr=$(printf '%s\n' "$_line" | cut -d, -f11)
+  _br=$(printf '%s\n' "$_line" | cut -d, -f12)
+  _gr=$(printf '%s\n' "$_line" | cut -d, -f13)
+  _l0=$(printf '%s' "$_lr" | cut -d- -f1); _l1=$(printf '%s' "$_lr" | cut -d- -f2)
+  _b0=$(printf '%s' "$_br" | cut -d- -f1); _b1=$(printf '%s' "$_br" | cut -d- -f2)
+  _g0=$(printf '%s' "$_gr" | cut -d- -f1); _g1=$(printf '%s' "$_gr" | cut -d- -f2)
+  case "$_l0:$_l1:$_b0:$_b1:$_g0:$_g1" in *[!0-9:]*) return 1;; esac
+  _tmp="$ROOT/runtime/.hermes_local_candidate.$"
+  {
+    echo "PACKAGE=$_pkg"
+    echo "LITTLE_MIN_KHZ=$_l0"; echo "LITTLE_MAX_KHZ=$_l1"
+    echo "BIG_MIN_KHZ=$_b0"; echo "BIG_MAX_KHZ=$_b1"
+    echo "GPU_MIN_HZ=$_g0"; echo "GPU_MAX_HZ=$_g1"
+  } > "$_tmp"
+  if validate_candidate_file "$_tmp"; then
+    write_hermes_plan "$_tmp" HERMES_LOCAL 86 LAST_PROVEN_GOOD_STRATEGY
+    write_local_vote "$HPLAN" TAKEOVER_LOCAL LAST_PROVEN_GOOD_STRATEGY
+    rm -f "$_tmp"
+    return 0
+  fi
+  rm -f "$_tmp"
+  return 1
+}
+
+cloud_takeover(){
+  _now=$(date +%s)
+  _last=$(kv AT "$LAST"); case "$_last" in ''|*[!0-9]*) _last=0;; esac
+  [ $((_now-_last)) -ge "$CLOUD_MIN_INTERVAL" ] || { HCLOUD_STATE=COOLDOWN; HDETAIL=neuron_guard_min_interval; return 1; }
+
+  _token=$(config_value HERMES_ACCESS_KEY)
+  [ -n "$_token" ] || { HAUTH=NOT_CONFIGURED; HCLOUD_STATE=NO_KEY; HDETAIL=hermes_access_key_not_found; return 1; }
+  HAUTH=CONFIGURED_UNVERIFIED
+  _endpoint=$(config_value HERMES_ENDPOINT); [ -n "$_endpoint" ] || _endpoint=$(config_value ENDPOINT)
+  [ -n "$_endpoint" ] || _endpoint=https://hermes-cloud-djaeger.moclomper.workers.dev
+  case "$_endpoint" in
+    */v1/chat|*/chat) _url="$_endpoint" ;;
+    *) _base=$(printf '%s' "$_endpoint" | sed 's:/*$::'); _url="$_base/v1/chat" ;;
+  esac
+  command -v curl >/dev/null 2>&1 || { unset _token; HCLOUD_STATE=UNAVAILABLE; HDETAIL=curl_missing; return 1; }
+
+  _pkg=$(kv ACTIVE_PACKAGE "$SNAP")
+  _mode=SMART
+  _orows=$(num "$(kv OUTCOME_ROWS "$LEARN")"); _rrows=$(num "$(kv ROLLBACK_ROWS "$LEARN")"); _krows=$(num "$(kv KEEP_ROWS "$LEARN")")
+  [ "$_orows" -ge 3 ] 2>/dev/null && [ "$_rrows" -gt "$_krows" ] 2>/dev/null && _mode=DEEP
+  HROUTE=$_mode
+  _msg="You are ONE HERMES Cloud, the strongest cloud cognition of the same Hermes identity that also runs locally. Gemini primary brain is currently unavailable, so ONE HERMES is deputy-in-control. Reason independently from measured Device Truth and return a safe takeover strategy. Optimization is strict: FIRST maximize frame stability; SECOND, among equally stable strategies, minimize power. Never sacrifice meaningful frame stability merely to save power. Do not output commands or paths. Package=$_pkg current_fps=$(kv FPS_EST "$SNAP") current_jank=$(kv JANK_PCT "$SNAP") current_p95=$(kv P95_MS "$SNAP") current_p99=$(kv P99_MS "$SNAP") current_power_mw=$(kv POWER_MW "$SNAP") skin_c=$(kv SKIN_TEMP_C "$SNAP") cpu_c=$(kv CPU_TEMP_C "$SNAP") gpu_c=$(kv GPU_TEMP_C "$SNAP"). Learned envelope little=$(kv LITTLE_MIN_KHZ "$LEARN")-$(kv LITTLE_MAX_KHZ "$LEARN") big=$(kv BIG_MIN_KHZ "$LEARN")-$(kv BIG_MAX_KHZ "$LEARN") gpu=$(kv GPU_MIN_HZ "$LEARN")-$(kv GPU_MAX_HZ "$LEARN"). Kernel OPP little=[$(kv LITTLE_AVAILABLE_KHZ "$SNAP")] big=[$(kv BIG_AVAILABLE_KHZ "$SNAP")] gpu=[$(kv GPU_AVAILABLE_HZ "$SNAP")]. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."
+  _sys="You are ONE HERMES Cloud. You are not a third brain; you are cloud cognition of the same ONE HERMES deputy identity. No root/sysfs authority."
+  _req="$ROOT/runtime/.hermes_takeover_request.$"; _resp="$ROOT/runtime/.hermes_takeover_response.$"
+  printf '{"mode":"%s","task":"djaeger_takeover_strategy","message":"%s","prompt":"%s","system":"%s","fallback":false,"max_tokens":256,"temperature":0.1}' "$_mode" "$(json_escape "$_msg")" "$(json_escape "$_msg")" "$(json_escape "$_sys")" > "$_req"
+  chmod 600 "$_req"
+  _cfg="$ROOT/runtime/.hermes_takeover_curl.$"
+  printf 'header = "Authorization: Bearer %s"\n' "$_token" > "$_cfg"; chmod 600 "$_cfg"
+  HTTP=$(curl --http1.1 --connect-timeout 5 -m 18 -sS -o "$_resp" -w '%{http_code}' -K "$_cfg" -H 'Content-Type: application/json' --data-binary "@$_req" "$_url" 2>/dev/null)
+  unset _token
+  rm -f "$_cfg" "$_req"
+  { echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$"; chmod 600 "$LAST.tmp.$"; mv -f "$LAST.tmp.$" "$LAST"
+  [ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"; rm -f "$_resp"; return 1; }
+  HAUTH=CONFIGURED
+  _text=$(tr '\n' ' ' < "$_resp" 2>/dev/null | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g;s/\\r//g')
+  HMODEL=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$_resp" 2>/dev/null | head -n1 | sed 's/.*:[[:space:]]*"//;s/"$//')
+  [ -n "$HMODEL" ] || HMODEL=NA
+  rm -f "$_resp"
+  _gv(){ printf '%s\n' "$_text" | sed -n "s/^$1=//p" | head -n1; }
+  _verdict=$(_gv VERDICT); _conf=$(_gv CONFIDENCE)
+  [ "$_verdict" = CANDIDATE ] || { HCLOUD_STATE=OBSERVE; HDETAIL=cloud_requests_observe; return 1; }
+  case "$_conf" in ''|*[!0-9]*) HCLOUD_STATE=INVALID; HDETAIL=cloud_confidence_invalid; return 1;; esac
+  _tmp="$ROOT/runtime/.hermes_cloud_candidate.$"
+  {
+    echo "PACKAGE=$_pkg"
+    echo "LITTLE_MIN_KHZ=$(_gv LITTLE_MIN_KHZ)"; echo "LITTLE_MAX_KHZ=$(_gv LITTLE_MAX_KHZ)"
+    echo "BIG_MIN_KHZ=$(_gv BIG_MIN_KHZ)"; echo "BIG_MAX_KHZ=$(_gv BIG_MAX_KHZ)"
+    echo "GPU_MIN_HZ=$(_gv GPU_MIN_HZ)"; echo "GPU_MAX_HZ=$(_gv GPU_MAX_HZ)"
+  } > "$_tmp"
+  if ! validate_candidate_file "$_tmp"; then rm -f "$_tmp"; HCLOUD_STATE=REJECTED; return 1; fi
+  _reason=$(_gv REASON | tr -cd 'A-Za-z0-9_.:-' | cut -c1-96)
+  [ -n "$_reason" ] || _reason=HERMES_CLOUD_TAKEOVER
+  write_hermes_plan "$_tmp" HERMES_CLOUD "$_conf" "$_reason"
+  _d=$(digest "$HPLAN")
+  _t="$CLOUD_OUT.tmp.$"
+  {
+    echo "SCHEMA=DJAEGER_ONE_HERMES_CLOUD_TAKEOVER_V1"
+    echo "AT=$(date +%s)"
+    echo "PACKAGE=$_pkg"
+    echo "VERDICT=TAKEOVER"
+    echo "VOTE=PROPOSE_TAKEOVER"
+    echo "CONFIDENCE=$_conf"
+    echo "CANDIDATE_DIGEST=$_d"
+    echo "REASON=$_reason"
+    echo "ROUTE=$_mode"
+    echo "MODEL=$HMODEL"
+    echo "HTTP_CODE=$HTTP"
+    echo "APPLY_AUTHORITY=NONE"
+  } > "$_t"
+  chmod 600 "$_t"; mv -f "$_t" "$CLOUD_OUT"
+  write_local_vote "$HPLAN" TAKEOVER_CLOUD LOCAL_ACCEPTS_ONE_HERMES_CLOUD_PLAN
+  rm -f "$_tmp"
+  HCLOUD_STATE=TAKEOVER_READY
+  HDETAIL=one_hermes_cloud_takeover_ready
+  HCLOUD_USED=YES
+  return 0
+}
+
+while true; do
+  HLOCAL_STATE=WAITING
+  HCLOUD_STATE=STANDBY
+  HDETAIL=waiting_for_brain_state
+  HTTP=NA
+  HROUTE=LOCAL
+  HMODEL=NA
+  HAUTH=UNKNOWN
+  HMODE=DEPUTY_STANDBY
+  HACTIVE_SOURCE=NONE
+  HCLOUD_USED=NO
+
+  cloud_probe >/dev/null 2>&1 || true
+
+  if [ ! -r "$SNAP" ] || [ ! -r "$LEARN" ]; then
+    rm -f "$HPLAN" "$LOCAL_OUT"
+    write_state WAITING
+    sleep 30
     continue
   fi
 
-  cloud_review || true
-  write_state REVIEWED
-  sleep 60
+  if [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" != GAME ]; then
+    rm -f "$HPLAN" "$LOCAL_OUT"
+    HLOCAL_STATE=OBSERVE
+    HMODE=DEPUTY_STANDBY
+    HDETAIL=non_game_workload
+    write_state OBSERVING
+    sleep 45
+    continue
+  fi
+
+  if gemini_live; then
+    rm -f "$HPLAN"
+    HMODE=DEPUTY_SHADOW
+    HACTIVE_SOURCE=GEMINI
+    HCLOUD_USED=NO
+    if [ -r "$GEM" ]; then
+      if validate_candidate_file "$GEM"; then
+        write_local_vote "$GEM" ACCEPT_PRIMARY GEMINI_PRIMARY_ASSIMILATED_BY_ONE_HERMES
+        HLOCAL_STATE=ASSIMILATED_GEMINI
+        HDETAIL=gemini_primary_plan_held_by_one_hermes
+      else
+        rm -f "$LOCAL_OUT"
+        HLOCAL_STATE=PRIMARY_REJECTED_LOCAL_CONTEXT
+      fi
+    else
+      rm -f "$LOCAL_OUT"
+      HLOCAL_STATE=DEPUTY_STANDBY
+      HDETAIL=gemini_online_observe_or_rate_guard
+    fi
+    write_state GEMINI_PRIMARY
+    sleep 30
+    continue
+  fi
+
+  if ! gemini_failed; then
+    rm -f "$HPLAN" "$LOCAL_OUT"
+    HMODE=DEPUTY_STANDBY
+    HLOCAL_STATE=WAITING
+    HDETAIL=gemini_not_ready_not_failed
+    write_state WAITING
+    sleep 30
+    continue
+  fi
+
+  HMODE=TAKEOVER
+  HACTIVE_SOURCE=HERMES_H2
+
+  if ! frame_degraded; then
+    rm -f "$HPLAN" "$LOCAL_OUT"
+    HLOCAL_STATE=TAKEOVER_OBSERVE
+    HDETAIL=gemini_offline_frame_stable_no_change
+    write_state HERMES_TAKEOVER
+    sleep 30
+    continue
+  fi
+
+  if local_history_takeover; then
+    HLOCAL_STATE=TAKEOVER_LOCAL
+    HACTIVE_SOURCE=HERMES_LOCAL
+    HCLOUD_USED=NO
+    HDETAIL=local_memory_reuses_proven_strategy
+    write_state HERMES_TAKEOVER
+    sleep 30
+    continue
+  fi
+
+  if cloud_takeover; then
+    HLOCAL_STATE=TAKEOVER_CLOUD
+    HACTIVE_SOURCE=HERMES_CLOUD
+    HMODE=TAKEOVER_CLOUD_ESCALATED
+    write_state HERMES_TAKEOVER
+    sleep 45
+    continue
+  fi
+
+  rm -f "$HPLAN" "$LOCAL_OUT"
+  HLOCAL_STATE=TAKEOVER_OBSERVE
+  HACTIVE_SOURCE=HERMES_LOCAL
+  HDETAIL=no_safe_takeover_strategy
+  write_state HERMES_TAKEOVER
+  sleep 45
 done
