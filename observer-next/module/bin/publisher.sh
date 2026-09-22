@@ -169,6 +169,9 @@ publish_cc() {
   _gem="$(pub_kv GEMINI_STATE "$_gem_state")"; [ -n "$_gem" ] || _gem=WAITING
   _gem_conf="$(pub_kv CONFIDENCE "$_gem_prop")"; case "$_gem_conf" in ''|*[!0-9]*) _gem_conf=0;; esac
   _gem_reason="$(pub_kv REASON "$_gem_prop")"; [ -n "$_gem_reason" ] || _gem_reason="$(pub_kv GEMINI_DETAIL "$_gem_state")"
+  _gem_guard_sec="$(pub_kv GEMINI_GUARD_SEC "$_gem_state")"; [ -n "$_gem_guard_sec" ] || _gem_guard_sec=NA
+  _gem_guard_reason="$(pub_kv GEMINI_GUARD_REASON "$_gem_state")"; [ -n "$_gem_guard_reason" ] || _gem_guard_reason=NA
+  _gem_last_success_age="$(pub_kv GEMINI_LAST_SUCCESS_AGE_SEC "$_gem_state")"; [ -n "$_gem_last_success_age" ] || _gem_last_success_age=NA
   _hlocal="$(pub_kv HERMES_LOCAL_STATE "$_hermes_state")"; [ -n "$_hlocal" ] || _hlocal=WAITING
   _hcloud="$(pub_kv HERMES_CLOUD_STATE "$_hermes_state")"; [ -n "$_hcloud" ] || _hcloud=STANDBY
   _hroute="$(pub_kv HERMES_CLOUD_ROUTE "$_hermes_state")"; [ -n "$_hroute" ] || _hroute=LOCAL
@@ -488,6 +491,7 @@ publish_cc() {
     echo "EXEC_GPU=$([ "$_exec_state" = APPLIED ] && echo "$_exec_gpu" || echo "$_gmin-$_gmax")"
     echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=MULTI"
     echo "GEMINI_CONNECTION_STATUS=$_gem_connection"; echo "GEMINI_HTTP_CODE=$_gem_http"; echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"
+    echo "GEMINI_REASONING_GUARD_SEC=$_gem_guard_sec"; echo "GEMINI_REASONING_GUARD_REASON=$_gem_guard_reason"; echo "GEMINI_LAST_SUCCESS_AGE_SEC=$_gem_last_success_age"
     echo "HERMES_CONNECTION_STATUS=$_hermes_connection"
     _cloud_control=NO; _cloud_controller=NONE
     case "$_active_brain_source" in GEMINI) _cloud_control=YES; _cloud_controller=GEMINI;; HERMES_CLOUD) _cloud_control=YES; _cloud_controller=HERMES_CLOUD;; esac
