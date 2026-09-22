@@ -144,14 +144,18 @@ while true; do
         for(i=s;i<=n;i++){
           total++;
           superseded=0;
-          if(r[i]=="ROLLBACK_FAILED" && q[i]=="SYSFS_DRIFT"){
+          if(r[i]=="ROLLBACK_FAILED"){
             for(j=i+1;j<=n;j++){
-              if(d[j]==d[i] && r[j]=="RELEASED" && q[j]=="SYSFS_EXTERNAL_OVERRIDE"){
+              if(d[j]==d[i] && r[j]=="RELEASED" && q[j] ~ /EXTERNAL_OVERRIDE/){
                 superseded=1; break;
               }
             }
           }
-          if(superseded){ sup++; continue; }
+          if(superseded){
+            sup++;
+            if(q[i]!="SYSFS_DRIFT") rb++;
+            continue;
+          }
           if(r[i]=="KEPT") keep++;
           if(r[i]=="ROLLED_BACK"||r[i]=="ROLLBACK_FAILED") rb++;
           if(r[i]=="ROLLBACK_FAILED") rbf++;
