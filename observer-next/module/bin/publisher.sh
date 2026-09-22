@@ -425,17 +425,26 @@ publish_cc() {
   else _history_bytes=0
   fi
   case "$_history_bytes" in ''|*[!0-9]*) _history_bytes=0;; esac
-  _outcome_rows=0; _outcome_keep=0; _outcome_rollback=0; _outcome_last=NONE; _outcome_reason=NONE
+  _outcome_rows=0; _outcome_keep=0; _outcome_rollback=0; _outcome_rollback_failed=0; _outcome_last=NONE; _outcome_reason=NONE
   if [ -r "$_outcomes" ]; then
     _outcome_rows="$(awk -F, 'NR>1{n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
     _outcome_keep="$(awk -F, 'NR>1&&($4=="KEPT"||$4=="APPLIED_VERIFIED"){n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
     _outcome_rollback="$(awk -F, 'NR>1&&($4=="ROLLED_BACK"||$4=="ROLLBACK_FAILED"){n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
+    _outcome_rollback_failed="$(awk -F, 'NR>1&&$4=="ROLLBACK_FAILED"{n++}END{print n+0}' "$_outcomes" 2>/dev/null)"
     _outcome_last="$(awk -F, 'NR>1{v=$4}END{print v}' "$_outcomes" 2>/dev/null)"; [ -n "$_outcome_last" ] || _outcome_last=NONE
     _outcome_reason="$(awk -F, 'NR>1{v=$5}END{print v}' "$_outcomes" 2>/dev/null)"; [ -n "$_outcome_reason" ] || _outcome_reason=NONE
   fi
   case "$_outcome_rows" in ''|*[!0-9]*) _outcome_rows=0;; esac
   case "$_outcome_keep" in ''|*[!0-9]*) _outcome_keep=0;; esac
   case "$_outcome_rollback" in ''|*[!0-9]*) _outcome_rollback=0;; esac
+  case "$_outcome_rollback_failed" in ''|*[!0-9]*) _outcome_rollback_failed=0;; esac
+  _permanent_readiness=LEARNING
+  if [ "$_learning" = READY_HARDWARE_MODEL ] && [ "$_samples" -ge 1000 ] 2>/dev/null && [ "$_confidence" -ge 90 ] 2>/dev/null; then
+    _permanent_readiness=LIVE_VALIDATION_REQUIRED
+    if [ "$_outcome_keep" -ge 5 ] 2>/dev/null && [ "$_outcome_rollback_failed" -eq 0 ] 2>/dev/null && [ "$_outcome_keep" -gt "$_outcome_rollback" ] 2>/dev/null; then
+      _permanent_readiness=MATURE_CANDIDATE
+    fi
+  fi
   _exec_mode="$(cat "$_root/config/execution_mode" 2>/dev/null | head -n1)"; [ -n "$_exec_mode" ] || _exec_mode=AUTO
   _runtime_profile=LEARNED_PENDING; [ "$_exec_state" = APPLIED ] && _runtime_profile=ADAPTIVE_LEARNED
   _tel="$_epoch,$_cpu_t,$_gpu_t,$_skin_t,$_bat_t,$_little,$_big,$_gpu,$_runtime_profile,$_frame_ms,$_fps,$_jank,$_p95,$_p99,0,$_battery_status,$_current,$_voltage,$_power,$_power_valid,$_power_reason,$_pkg,$_window"
@@ -520,7 +529,7 @@ publish_cc() {
     echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "AGENT_ACTIVE_INTENT=$_exec_intent"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>MINIMUM_POWER"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
-    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
+    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
     echo "__AUTHORITY__"; echo "STATE=AI_AGENT_LOCAL_GATED"; echo "HARDWARE_AUTHORITY=AI_AGENT"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=AI_AGENT_INTERNAL_EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
     echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
     echo "__SUPERVISOR__"
