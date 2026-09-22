@@ -523,6 +523,14 @@ local_synthesize_takeover(){
   return 0
 }
 cloud_takeover(){
+  # Do not spend cloud neurons on a plan that the local executor cannot safely
+  # apply at the current thermal state.
+  _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")")
+  _cpu=$(num "$(kv CPU_TEMP_C "$SNAP")"); _gpu_t=$(num "$(kv GPU_TEMP_C "$SNAP")")
+  awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu_t" 'BEGIN{
+    exit !((s<=0||s<44)&&(b<=0||b<43)&&(c<=0||c<75)&&(g<=0||g<75))
+  }' || { HCLOUD_STATE=OBSERVE; HDETAIL=cloud_takeover_deferred_thermal_guard; return 1; }
+
   _now=$(date +%s)
   _last=$(kv AT "$LAST"); case "$_last" in ''|*[!0-9]*) _last=0;; esac
   [ $((_now-_last)) -ge "$CLOUD_MIN_INTERVAL" ] || { HCLOUD_STATE=COOLDOWN; HDETAIL=neuron_guard_min_interval; return 1; }
