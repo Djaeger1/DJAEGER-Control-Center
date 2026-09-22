@@ -358,6 +358,7 @@ write_hermes_plan(){
      [ "$(kv PACKAGE "$HPLAN")" = "$(kv PACKAGE "$_src")" ] &&
      [ "$(kv BRAIN_SOURCE "$HPLAN")" = "$_source" ] &&
      [ "$(kv INTENT "$HPLAN")" = "$_intent" ] &&
+     [ "$(kv ACTUATORS "$HPLAN")" = "$_actuators" ] &&
      [ "$(kv REASON "$HPLAN")" = "$_reason" ] &&
      [ "$(kv LITTLE_MIN_KHZ "$HPLAN")" = "$(kv LITTLE_MIN_KHZ "$_src")" ] &&
      [ "$(kv LITTLE_MAX_KHZ "$HPLAN")" = "$(kv LITTLE_MAX_KHZ "$_src")" ] &&
