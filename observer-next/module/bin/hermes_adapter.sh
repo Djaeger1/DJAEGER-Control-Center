@@ -347,6 +347,7 @@ write_local_vote(){
 write_hermes_plan(){
   _src="$1"; _source="$2"; _conf="$3"; _reason="$4"; _intent="$5"
   [ -n "$_intent" ] || _intent=FRAME_FIRST_BALANCED
+  _actuators="$(kv ACTUATORS "$_src")"; [ -n "$_actuators" ] || _actuators=ALL
 
   # Keep the same plan file/digest stable while the strategy is unchanged.
   # Shadow/approval/executor bind to this digest, so needless AT rewrites would
@@ -375,6 +376,7 @@ write_hermes_plan(){
     echo "VERDICT=CANDIDATE"
     echo "CONFIDENCE=$_conf"
     echo "INTENT=$_intent"
+    echo "ACTUATORS=$_actuators"
     echo "LITTLE_MIN_KHZ=$(kv LITTLE_MIN_KHZ "$_src")"
     echo "LITTLE_MAX_KHZ=$(kv LITTLE_MAX_KHZ "$_src")"
     echo "BIG_MIN_KHZ=$(kv BIG_MIN_KHZ "$_src")"
@@ -489,6 +491,7 @@ local_synthesize_takeover(){
   _nl0="$_l0"; _nl1="$_l1"; _nb0="$_b0"; _nb1="$_b1"; _ng0="$_g0"; _ng1="$_g1"
   _intent=NONE
   _reason=NONE
+  _actuators=NONE
 
   if frame_degraded; then
     _n=$(opp_next_in_range "$_bav" "$_b0" "$_b1"); [ -n "$_n" ] && _nb0="$_n"
@@ -497,23 +500,25 @@ local_synthesize_takeover(){
       _n=$(opp_next_in_range "$_lav" "$_l0" "$_l1"); [ -n "$_n" ] && _nl0="$_n"
       _intent=FRAME_RECOVERY
       _reason=LOCAL_FRAME_CRITICAL_RECOVERY
+      _actuators=LITTLE,BIG,GPU
     else
       _intent=FRAME_RECOVERY
       _reason=LOCAL_FRAME_DEGRADED_RECOVERY
+      _actuators=BIG,GPU
     fi
   elif power_pressure || thermal_pressure; then
     _n=$(opp_prev_in_range "$_gav" "$_g1" "$_g0")
     if [ -n "$_n" ]; then
-      _ng1="$_n"; _intent=POWER_EFFICIENCY
+      _ng1="$_n"; _intent=POWER_EFFICIENCY; _actuators=GPU
       if thermal_pressure; then _reason=LOCAL_THERMAL_POWER_TRIM_GPU; else _reason=LOCAL_POWER_TRIM_GPU; fi
     else
       _n=$(opp_prev_in_range "$_bav" "$_b1" "$_b0")
       if [ -n "$_n" ]; then
-        _nb1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_POWER_TRIM_BIG
+        _nb1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_POWER_TRIM_BIG; _actuators=BIG
       else
         _n=$(opp_prev_in_range "$_lav" "$_l1" "$_l0")
         [ -n "$_n" ] || { HDETAIL=local_synth_no_lower_opp; return 1; }
-        _nl1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_POWER_TRIM_LITTLE
+        _nl1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_POWER_TRIM_LITTLE; _actuators=LITTLE
       fi
     fi
   else
@@ -522,7 +527,7 @@ local_synthesize_takeover(){
     [ "$_orows" -eq 0 ] 2>/dev/null && [ "$_feedback" != CAUTION ] || { HDETAIL=local_synth_no_action_needed; return 1; }
     _n=$(opp_prev_in_range "$_gav" "$_g1" "$_g0")
     [ -n "$_n" ] || { HDETAIL=local_synth_no_efficiency_probe_opp; return 1; }
-    _ng1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_MATURE_MODEL_EFFICIENCY_PROBE
+    _ng1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_MATURE_MODEL_EFFICIENCY_PROBE; _actuators=GPU
   fi
 
   [ "$_nl0" -le "$_nl1" ] && [ "$_nb0" -le "$_nb1" ] && [ "$_ng0" -le "$_ng1" ] || { HDETAIL=local_synth_invalid_range; return 1; }
@@ -532,6 +537,7 @@ local_synthesize_takeover(){
   {
     echo "PACKAGE=$_pkg"
     echo "INTENT=$_intent"
+    echo "ACTUATORS=$_actuators"
     echo "LITTLE_MIN_KHZ=$_nl0"; echo "LITTLE_MAX_KHZ=$_nl1"
     echo "BIG_MIN_KHZ=$_nb0"; echo "BIG_MAX_KHZ=$_nb1"
     echo "GPU_MIN_HZ=$_ng0"; echo "GPU_MAX_HZ=$_ng1"
