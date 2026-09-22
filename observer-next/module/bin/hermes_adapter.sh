@@ -657,7 +657,7 @@ while true; do
     HMODE=DEPUTY_STANDBY
     HDETAIL=non_game_workload
     write_state OBSERVING
-    sleep 45
+    sleep 5
     continue
   fi
 
@@ -743,5 +743,5 @@ while true; do
   HACTIVE_SOURCE=HERMES_LOCAL
   HDETAIL=no_safe_takeover_strategy
   write_state HERMES_TAKEOVER
-  sleep 45
+  sleep 15
 done
