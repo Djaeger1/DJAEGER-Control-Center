@@ -63,11 +63,11 @@ if ! migration_ready; then
 fi
 
 # Stop every previous generation before clearing singleton locks.
-for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow executor railway_bridge; do
+for n in observer frame_observer network_observer learner gemini_reasoner hermes_adapter consensus shadow executor railway_bridge; do
   stop_worker "$n"
 done
 sleep 1
-for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow executor railway_bridge; do
+for n in observer frame_observer network_observer learner gemini_reasoner hermes_adapter consensus shadow executor railway_bridge; do
   kill_worker_hard "$n"
 done
 sleep 1
@@ -78,6 +78,7 @@ chmod 700 "$ROOT/runtime/locks" 2>/dev/null
 
 nohup sh "$MODDIR/bin/observer.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 nohup sh "$MODDIR/bin/frame_observer.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
+nohup sh "$MODDIR/bin/network_observer.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 nohup sh "$MODDIR/bin/learner.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 nohup sh "$MODDIR/bin/gemini_reasoner.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 nohup sh "$MODDIR/bin/hermes_adapter.sh" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
@@ -94,7 +95,7 @@ startup_tmp="$ROOT/runtime/startup.env.tmp.$$"
   echo "STARTUP_AT=$(date +%s)"
   echo "SINGLETON_GUARD=ENABLED"
   echo "PREVIOUS_GENERATION=TERMINATED"
-  for n in observer frame_observer learner gemini_reasoner hermes_adapter consensus shadow executor; do
+  for n in observer frame_observer network_observer learner gemini_reasoner hermes_adapter consensus shadow executor; do
     if ps -A -o ARGS 2>/dev/null | grep -F "/djaeger_ai_observer/bin/$n.sh" | grep -v grep >/dev/null 2>&1; then
       state=RUNNING
     else
