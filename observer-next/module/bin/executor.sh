@@ -594,7 +594,18 @@ release_external_override(){
       BACKUP) _ls=ALREADY_BACKUP ;;
       EXTERNAL) _ls=RELINQUISHED; _external=1 ;;
       APPLIED)
-        if pair_restore "$LP" scaling_min_freq scaling_max_freq "$_ltmin" "$_ltmax"; then _ls=RESTORED; else _ls=FAIL; _ok=0; fi ;;
+        if pair_restore "$LP" scaling_min_freq scaling_max_freq "$_ltmin" "$_ltmax"; then
+          _ls=RESTORED
+        else
+          # Native power/thermal ownership can win between our pre-restore
+          # read and immediate readback. Re-read before declaring failure.
+          _post="$(pair_post_restore_state "$LP" scaling_min_freq scaling_max_freq "$_little" "$_ltmin" "$_ltmax")"
+          case "$_post" in
+            BACKUP) _ls=RESTORED_AFTER_RACE ;;
+            EXTERNAL) _ls=RELINQUISHED_AFTER_RACE; _external=1 ;;
+            *) _ls="FAIL_AFTER_RESTORE_$_post"; _ok=0 ;;
+          esac
+        fi ;;
       *) _ls="FAIL_$_state"; _ok=0 ;;
     esac
   fi
@@ -604,7 +615,16 @@ release_external_override(){
       BACKUP) _bs=ALREADY_BACKUP ;;
       EXTERNAL) _bs=RELINQUISHED; _external=1 ;;
       APPLIED)
-        if pair_restore "$BP" scaling_min_freq scaling_max_freq "$_btmin" "$_btmax"; then _bs=RESTORED; else _bs=FAIL; _ok=0; fi ;;
+        if pair_restore "$BP" scaling_min_freq scaling_max_freq "$_btmin" "$_btmax"; then
+          _bs=RESTORED
+        else
+          _post="$(pair_post_restore_state "$BP" scaling_min_freq scaling_max_freq "$_big" "$_btmin" "$_btmax")"
+          case "$_post" in
+            BACKUP) _bs=RESTORED_AFTER_RACE ;;
+            EXTERNAL) _bs=RELINQUISHED_AFTER_RACE; _external=1 ;;
+            *) _bs="FAIL_AFTER_RESTORE_$_post"; _ok=0 ;;
+          esac
+        fi ;;
       *) _bs="FAIL_$_state"; _ok=0 ;;
     esac
   fi
@@ -614,7 +634,16 @@ release_external_override(){
       BACKUP) _gs=ALREADY_BACKUP ;;
       EXTERNAL) _gs=RELINQUISHED; _external=1 ;;
       APPLIED)
-        if pair_restore "$GP" min_freq max_freq "$_gtmin" "$_gtmax"; then _gs=RESTORED; else _gs=FAIL; _ok=0; fi ;;
+        if pair_restore "$GP" min_freq max_freq "$_gtmin" "$_gtmax"; then
+          _gs=RESTORED
+        else
+          _post="$(pair_post_restore_state "$GP" min_freq max_freq "$_gpu" "$_gtmin" "$_gtmax")"
+          case "$_post" in
+            BACKUP) _gs=RESTORED_AFTER_RACE ;;
+            EXTERNAL) _gs=RELINQUISHED_AFTER_RACE; _external=1 ;;
+            *) _gs="FAIL_AFTER_RESTORE_$_post"; _ok=0 ;;
+          esac
+        fi ;;
       *) _gs="FAIL_$_state"; _ok=0 ;;
     esac
   fi
