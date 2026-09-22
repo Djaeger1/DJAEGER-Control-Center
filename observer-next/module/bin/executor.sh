@@ -143,7 +143,7 @@ restore_all(){
     if valid_gpu "$GP" && pair_restore "$GP" min_freq max_freq "$_gtmin" "$_gtmax"; then _gs=OK; else _gs=FAIL; _ok=0; fi
   fi
 
-  _rtmp="$RESTORE_DIAG.tmp.$"
+  _rtmp="$RESTORE_DIAG.tmp.$PPID"
   {
     echo "UPDATED_AT=$(date +%s)"
     echo "ACTUATORS=$_restore_act"
