@@ -378,6 +378,9 @@ active_readback_state(){
   valid_cpu "$LP" && valid_cpu "$BP" && valid_gpu "$GP" || return 2
   valid_actuators "$APPLIED_ACTUATORS" || return 2
 
+  ACTIVE_NATIVE_RELAXED=0
+  ACTIVE_EFFECTIVE_LITTLE="$APPLIED_LITTLE"
+
   _almin="${APPLIED_LITTLE%%-*}"; _almax="${APPLIED_LITTLE#*-}"
   _abmin="${APPLIED_BIG%%-*}"; _abmax="${APPLIED_BIG#*-}"
   _agmin="${APPLIED_GPU%%-*}"; _agmax="${APPLIED_GPU#*-}"
@@ -385,7 +388,25 @@ active_readback_state(){
   if act_has "$APPLIED_ACTUATORS" LITTLE; then
     _cmin="$(readv "$LP/scaling_min_freq")"; _cmax="$(readv "$LP/scaling_max_freq")"
     num "$_cmin" && num "$_cmax" || return 2
-    [ "$_cmin" = "$_almin" ] && [ "$_cmax" = "$_almax" ] || return 1
+    if [ "$_cmin" = "$_almin" ] && [ "$_cmax" = "$_almax" ]; then
+      :
+    else
+      # Qualcomm/MIUI power control may relax a raised LITTLE min_freq back
+      # toward the pre-transaction floor while preserving the exact max_freq.
+      # Accept only that bounded, power-saving direction. Never tolerate a
+      # changed max, a min below the backup floor, or a more aggressive min.
+      _blmin="$(kv LITTLE_MIN "$BACKUP")"; _blmax="$(kv LITTLE_MAX "$BACKUP")"
+      num "$_blmin" && num "$_blmax" || return 2
+      if [ "$_blmax" = "$_almax" ] &&
+         [ "$_cmax" = "$_almax" ] &&
+         [ "$_cmin" -ge "$_blmin" ] 2>/dev/null &&
+         [ "$_cmin" -le "$_almin" ] 2>/dev/null; then
+        ACTIVE_NATIVE_RELAXED=1
+        ACTIVE_EFFECTIVE_LITTLE="${_cmin}-${_cmax}"
+      else
+        return 1
+      fi
+    fi
   fi
   if act_has "$APPLIED_ACTUATORS" BIG; then
     _cmin="$(readv "$BP/scaling_min_freq")"; _cmax="$(readv "$BP/scaling_max_freq")"
@@ -515,7 +536,9 @@ post_apply_monitor(){
     echo "UPDATED_AT=$_now"
   } > "$_mtmp"; chmod 600 "$_mtmp"; mv -f "$_mtmp" "$MONITOR"
   if [ "$MONITOR_SAMPLES" -eq 5 ] && [ "$MONITOR_BAD_COUNT" -eq 0 ]; then
-    record_outcome KEPT "POST_APPLY_STABLE_${APPLIED_INTENT}" "$APPLIED_PACKAGE" "$ACTIVE_DIGEST"
+    _kept_little="$APPLIED_LITTLE"
+    [ "${ACTIVE_NATIVE_RELAXED:-0}" -eq 1 ] 2>/dev/null && _kept_little="$ACTIVE_EFFECTIVE_LITTLE"
+    record_outcome KEPT "POST_APPLY_STABLE_${APPLIED_INTENT}" "$APPLIED_PACKAGE" "$ACTIVE_DIGEST" "$_kept_little" "$APPLIED_BIG" "$APPLIED_GPU"
   fi
   [ "$MONITOR_BAD_COUNT" -lt 3 ] || return 1
   return 0
@@ -706,6 +729,12 @@ reconcile(){
       return 1
     fi
 
+    if [ "${ACTIVE_NATIVE_RELAXED:-0}" -eq 1 ] 2>/dev/null; then
+      READBACK=NATIVE_RELAXED
+    else
+      READBACK=VERIFIED
+    fi
+
     if ! active_context_safe; then
       rollback_active "$ACTIVE_GUARD_REASON"
       return 1
@@ -717,7 +746,11 @@ reconcile(){
       return 1
     fi
 
-    READBACK=VERIFIED
+    if [ "${ACTIVE_NATIVE_RELAXED:-0}" -eq 1 ] 2>/dev/null; then
+      READBACK=NATIVE_RELAXED
+    else
+      READBACK=VERIFIED
+    fi
     _now="$(date +%s)"
     _active_age=$((_now-APPLIED_AT))
 
