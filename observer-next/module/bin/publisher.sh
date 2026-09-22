@@ -98,7 +98,7 @@ publish_cc() {
   # Previously FRAME_MS came from frame.env while FPS/JANK/P95/P99 came from
   # observer snapshot.env, which could produce impossible mixed UI states such
   # as "Frame 16.7 ms" together with "FPS — / Jank —".
-  _frame_src="$_root/runtime/.publisher_frame.$"
+  _frame_src="$_root/runtime/.publisher_frame.$PPID"
   if [ -r "$_frame" ]; then
     cp "$_frame" "$_frame_src" 2>/dev/null || :
   fi
@@ -480,7 +480,7 @@ publish_cc() {
   _observer_pid="$(cat "$_root/runtime/locks/observer.lock/pid" 2>/dev/null | head -n1)"
   case "$_observer_pid" in ''|*[!0-9]*) _observer_pid=UNKNOWN;; esac
 
-  _tmp="$_out.tmp.$"
+  _tmp="$_out.tmp.$PPID"
   {
     echo "__INSTALLED__"; echo 1
     echo "__VERSION__"; echo "1.1.6-singletonfix"
