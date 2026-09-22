@@ -1,0 +1,141 @@
+name: 9Router SINGLETONFIX Fast Audit
+
+on:
+  push:
+    branches:
+      - experiment/9router-singletonfix-v116-fast-audit
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fast-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify latest pair identity
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          grep -Fq 'DJAEGER AI Adaptive v1.1.6 SINGLETONFIX • VERIFIED SYNC' observer-next/android/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -Fq '_expected_apk=110' observer-next/module/bin/publisher.sh
+          grep -Fq 'private val apkVersionCode=110' observer-next/android/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -Fqx 'versionCode=209' observer-next/module/module.prop
+          printf '%s\n' 'PAIR=DJAEGER-AI-Adaptive-SINGLETONFIX-v1.1.6-FINAL' 'SOURCE=a615750036c27c03285d9ac1c81147d18fbd1bbf' > out/PAIR_IDENTITY.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build pinned 9Router
+        run: |
+          set -euo pipefail
+          git clone https://github.com/mhiqrambg/9router-mibp-version.git "$RUNNER_TEMP/9router"
+          cd "$RUNNER_TEMP/9router"
+          git checkout 25df5e6a9d209906dc8a3d8691fba99a1094b05f
+          npm ci
+          npm run build
+          echo '9ROUTER_SHA=25df5e6a9d209906dc8a3d8691fba99a1094b05f' > "$GITHUB_WORKSPACE/out/9ROUTER_IDENTITY.txt"
+
+      - name: Start and configure 9Router local experiment
+        working-directory: ${{ runner.temp }}/9router
+        env:
+          JWT_SECRET: experiment-only-jwt-secret-9router-djaeger
+          INITIAL_PASSWORD: experiment-only
+          API_KEY_SECRET: experiment-only-api-key-secret
+          MACHINE_ID_SALT: experiment-only-machine-salt
+          DATA_DIR: ${{ runner.temp }}/9router-data
+          PORT: '20128'
+          HOSTNAME: 127.0.0.1
+          NODE_ENV: production
+          ENABLE_REQUEST_LOGS: 'false'
+          CLOUD_URL: ''
+          NEXT_PUBLIC_CLOUD_URL: ''
+        run: |
+          set -euo pipefail
+          mkdir -p "$DATA_DIR"
+          nohup node custom-server.js --port 20128 > "$GITHUB_WORKSPACE/out/9router-server.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:20128/api/health >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:20128/api/health >/dev/null
+          curl -fsS -c "$GITHUB_WORKSPACE/out/cookie.txt"             -H 'Content-Type: application/json'             --data '{"password":"experiment-only"}'             http://127.0.0.1:20128/api/auth/login > "$GITHUB_WORKSPACE/out/login.json"
+          curl -fsS -b "$GITHUB_WORKSPACE/out/cookie.txt"             -X PATCH -H 'Content-Type: application/json'             --data '{"requireApiKey":false}'             http://127.0.0.1:20128/api/settings > "$GITHUB_WORKSPACE/out/settings.json"
+          grep -q '"requireApiKey":false' "$GITHUB_WORKSPACE/out/settings.json"
+          echo '9ROUTER_READY=YES' > "$GITHUB_WORKSPACE/out/9ROUTER_READY.txt"
+
+      - name: Run concise coding audit through free no-auth provider
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          files=[
+            "observer-next/module/service.sh",
+            "observer-next/module/bin/executor.sh",
+            "observer-next/module/bin/publisher.sh",
+            "observer-next/android/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt",
+            "observer-next/android/app/src/main/java/com/djaeger/controlcenter/TelemetryNormalizer.kt",
+          ]
+          chunks=[]
+          for p in files:
+            chunks.append(f"\n===== {p} =====\n"+Path(p).read_text(errors="replace"))
+          prompt="""Audit this exact DJAEGER AI SINGLETONFIX v1.1.6 APK+module source pair.
+          Find only concrete source-level defects affecting APK-module synchronization, startup singleton behavior,
+          state truth, telemetry normalization, or executor rollback/safety.
+          Do not invent device performance results. Cloud may not write sysfs directly.
+          Return only: FINDINGS, PATCH_PLAN, TESTS_TO_ADD. Each finding must cite exact file and reproducible failure path.
+          If no bug is proven, write NO_PROVEN_BUG.
+          """+"".join(chunks)
+          payload={"model":"oc/muse-spark-1.2-contributor-free","messages":[
+            {"role":"system","content":"Be a strict Android/Linux code auditor; no speculation."},
+            {"role":"user","content":prompt}
+          ],"temperature":0.1,"stream":False}
+          Path("out/request.json").write_text(json.dumps(payload))
+          PY
+
+          try_model() {
+            model="$1"
+            python3 - "$model" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=json.loads(Path("out/request.json").read_text())
+          p["model"]=sys.argv[1]
+          Path("out/request-current.json").write_text(json.dumps(p))
+          PY
+            code="$(curl --max-time 150 -sS -o out/response.json -w '%{http_code}'               -H 'Content-Type: application/json'               --data-binary @out/request-current.json               http://127.0.0.1:20128/v1/chat/completions || true)"
+            echo "$model HTTP=$code" | tee -a out/attempts.txt
+            [ "$code" = "200" ]
+          }
+
+          if try_model "oc/muse-spark-1.2-contributor-free"; then
+            echo 'USED_MODEL=oc/muse-spark-1.2-contributor-free' > out/used-model.txt
+          elif try_model "oc/union-alpha"; then
+            echo 'USED_MODEL=oc/union-alpha' > out/used-model.txt
+          else
+            echo 'USED_MODEL=NONE' > out/used-model.txt
+            cat out/response.json || true
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("out/response.json").read_text())
+          content=r.get("choices",[{}])[0].get("message",{}).get("content","")
+          if not content:
+            content=json.dumps(r,indent=2)
+          Path("out/9router-audit.txt").write_text(content)
+          print(content)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: djaeger-v116-9router-fast-audit
+          path: out/
+          if-no-files-found: error
