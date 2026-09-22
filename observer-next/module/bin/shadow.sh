@@ -60,19 +60,20 @@ publish(){
 
 while true; do
   DIGEST=NA; WINDOWS=0; FPS_AVG=NA; JANK_AVG=NA; P95_AVG=NA; POWER_AVG=NA; POWER_N=0
-  [ -r "$POLICY" ] && [ -r "$HISTORY" ] && [ -r "$LEARN" ] || { publish WAITING candidate_or_history_missing; sleep 60; continue; }
-  [ "$(kv VERDICT "$POLICY")" = PROPOSED ] || { publish WAITING candidate_not_proposed; sleep 60; continue; }
-  [ "$(kv EXECUTOR_ENABLED "$POLICY")" = 0 ] || { publish REJECT candidate_must_not_self_enable; sleep 60; continue; }
+  [ -r "$HISTORY" ] && [ -r "$LEARN" ] || { publish WAITING history_or_learning_missing; sleep 30; continue; }
+  [ -r "$POLICY" ] || { publish WAITING candidate_missing; sleep 10; continue; }
+  [ "$(kv VERDICT "$POLICY")" = PROPOSED ] || { publish WAITING candidate_not_proposed; sleep 10; continue; }
+  [ "$(kv EXECUTOR_ENABLED "$POLICY")" = 0 ] || { publish REJECT candidate_must_not_self_enable; sleep 20; continue; }
 
   DIGEST=$(kv CANDIDATE_DIGEST "$POLICY"); PKG=$(kv PACKAGE "$POLICY")
-  CANDIDATE_AT=$(kv AT "$POLICY"); case "$CANDIDATE_AT" in ''|*[!0-9]*) publish REJECT candidate_time_invalid; sleep 60; continue;; esac
+  CANDIDATE_AT=$(kv AT "$POLICY"); case "$CANDIDATE_AT" in ''|*[!0-9]*) publish REJECT candidate_time_invalid; sleep 20; continue;; esac
   NOW=$(date +%s); AGE=$((NOW-CANDIDATE_AT))
-  [ "$AGE" -ge 0 ] && [ "$AGE" -le 900 ] || { publish REJECT candidate_stale; sleep 60; continue; }
+  [ "$AGE" -ge 0 ] && [ "$AGE" -le 900 ] || { publish REJECT candidate_stale; sleep 20; continue; }
   CUTOFF=$((NOW-86400))
   LMIN=$(kv LITTLE_MIN_KHZ "$POLICY"); LMAX=$(kv LITTLE_MAX_KHZ "$POLICY")
   BMIN=$(kv BIG_MIN_KHZ "$POLICY"); BMAX=$(kv BIG_MAX_KHZ "$POLICY")
   GMIN=$(kv GPU_MIN_HZ "$POLICY"); GMAX=$(kv GPU_MAX_HZ "$POLICY")
-  case "$LMIN:$LMAX:$BMIN:$BMAX:$GMIN:$GMAX" in *[!0-9:]*|:*) publish REJECT invalid_candidate; sleep 60; continue;; esac
+  case "$LMIN:$LMAX:$BMIN:$BMAX:$GMIN:$GMAX" in *[!0-9:]*|:*) publish REJECT invalid_candidate; sleep 20; continue;; esac
 
   METRICS=$(awk -F, -v p="$PKG" -v cutoff="$CUTOFF" -v l0="$LMIN" -v l1="$LMAX" -v b0="$BMIN" -v b1="$BMAX" -v g0="$GMIN" -v g1="$GMAX" '
     NR>1 && $1+0>=cutoff && $3==p && $23=="STOCK_BASELINE" && $20+0>=20 && $21~/^[0-9]+$/ && !seen[$21]++ &&
@@ -87,11 +88,11 @@ while true; do
     }' "$HISTORY" 2>/dev/null)
   set -- $METRICS
   WINDOWS=${1:-0}; FPS_AVG=${2:-0}; JANK_AVG=${3:-0}; P95_AVG=${4:-0}; POWER_AVG=${5:-0}; POWER_N=${6:-0}
-  [ "$WINDOWS" -ge 60 ] 2>/dev/null || { publish WAITING insufficient_matching_frame_windows; sleep 60; continue; }
-  [ "$POWER_N" -ge 20 ] 2>/dev/null || { publish WAITING insufficient_power_evidence; sleep 60; continue; }
+  [ "$WINDOWS" -ge 60 ] 2>/dev/null || { publish WAITING insufficient_matching_frame_windows; sleep 20; continue; }
+  [ "$POWER_N" -ge 20 ] 2>/dev/null || { publish WAITING insufficient_power_evidence; sleep 20; continue; }
 
   BASE_FPS=$(kv FPS_P50 "$LEARN"); BASE_JANK=$(kv JANK_P95 "$LEARN"); BASE_P95=$(kv FRAME_P95_P95_MS "$LEARN"); BASE_POWER=$(kv POWER_P95_MW "$LEARN")
-  case "$BASE_FPS:$BASE_JANK:$BASE_P95:$BASE_POWER" in *[!0-9.:]*|:*) publish WAITING baseline_metric_missing; sleep 60; continue;; esac
+  case "$BASE_FPS:$BASE_JANK:$BASE_P95:$BASE_POWER" in *[!0-9.:]*|:*) publish WAITING baseline_metric_missing; sleep 20; continue;; esac
   if awk -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v bw="$BASE_POWER" 'BEGIN{
     frame_ok=(bf>0&&bp>0&&f>=bf*0.98&&p<=bp*1.05&&((bj<=0&&j<=1)||(bj>0&&j<=bj*1.05)));
     frame_better=(p<=bp*0.95)||((bj>0)&&(j<=bj*0.85));
@@ -103,5 +104,6 @@ while true; do
   else
     publish REJECT frame_first_contract_failed
   fi
-  sleep 60
+  # Re-evaluate a live candidate promptly without busy-looping over history.
+  sleep 20
 done
