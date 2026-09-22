@@ -117,13 +117,13 @@ credential_status() {
 sync_request() {
   apk="$1"; schema="$2"; req="$3"
   case "$apk" in ''|*[!0-9]*) echo "SYNC_STATUS=REJECTED"; echo "REASON=INVALID_APK_VERSION"; return 2;; esac
-  [ "$schema" = "DJAEGER_AI_ADAPTIVE_V2" ] || { echo "SYNC_STATUS=REJECTED"; echo "REASON=SCHEMA_MISMATCH"; return 2; }
+  [ "$schema" = "DJAEGER_AI_ADAPTIVE_V3" ] || { echo "SYNC_STATUS=REJECTED"; echo "REASON=SCHEMA_MISMATCH"; return 2; }
   req=$(printf '%s' "$req" | tr -cd 'A-Za-z0-9._:-' | cut -c1-96)
   [ -n "$req" ] || { echo "SYNC_STATUS=REJECTED"; echo "REASON=INVALID_REQUEST_ID"; return 2; }
   module_code=$(sed -n 's/^versionCode=//p' "$MODDIR/module.prop" 2>/dev/null | head -n1)
   [ -n "$module_code" ] || module_code=0
-  expected_apk=107
-  pair=NO; [ "$apk" = "$expected_apk" ] && [ "$module_code" = 206 ] && pair=YES
+  expected_apk=108
+  pair=NO; [ "$apk" = "$expected_apk" ] && [ "$module_code" = 207 ] && pair=YES
   now=$(date +%s)
   tmp="$(mktemp "${HANDSHAKE}.tmp.XXXXXX" 2>/dev/null)"; [ -n "$tmp" ] || tmp="${HANDSHAKE}.tmp.${now}"
   {
