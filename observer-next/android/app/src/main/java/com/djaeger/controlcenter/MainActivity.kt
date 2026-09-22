@@ -186,7 +186,7 @@ private fun ageLabel(raw:String):String{
     val adaptiveContract=syncContract=="DJAEGER_AI_ADAPTIVE_V2"
     val workloadActive=envField(s.workloadFinal,"STATUS")=="ACTIVE"
     val pairVerified=envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"
-    val exactMatched=adaptiveContract&&pairVerified&&syncModule=="203"&&syncCc=="104"
+    val exactMatched=adaptiveContract&&pairVerified&&syncModule=="206"&&syncCc=="107"
     val identityMatched=!adaptiveContract&&s.installed&&s.moduleVersion.contains("HERMESCLOUD1",true)&&workloadActive
     val matched=s.installed&&(exactMatched||identityMatched)
     val matchText=when{exactMatched->"YES • VERIFIED HANDSHAKE";identityMatched->"YES • LEGACY IDENTITY";!s.installed->"NO • MODULE NOT INSTALLED";adaptiveContract->"NO • HANDSHAKE NOT VERIFIED";else->"CHECKING • CONTRACT NOT PUBLISHED"}
@@ -289,7 +289,7 @@ private fun planRange(a:String,b:String,unit:String):String{
     val syncContract=envField(s.controlCenterSync,"CONTRACT").ifBlank{"UNPUBLISHED"}
     val syncModule=envField(s.controlCenterSync,"MODULE_VERSION_CODE").ifBlank{"—"}
     val syncCc=envField(s.controlCenterSync,"CONTROL_CENTER_VERSION_CODE").ifBlank{"—"}
-    val syncMatched=(syncContract=="DJAEGER_AI_ADAPTIVE_V2"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="203"&&syncCc=="104")||(syncContract=="REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_DUALREG3_SHAREDINT1_HERMESCLOUD1_WORKLOADFINAL1_APPREBUILD4_MAXVALUE1"&&syncModule=="129659"&&syncCc=="12263")
+    val syncMatched=(syncContract=="DJAEGER_AI_ADAPTIVE_V2"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="206"&&syncCc=="107")||(syncContract=="REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_DUALREG3_SHAREDINT1_HERMESCLOUD1_WORKLOADFINAL1_APPREBUILD4_MAXVALUE1"&&syncModule=="129659"&&syncCc=="12263")
     val currentBrain=envField(s.brain,"CURRENT_BRAIN")
     val finalSource=envField(s.brain,"FINAL_SOURCE")
     val displayState=when(hState){
@@ -410,9 +410,9 @@ private fun registryPreview(raw:String,max:Int=8):String{
     val syncContract=envField(s.controlCenterSync,"CONTRACT")
     val syncModule=envField(s.controlCenterSync,"MODULE_VERSION_CODE")
     val syncCc=envField(s.controlCenterSync,"CONTROL_CENTER_VERSION_CODE")
-    val paired=(syncContract=="DJAEGER_AI_ADAPTIVE_V2"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="203"&&syncCc=="104")||(syncContract.endsWith("WORKLOADFINAL1")&&syncModule=="129659"&&syncCc=="12263"&&finalState=="ACTIVE")
+    val paired=(syncContract=="DJAEGER_AI_ADAPTIVE_V2"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="206"&&syncCc=="107")||(syncContract.endsWith("WORKLOADFINAL1")&&syncModule=="129659"&&syncCc=="12263"&&finalState=="ACTIVE")
 
-    val pairLabel=if(syncContract=="DJAEGER_AI_ADAPTIVE_V2") "VERIFIED • MODULE 203 / APP 104" else "VC129659 / VC12263"
+    val pairLabel=if(syncContract=="DJAEGER_AI_ADAPTIVE_V2") "VERIFIED • MODULE 206 / APP 107" else "VC129659 / VC12263"
     val body="Current: $cls • $pkg\nProfile: $profile • Subject: $subject\nReasoning: $domain\nGame semantics: $gameSem\nFrame semantics: $frameSem\nClassifier: $source • confidence $confidence%\n\nFinal enforcement: $finalState\nDual registry: $dual • conflicts $conflicts\nExecution scope: $execScope\nAPP game policy: $appPolicy\nSYSTEM game policy: $systemPolicy\nUNKNOWN game policy: $unknownPolicy\nStale policy: $stale\nLearning isolation: $learning\n\nShadow domain gates: GAME $gateGame • APP $gateApp • SYSTEM $gateSystem\nLatest proposal: $proposalSource • $proposalClass • $proposalPkg\nBinding: $proposalDecision • $proposalReason\nPre-exec guard: $guardDecision • $guardReason\n\nControl Center pair: ${if(paired)"MATCHED • $pairLabel" else "CHECKING / NOT MATCHED"}"
     BoxCard("WORKLOAD • GAME / APP / SYSTEM",body,true)
 }
@@ -800,6 +800,6 @@ private fun aiSummary(s:RuntimeState):String{val h=s.geminiHttp.lowercase();val 
 @Composable fun Safety(s:RuntimeState){val stale=runtimeStateStale(s);val adaptive=envField(s.controlCenterSync,"CONTRACT")=="DJAEGER_AI_ADAPTIVE_V2";Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){WorkloadSafetyCard(s);BoxCard("MONITOR INVARIANTS","APK remains read-only\nCloud/AI never writes sysfs directly\nOnly local validated executor may write approved CPU/GPU bounds\nNo network/game traffic manipulation\nThermal guard + native thermal authority preserved");BoxCard("RUNTIME HEALTH","Root: ${if(s.root)"OK" else "UNAVAILABLE"}\nModule: ${if(s.installed)"FOUND" else "NOT FOUND"}\nController: ${if(s.controllerPid.isNotBlank())"PID ${s.controllerPid}" else "NOT REPORTED"}\nPredictor: ${if(s.predictorPid.isNotBlank())"PID ${s.predictorPid}" else "NOT REPORTED"}\nRuntime status: ${if(stale)"STALE / NOT REPORTED" else "FRESH"}\nPower telemetry: ${s.telemetry.powerValid} (${s.telemetry.powerReason})");BoxCard("RESTORATION WATCH",if(adaptive)"Rollback is mandatory. The local executor restores the captured pre-apply CPU/GPU bounds whenever approval expires, workload/context changes, thermal guard closes, or readback fails." else "Control Center does not alter CPU/GPU state. Original-state restoration remains owned by DJAEGER controller lifecycle and its fail-safe paths.")}}
 @Composable fun Logs(s:RuntimeState){Column(Modifier.verticalScroll(rememberScrollState())){BoxCard("LIVE CONTROLLER LOG • LAST 120",s.log.ifBlank{"No controller log available"},true)}}
 @Composable fun Metric(label:String,value:String,m:Modifier=Modifier){Card(m,colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(12.dp)){Text(label,color=Muted,style=MaterialTheme.typography.labelMedium);Text(value,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)}}}
-@Composable fun BoxCard(title:String,text:String,mono:Boolean=false){val clipboard=LocalClipboardManager.current;Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge);TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER AI Adaptive v1.1.0 RC1 • VERIFIED SYNC\n["+title+"]\n"+text))}){Text("COPY",maxLines=1)}};Spacer(Modifier.height(7.dp));Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)}}}
+@Composable fun BoxCard(title:String,text:String,mono:Boolean=false){val clipboard=LocalClipboardManager.current;Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Card),shape=RoundedCornerShape(14.dp)){Column(Modifier.padding(14.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(title,color=Green,fontWeight=FontWeight.Bold,style=MaterialTheme.typography.labelLarge);TextButton(onClick={clipboard.setText(AnnotatedString("DJAEGER AI Adaptive v1.1.3 RUNTIMEFIX • VERIFIED SYNC\n["+title+"]\n"+text))}){Text("COPY",maxLines=1)}};Spacer(Modifier.height(7.dp));Text(text,color=Color(0xFFE6EAF0),fontFamily=if(mono)FontFamily.Monospace else FontFamily.Default,style=MaterialTheme.typography.bodyMedium)}}}
 
 // CI_BASELINE_MARKER: v0.10.1 RC • HUD STABLE + AI/KERNEL SYNC
