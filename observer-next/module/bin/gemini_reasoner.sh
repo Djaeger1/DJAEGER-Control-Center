@@ -198,16 +198,34 @@ EOF
 
   TEXT=$(tr '\n' ' ' < "$RESP" 2>/dev/null | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g;s/\\r//g')
   rm -f "$RESP"
-  gv(){ printf '%s\n' "$TEXT" | sed -n "s/^$1=//p" | head -n1; }
+  gv(){ printf '%s\n' "$TEXT" | sed -n "s/^[[:space:]`>*-]*$1[[:space:]]*=[[:space:]]*//p" | head -n1; }
   trim(){ printf '%s' "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+  rawv(){ trim "$(gv "$1")"; }
   numv(){
-    _raw="$(trim "$(gv "$1")")"
-    _norm="$(printf '%s' "$_raw" | tr -d ',[:space:]')"
+    _raw="$(rawv "$1")"
+    # Accept only a single numeric value with optional grouping, decimal .0,
+    # quotes/backticks, and the expected harmless unit suffix. Do not extract
+    # arbitrary digits from prose/ranges.
+    _norm="$(printf '%s' "$_raw" | sed       -e 's/^[`"[:space:]]*//'       -e 's/[`"[:space:]]*$//'       -e 's/[[:space:]]*[kKmMgG]*[hH][zZ][[:space:]]*$//'       -e 's/[[:space:]]*%[[:space:]]*$//'       -e 's/,//g'       -e 's/[[:space:]]//g'       -e 's/\.0*$//')"
     case "$_norm" in ''|*[!0-9]*) return 1;; esac
     printf '%s' "$_norm"
   }
+  parse_diag(){
+    _d="$ROOT/runtime/gemini_parse_error.env.tmp.$"
+    {
+      echo "AT=$(date +%s)"
+      echo "VERDICT_RAW=$(rawv VERDICT | tr '\r\n' '  ' | cut -c1-80)"
+      for _k in CONFIDENCE LITTLE_MIN_KHZ LITTLE_MAX_KHZ BIG_MIN_KHZ BIG_MAX_KHZ GPU_MIN_HZ GPU_MAX_HZ; do
+        _rv="$(rawv "$_k" | tr '\r\n' '  ' | cut -c1-80)"
+        echo "${_k}_RAW=$_rv"
+      done
+      echo "REASON_RAW=$(rawv REASON | tr '\r\n' '  ' | cut -c1-96)"
+      echo "SECRET_VALUES=NOT_RECORDED"
+    } > "$_d"
+    chmod 600 "$_d"; mv -f "$_d" "$ROOT/runtime/gemini_parse_error.env"
+  }
 
-  VERDICT=$(trim "$(gv VERDICT)")
+  VERDICT=$(trim "$(gv VERDICT)" | tr -d '`"')
   CONF=$(numv CONFIDENCE) || CONF=""
   GLMIN=$(numv LITTLE_MIN_KHZ) || GLMIN=""
   GLMAX=$(numv LITTLE_MAX_KHZ) || GLMAX=""
@@ -223,7 +241,7 @@ EOF
     CANDIDATE) : ;;
     *) rm -f "$OUT"; write_state INVALID unparseable_verdict; sleep 60; continue ;;
   esac
-  case "$CONF:$GLMIN:$GLMAX:$GBMIN:$GBMAX:$GGMIN:$GGMAX" in *[!0-9:]*|:*) rm -f "$OUT"; write_state INVALID non_numeric_candidate; sleep 60; continue;; esac
+  case "$CONF:$GLMIN:$GLMAX:$GBMIN:$GBMAX:$GGMIN:$GGMAX" in *[!0-9:]*|:*) parse_diag; rm -f "$OUT"; write_state INVALID non_numeric_candidate; sleep 60; continue;; esac
   [ "$CONF" -ge 0 ] && [ "$CONF" -le 100 ] || { rm -f "$OUT"; write_state INVALID confidence_out_of_range; sleep 60; continue; }
   [ "$GLMIN" -ge "$LMIN" ] && [ "$GLMAX" -le "$LMAX" ] && [ "$GLMIN" -le "$GLMAX" ] || { rm -f "$OUT"; write_state REJECTED little_outside_stock; sleep 60; continue; }
   [ "$GBMIN" -ge "$BMIN" ] && [ "$GBMAX" -le "$BMAX" ] && [ "$GBMIN" -le "$GBMAX" ] || { rm -f "$OUT"; write_state REJECTED big_outside_stock; sleep 60; continue; }
