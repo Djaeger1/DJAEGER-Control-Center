@@ -16,7 +16,7 @@ rm -f "$ROOT/runtime/handshake.env"
 if [ -r "$ROOT/history/learned_envelope.env" ] && ! grep -Fqx 'SCHEMA=DJAEGER_LEARNED_ENVELOPE_V3' "$ROOT/history/learned_envelope.env" 2>/dev/null; then
   mv -f "$ROOT/history/learned_envelope.env" "$ROOT/recovery/learned_envelope.pre-v3.$(date +%s).env" 2>/dev/null || rm -f "$ROOT/history/learned_envelope.env"
 fi
-rm -f "$ROOT/policy/gemini_proposal.env" "$ROOT/policy/hermes_local_vote.env" "$ROOT/policy/hermes_cloud_vote.env" "$ROOT/policy/candidate.env" "$ROOT/policy/approved.env"
+rm -f "$ROOT/policy/gemini_proposal.env" "$ROOT/policy/hermes_local_vote.env" "$ROOT/policy/hermes_cloud_vote.env" "$ROOT/policy/hermes_proposal.env" "$ROOT/policy/candidate.env" "$ROOT/policy/approved.env"
 rm -f "$ROOT/runtime/shadow.env" "$ROOT/runtime/consensus.env" "$ROOT/runtime/gemini_reasoner.env" "$ROOT/runtime/hermes_adapter.env"
 
 sh "$MODDIR/bin/migrate.sh" "$ROOT" "$MODDIR"
