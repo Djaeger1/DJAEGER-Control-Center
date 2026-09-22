@@ -157,7 +157,7 @@ jobs:
           - Preserve MODULE 209 / APK 110 identity.
           - Cloud has NO direct sysfs authority.
           - Only the local gated executor may write hardware sysfs.
-          - Do not introduce DJAEGER Work code/features.
+          - Keep scope strictly limited to DJAEGER AI.
           - Do not claim FPS/thermal/battery improvements without device evidence.
           - Every finding must cite exact file + function/string and explain a reproducible failure path.
           - If nothing concrete is proven, output NO_PROVEN_BUG.
