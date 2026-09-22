@@ -433,8 +433,19 @@ grep -Fqx 'EXECUTOR_REASON=SYSFS_EXTERNAL_OVERRIDE' "$TEST_ROOT/runtime/executio
 grep -Fqx 'READBACK=EXTERNAL_OVERRIDE' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx 'ROLLBACK_STATE=RELINQUISHED' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx '1800000' "$LP/scaling_max_freq"
+grep -Fqx '2400000' "$BP/scaling_max_freq"
+grep -Fqx '900000000' "$GP/max_freq"
 test ! -e "$TEST_ROOT/runtime/execution_backup.env"
 grep -Fq ',RELEASED,SYSFS_EXTERNAL_OVERRIDE,' "$TEST_ROOT/history/outcomes.csv"
+grep -Fqx 'DIGEST=abc123' "$TEST_ROOT/runtime/execution_suppress.env"
+
+# The exact same digest must not immediately re-apply after native override.
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once || true
+grep -Fqx 'EXECUTOR_STATE=IDLE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=RECENT_EXTERNAL_OVERRIDE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx '1800000' "$LP/scaling_max_freq"
+grep -Fqx '2400000' "$BP/scaling_max_freq"
+grep -Fqx '900000000' "$GP/max_freq"
 
 # Simulate a legacy latched SYSFS-drift restore failure from a previous runtime.
 # Explicit relinquish must clear the stale backup WITHOUT writing old values.
@@ -472,12 +483,60 @@ MONITOR_BAD_COUNT=0
 MONITOR_SAMPLES=0
 UPDATED_AT=$NOW
 EOF
-DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" relinquish
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" resolve-latched
 grep -Fqx '700000000' "$GP/max_freq"
 test ! -e "$TEST_ROOT/runtime/execution_backup.env"
 grep -Fqx 'EXECUTOR_STATE=IDLE' "$TEST_ROOT/runtime/execution.env"
-grep -Fqx 'EXECUTOR_REASON=SYSFS_EXTERNAL_OVERRIDE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=LATCHED_RECHECK_RESOLVED' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx 'ROLLBACK_STATE=RELINQUISHED' "$TEST_ROOT/runtime/execution.env"
+grep -Fq ',RELEASED,LATCHED_RECHECK_EXTERNAL_OVERRIDE,' "$TEST_ROOT/history/outcomes.csv"
+
+# A multi-axis latch must NOT be cleared if even one owned axis still equals
+# DJAEGER-applied state. This prevents blind ownership loss after partial drift.
+printf '1400000\n' > "$LP/scaling_max_freq"
+printf '2400000\n' > "$BP/scaling_max_freq"
+printf '700000000\n' > "$GP/max_freq"
+cat > "$TEST_ROOT/runtime/execution_backup.env" <<EOF
+AT=$NOW
+DIGEST=mixedlatch123
+PACKAGE=sts.al
+INTENT=PROVEN_REUSE
+ACTUATORS=ALL
+LITTLE_PATH=/sys/devices/system/cpu/cpufreq/policy0
+LITTLE_MIN=600000
+LITTLE_MAX=1800000
+BIG_PATH=/sys/devices/system/cpu/cpufreq/policy6
+BIG_MIN=900000
+BIG_MAX=2400000
+GPU_PATH=/sys/class/kgsl/kgsl-3d0/devfreq
+GPU_MIN=300000000
+GPU_MAX=900000000
+EOF
+cat > "$TEST_ROOT/runtime/execution.env" <<EOF
+EXECUTOR_STATE=ROLLBACK_FAILED
+EXECUTOR_REASON=RESTORE_FAILURE_LATCHED
+ACTIVE_DIGEST=mixedlatch123
+APPLIED_PACKAGE=sts.al
+APPLIED_INTENT=PROVEN_REUSE
+APPLIED_ACTUATORS=ALL
+APPLIED_LITTLE=600000-1400000
+APPLIED_BIG=900000-1800000
+APPLIED_GPU=300000000-600000000
+READBACK=RESTORE_FAILED
+ROLLBACK_STATE=RESTORE_FAILED
+APPLIED_AT=$NOW
+MONITOR_BAD_COUNT=0
+MONITOR_SAMPLES=0
+UPDATED_AT=$NOW
+EOF
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" resolve-latched || true
+test -e "$TEST_ROOT/runtime/execution_backup.env"
+grep -Fqx 'EXECUTOR_STATE=ROLLBACK_FAILED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=RESTORE_FAILURE_LATCHED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'LITTLE_POST_STATE=APPLIED' "$TEST_ROOT/runtime/execution_restore.env"
+grep -Fqx 'BIG_POST_STATE=BACKUP' "$TEST_ROOT/runtime/execution_restore.env"
+grep -Fqx 'GPU_POST_STATE=EXTERNAL' "$TEST_ROOT/runtime/execution_restore.env"
+rm -f "$TEST_ROOT/runtime/execution_backup.env" "$TEST_ROOT/runtime/execution_monitor.env" "$TEST_ROOT/runtime/execution_suppress.env"
 
 # ---- APK/module atomic snapshot contract ----
 SYNC_OUT=$(run_ctl sync-request 110 DJAEGER_AI_ADAPTIVE_V3 contract-test-1)
@@ -632,6 +691,12 @@ grep -Fq '_approved_digest="$(kv CANDIDATE_DIGEST "$APPROVAL")"' "$MODULE/bin/sh
 grep -Fq 'rm -f "$APPROVAL"' "$MODULE/bin/shadow.sh"
 grep -Fq 'RESTORE_FAILURE_LATCHED' "$MODULE/bin/executor.sh"
 grep -Fq 'release_external_override()' "$MODULE/bin/executor.sh"
+grep -Fq 'relinquish_no_write()' "$MODULE/bin/executor.sh"
+grep -Fq 'active_readback_state()' "$MODULE/bin/executor.sh"
+grep -Fq 'resolve_restore_failure()' "$MODULE/bin/executor.sh"
+grep -Fq 'resolve-latched)' "$MODULE/bin/executor.sh"
+grep -Fq 'RECENT_EXTERNAL_OVERRIDE' "$MODULE/bin/executor.sh"
+grep -Fq 'SYSFS_EXTERNAL_OVERRIDE_CLEANUP' "$MODULE/bin/executor.sh"
 grep -Fq 'relinquish)' "$MODULE/bin/executor.sh"
 grep -Fq 'EXPLICIT_RELINQUISH_NO_BACKUP' "$MODULE/bin/executor.sh"
 grep -Fq 'if active_readback_ok; then rollback_active SERVICE_STOP' "$MODULE/bin/executor.sh"
