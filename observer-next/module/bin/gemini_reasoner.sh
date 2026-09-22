@@ -198,7 +198,7 @@ EOF
 
   TEXT=$(tr '\n' ' ' < "$RESP" 2>/dev/null | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g;s/\\r//g')
   rm -f "$RESP"
-  gv(){ printf '%s\n' "$TEXT" | sed -n "s/^[[:space:]`>*-]*$1[[:space:]]*=[[:space:]]*//p" | head -n1; }
+  gv(){ printf '%s\n' "$TEXT" | tr -d '\\140' | sed -n "s/^[[:space:]>#*-]*$1[[:space:]]*=[[:space:]]*//p" | head -n1; }
   trim(){ printf '%s' "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
   rawv(){ trim "$(gv "$1")"; }
   numv(){
@@ -211,7 +211,7 @@ EOF
     printf '%s' "$_norm"
   }
   parse_diag(){
-    _d="$ROOT/runtime/gemini_parse_error.env.tmp.$"
+    _d="$ROOT/runtime/gemini_parse_error.env.tmp.$PPID"
     {
       echo "AT=$(date +%s)"
       echo "VERDICT_RAW=$(rawv VERDICT | tr '\r\n' '  ' | cut -c1-80)"
