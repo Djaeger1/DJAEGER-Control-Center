@@ -543,6 +543,33 @@ grep -Fq 'djaeger_singleton_claim publisher_worker' "$MODULE/bin/publisher_worke
 grep -Fq 'publisher_still_owns_lock()' "$MODULE/bin/publisher_worker.sh"
 grep -Fq 'publisher_still_owns_lock || exit 0' "$MODULE/bin/publisher_worker.sh"
 grep -Fq 'PUBLISHER_SELF=' "$MODULE/bin/publisher_worker.sh"
+
+# A publisher generation whose lock ownership is replaced must self-terminate.
+PUB_ROOT="$TEST_ROOT/publisher-owner-root"
+mkdir -p "$PUB_ROOT/runtime/locks"
+cat > "$PUB_ROOT/runtime/workload.env" <<EOF
+WORKLOAD_CLASS=GAME
+EOF
+sh "$MODULE/bin/publisher_worker.sh" "$PUB_ROOT" "$MODULE" &
+PUB_PID=$!
+for _i in 1 2 3 4 5; do
+  test -r "$PUB_ROOT/runtime/locks/publisher_worker.lock/pid" && break
+  sleep 1
+done
+test -r "$PUB_ROOT/runtime/locks/publisher_worker.lock/pid"
+printf '%s\n' "515151" > "$PUB_ROOT/runtime/locks/publisher_worker.lock/pid"
+for _i in 1 2 3 4 5 6; do
+  kill -0 "$PUB_PID" 2>/dev/null || break
+  sleep 1
+done
+if kill -0 "$PUB_PID" 2>/dev/null; then
+  echo "stale publisher generation did not self-terminate" >&2
+  kill -KILL "$PUB_PID" 2>/dev/null || true
+  exit 1
+fi
+test -d "$PUB_ROOT/runtime/locks/publisher_worker.lock"
+grep -Fqx "515151" "$PUB_ROOT/runtime/locks/publisher_worker.lock/pid"
+rm -rf "$PUB_ROOT/runtime/locks/publisher_worker.lock"
 grep -Fq 'publisher_worker.sh' "$MODULE/service.sh"
 ! grep -Fq 'publish_cc "$ROOT"' "$MODULE/bin/observer.sh"
 grep -Fq '_frame_ms="$(pub_kv FRAME_MS "$_frame_src")"' "$MODULE/bin/publisher.sh"
