@@ -31,18 +31,25 @@ migration_ready(){
   return 0
 }
 
-stop_worker(){
+worker_pids(){
   _name="$1"
   _target="$MODDIR/bin/$_name.sh"
-  ps -A -o PID,ARGS 2>/dev/null | awk -v p="$_target" '$2=="sh" && $3==p {print $1}' | while IFS= read -r _pid; do
+  for _proc in /proc/[0-9]*; do
+    [ -r "$_proc/cmdline" ] || continue
+    if tr '\000' '\n' < "$_proc/cmdline" 2>/dev/null | grep -Fxq "$_target"; then
+      echo "${_proc##*/}"
+    fi
+  done
+}
+
+stop_worker(){
+  worker_pids "$1" | while IFS= read -r _pid; do
     [ -n "$_pid" ] && kill -TERM "$_pid" 2>/dev/null || true
   done
 }
 
 kill_worker_hard(){
-  _name="$1"
-  _target="$MODDIR/bin/$_name.sh"
-  ps -A -o PID,ARGS 2>/dev/null | awk -v p="$_target" '$2=="sh" && $3==p {print $1}' | while IFS= read -r _pid; do
+  worker_pids "$1" | while IFS= read -r _pid; do
     [ -n "$_pid" ] && kill -KILL "$_pid" 2>/dev/null || true
   done
 }
