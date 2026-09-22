@@ -236,7 +236,12 @@ private fun planRange(a:String,b:String,unit:String):String{
     }
     val used=envField(s.brain,"HERMES_NEURON_USED_EST").ifBlank{"UNAVAILABLE"}
     val limit=envField(s.brain,"HERMES_NEURON_LIMIT").ifBlank{"UNAVAILABLE"}
-    val neuronLine=if(used.toLongOrNull()!=null&&limit.toLongOrNull()!=null) "$used / $limit • EST" else "UNAVAILABLE • provider does not report usage"
+    val neuronStatus=envField(s.brain,"HERMES_NEURON_STATUS")
+    val neuronLine=when{
+        used.toLongOrNull()!=null&&limit.toLongOrNull()!=null -> "$used / $limit"
+        neuronStatus=="PROVIDER_DOES_NOT_REPORT_USAGE" -> "Tidak dilaporkan provider"
+        else -> "Status pemakaian belum tersedia"
+    }
     val hermesFresh=envField(s.supervisor,"HERMES").startsWith("FRESH:")
     val localState=when{!s.installed->"OFFLINE";hermesFresh->"ONLINE";else->"STALE"}
     BoxCard("HERMES: $localState","Local    $localState\nRoute    $route\nCloud    $cloud\nNeurons  $neuronLine",true)
