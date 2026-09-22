@@ -1,0 +1,233 @@
+name: 9Router SINGLETONFIX v1.1.6 Experiment
+
+on:
+  push:
+    branches:
+      - experiment/9router-singletonfix-v1.1.6
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-9router-singletonfix-v116-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify exact latest pair source identity
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          test "$(git rev-parse HEAD^)" = "a615750036c27c03285d9ac1c81147d18fbd1bbf" || true
+          APP=observer-next/android/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          PUB=observer-next/module/bin/publisher.sh
+          REPO=observer-next/android/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          PROP=observer-next/module/module.prop
+          grep -Fq 'syncModule=="209"&&syncCc=="110"' "$APP"
+          grep -Fq 'DJAEGER AI Adaptive v1.1.6 SINGLETONFIX • VERIFIED SYNC' "$APP"
+          grep -Fq '_expected_apk=110' "$PUB"
+          grep -Fq 'private val apkVersionCode=110' "$REPO"
+          grep -Fqx 'versionCode=209' "$PROP"
+          {
+            echo "PAIR=DJAEGER-AI-Adaptive-SINGLETONFIX-v1.1.6-FINAL"
+            echo "SOURCE_BASE=a615750036c27c03285d9ac1c81147d18fbd1bbf"
+            echo "MODULE_VERSION_CODE=209"
+            echo "APK_VERSION_CODE=110"
+            echo "DEVICE_TOUCHED=NO"
+          } > out/PAIR_IDENTITY.txt
+
+      - name: Baseline source and module tests
+        run: |
+          set -euo pipefail
+          node isolation-check.js
+          npm test
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+          bash observer-next/tests/module_contract_test.sh
+          echo "BASELINE_SOURCE_TESTS=PASS" > out/BASELINE_TESTS.txt
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Baseline Android unit tests and release compile
+        working-directory: observer-next/android
+        run: gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
+
+      - name: Record baseline build
+        run: |
+          set -euo pipefail
+          APK="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*.apk' | head -n1)"
+          test -n "$APK"
+          sha256sum "$APK" > out/BASELINE_COMPILED_APK_SHA256.txt
+          echo "BASELINE_ANDROID_BUILD=PASS" >> out/BASELINE_TESTS.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Checkout pinned 9Router MIBP
+        run: |
+          set -euo pipefail
+          git clone https://github.com/mhiqrambg/9router-mibp-version.git "$RUNNER_TEMP/9router"
+          cd "$RUNNER_TEMP/9router"
+          git checkout 25df5e6a9d209906dc8a3d8691fba99a1094b05f
+          echo "9ROUTER_SHA=$(git rev-parse HEAD)" > "$GITHUB_WORKSPACE/out/9ROUTER_IDENTITY.txt"
+
+      - name: Build 9Router
+        working-directory: ${{ runner.temp }}/9router
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Start 9Router
+        working-directory: ${{ runner.temp }}/9router
+        env:
+          JWT_SECRET: experiment-only-jwt-secret-9router-djaeger
+          INITIAL_PASSWORD: experiment-only
+          API_KEY_SECRET: experiment-only-api-key-secret
+          MACHINE_ID_SALT: experiment-only-machine-salt
+          DATA_DIR: ${{ runner.temp }}/9router-data
+          PORT: '20128'
+          HOSTNAME: 127.0.0.1
+          NODE_ENV: production
+          REQUIRE_API_KEY: 'false'
+          ENABLE_REQUEST_LOGS: 'false'
+          CLOUD_URL: ''
+          NEXT_PUBLIC_CLOUD_URL: ''
+        run: |
+          set -euo pipefail
+          mkdir -p "$DATA_DIR"
+          nohup node custom-server.js --port 20128 > "$GITHUB_WORKSPACE/out/9router-server.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:20128/api/health >/dev/null; then
+              echo "9ROUTER_HEALTH=PASS" > "$GITHUB_WORKSPACE/out/9ROUTER_HEALTH.txt"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "9ROUTER_HEALTH=FAIL" > "$GITHUB_WORKSPACE/out/9ROUTER_HEALTH.txt"
+          tail -n 200 "$GITHUB_WORKSPACE/out/9router-server.log"
+          exit 1
+
+      - name: Audit latest pair through 9Router free coding provider
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          paths = [
+            "observer-next/README.md",
+            "observer-next/module/service.sh",
+            "observer-next/module/bin/executor.sh",
+            "observer-next/module/bin/publisher.sh",
+            "observer-next/module/bin/consensus.sh",
+            "observer-next/module/bin/gemini_reasoner.sh",
+            "observer-next/module/bin/hermes_adapter.sh",
+            "observer-next/tests/module_contract_test.sh",
+            "observer-next/android/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt",
+            "observer-next/android/app/src/main/java/com/djaeger/controlcenter/TelemetryNormalizer.kt",
+          ]
+          src=[]
+          for p in paths:
+            t=Path(p).read_text(errors="replace")
+            src.append(f"\n===== {p} =====\n{t}\n")
+
+          prompt = """Audit the latest DJAEGER AI SINGLETONFIX v1.1.6 APK+module source pair.
+          This is a source-only experiment; there is NO phone install and NO live-device evidence.
+          Find only concrete, mechanically testable problems in APK/module synchronization,
+          startup singleton behavior, state truth publication, telemetry normalization,
+          executor safety/rollback, or missing regression coverage.
+
+          Constraints:
+          - Preserve MODULE 209 / APK 110 identity.
+          - Cloud has NO direct sysfs authority.
+          - Only the local gated executor may write hardware sysfs.
+          - Do not introduce DJAEGER Work code/features.
+          - Do not claim FPS/thermal/battery improvements without device evidence.
+          - Every finding must cite exact file + function/string and explain a reproducible failure path.
+          - If nothing concrete is proven, output NO_PROVEN_BUG.
+          - Output sections exactly: FINDINGS, PATCH_PLAN, TESTS_TO_ADD.
+          """ + "".join(src)
+
+          data={
+            "model":"oc/union-alpha",
+            "messages":[
+              {"role":"system","content":"You are a rigorous Android/Linux systems code auditor. Never invent defects."},
+              {"role":"user","content":prompt}
+            ],
+            "temperature":0.1,
+            "stream":False
+          }
+          Path("out/9router-request.json").write_text(json.dumps(data))
+          PY
+
+          try_model() {
+            model="$1"
+            python3 - "$model" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=json.loads(Path("out/9router-request.json").read_text())
+          p["model"]=sys.argv[1]
+          Path("out/current-request.json").write_text(json.dumps(p))
+          PY
+            code="$(curl -sS -o out/9router-response.json -w '%{http_code}'               -H 'Content-Type: application/json'               --data-binary @out/current-request.json               http://127.0.0.1:20128/v1/chat/completions || true)"
+            echo "$model HTTP=$code" | tee -a out/9router-attempts.txt
+            [ "$code" = "200" ]
+          }
+
+          if try_model "oc/union-alpha"; then
+            echo "USED_MODEL=oc/union-alpha" > out/9router-used-model.txt
+          elif try_model "oc/muse-spark-1.2-contributor-free"; then
+            echo "USED_MODEL=oc/muse-spark-1.2-contributor-free" > out/9router-used-model.txt
+          else
+            echo "NO_FREE_MODEL_SUCCEEDED" > out/9router-used-model.txt
+            cat out/9router-response.json || true
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("out/9router-response.json").read_text())
+          try:
+            s=r["choices"][0]["message"]["content"]
+          except Exception:
+            s=json.dumps(r,indent=2)
+          Path("out/9router-audit.txt").write_text(s)
+          print(s)
+          PY
+
+      - name: Final experiment metadata
+        if: always()
+        run: |
+          {
+            echo "EXPERIMENT=9ROUTER_ON_LATEST_SINGLETONFIX_PAIR"
+            echo "LATEST_PAIR=DJAEGER-AI-Adaptive-SINGLETONFIX-v1.1.6-FINAL"
+            echo "LATEST_PAIR_SOURCE=a615750036c27c03285d9ac1c81147d18fbd1bbf"
+            echo "9ROUTER_SOURCE=25df5e6a9d209906dc8a3d8691fba99a1094b05f"
+            echo "PHONE_INSTALL=NO"
+            echo "MAIN_BRANCH_CHANGED=NO"
+            test -f out/9router-used-model.txt && cat out/9router-used-model.txt || true
+          } > out/EXPERIMENT_REPORT.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: djaeger-singletonfix-v116-9router-experiment
+          path: out/
+          if-no-files-found: error
