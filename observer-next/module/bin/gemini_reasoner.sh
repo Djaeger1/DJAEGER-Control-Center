@@ -152,7 +152,7 @@ adaptive_guard(){
 
 while true; do
   [ -r "$SNAP" ] && [ -r "$LEARN" ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING observer_or_learning_missing; sleep 30; continue; }
-  [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state OBSERVE non_game_workload; sleep 45; continue; }
+  [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state OBSERVE non_game_workload; sleep 5; continue; }
   [ "$(kv STATE "$LEARN")" = READY_HARDWARE_MODEL ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING baseline_not_mature; sleep 30; continue; }
 
   NOW=$(date +%s)
@@ -265,7 +265,9 @@ EOF
       000|'') HTTP=000; write_state HTTP_ERROR network_or_timeout ;;
       *) write_state HTTP_ERROR "request_failed_http_${HTTP}" ;;
     esac
-    sleep 60
+    # HTTP/auth/rate states are already fail-closed; re-check sooner so a
+    # recovered primary can return without leaving gameplay on stale state.
+    sleep 20
     continue
   fi
 
