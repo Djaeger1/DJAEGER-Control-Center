@@ -558,7 +558,11 @@ cloud_takeover(){
   if ! validate_candidate_file "$_tmp"; then rm -f "$_tmp"; HCLOUD_STATE=REJECTED; return 1; fi
   _reason=$(_gv REASON | tr -cd 'A-Za-z0-9_.:-' | cut -c1-96)
   [ -n "$_reason" ] || _reason=HERMES_CLOUD_TAKEOVER
-  write_hermes_plan "$_tmp" HERMES_CLOUD "$_conf" "$_reason"
+  if frame_degraded; then _cloud_intent=FRAME_RECOVERY
+  elif power_pressure; then _cloud_intent=POWER_EFFICIENCY
+  else _cloud_intent=FRAME_FIRST_BALANCED
+  fi
+  write_hermes_plan "$_tmp" HERMES_CLOUD "$_conf" "$_reason" "$_cloud_intent"
   _d=$(digest "$HPLAN")
   _t="$CLOUD_OUT.tmp.$"
   {
@@ -652,22 +656,34 @@ while true; do
   HMODE=TAKEOVER
   HACTIVE_SOURCE=HERMES_H2
 
-  if ! frame_degraded; then
-    rm -f "$HPLAN" "$LOCAL_OUT"
-    HLOCAL_STATE=TAKEOVER_OBSERVE
-    HDETAIL=gemini_offline_frame_stable_no_change
-    write_state HERMES_TAKEOVER
-    sleep 30
-    continue
-  fi
-
+  # Offline autonomy order:
+  # proven local outcome -> local synthesis from mature knowledge -> cloud escalation.
   if local_history_takeover; then
     HLOCAL_STATE=TAKEOVER_LOCAL
     HACTIVE_SOURCE=HERMES_LOCAL
     HCLOUD_USED=NO
     HDETAIL=local_memory_reuses_proven_strategy
     write_state HERMES_TAKEOVER
-    sleep 30
+    sleep 10
+    continue
+  fi
+
+  if local_synthesize_takeover; then
+    HLOCAL_STATE=TAKEOVER_LOCAL_SYNTH
+    HACTIVE_SOURCE=HERMES_LOCAL
+    HCLOUD_USED=NO
+    write_state HERMES_TAKEOVER
+    sleep 10
+    continue
+  fi
+
+  if ! frame_degraded && ! power_pressure; then
+    rm -f "$HPLAN" "$LOCAL_OUT"
+    HLOCAL_STATE=TAKEOVER_OBSERVE
+    HACTIVE_SOURCE=HERMES_LOCAL
+    HDETAIL=gemini_offline_local_model_no_action_needed
+    write_state HERMES_TAKEOVER
+    sleep 15
     continue
   fi
 
