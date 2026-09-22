@@ -12,8 +12,8 @@ android {
         applicationId = "com.djaeger.observer"
         minSdk = 26
         targetSdk = 33
-        versionCode = 108
-        versionName = "1.1.4-braincontract"
+        versionCode = 109
+        versionName = "1.1.5-startupfix"
     }
 
     buildFeatures {
