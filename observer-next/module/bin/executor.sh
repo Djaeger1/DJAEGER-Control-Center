@@ -300,7 +300,12 @@ gate(){
   ACTUATORS="$GATE_ACTUATORS"
   GATE_DIGEST="$_d"
   if digest_suppressed "$GATE_DIGEST" "$GATE_PACKAGE"; then
-    GATE_REASON=RECENT_EXTERNAL_OVERRIDE
+    _sreason="$(kv REASON "$SUPPRESS")"
+    case "$_sreason" in
+      POST_APPLY_REGRESSION) GATE_REASON=RECENT_POST_APPLY_REGRESSION ;;
+      THERMAL_GUARD) GATE_REASON=RECENT_THERMAL_GUARD ;;
+      *) GATE_REASON=RECENT_EXTERNAL_OVERRIDE ;;
+    esac
     return 1
   fi
   GATE_REASON=PASS
@@ -551,7 +556,17 @@ rollback_active(){
   if restore_all; then
     READBACK=RESTORED
     record_outcome ROLLED_BACK "$_reason" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
-    [ "$_reason" = THERMAL_GUARD ] && suppress_digest "$_digest" "$_pkg" THERMAL_GUARD 180
+    case "$_reason" in
+      THERMAL_GUARD)
+        suppress_digest "$_digest" "$_pkg" THERMAL_GUARD 180
+        ;;
+      POST_APPLY_REGRESSION)
+        # A candidate that measurably worsened frame/power behavior must not
+        # be retried immediately. Quarantine it for the full candidate
+        # freshness horizon so a new digest/evidence is required.
+        suppress_digest "$_digest" "$_pkg" POST_APPLY_REGRESSION 900
+        ;;
+    esac
     publish ROLLED_BACK "$_reason"
     return 0
   fi
