@@ -304,8 +304,8 @@ validate_candidate_file(){
   contains_freq "$_gbmin" "$_bav" && contains_freq "$_gbmax" "$_bav" || { HDETAIL=unsupported_big_opp; return 1; }
   contains_freq "$_ggmin" "$_gav" && contains_freq "$_ggmax" "$_gav" || { HDETAIL=unsupported_gpu_opp; return 1; }
 
-  _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")"); _cpu=$(num "$(kv CPU_TEMP_C "$SNAP")")
-  awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" 'BEGIN{exit !((s<=0||s<46)&&(b<=0||b<45)&&(c<=0||c<75))}' || { HDETAIL=thermal_guard_active; return 1; }
+  _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")"); _cpu=$(num "$(kv CPU_TEMP_C "$SNAP")"); _gpu_t=$(num "$(kv GPU_TEMP_C "$SNAP")")
+  awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu_t" 'BEGIN{exit !((s<=0||s<46)&&(b<=0||b<45)&&(c<=0||c<75)&&(g<=0||g<75))}' || { HDETAIL=thermal_guard_active; return 1; }
   return 0
 }
 
@@ -385,6 +385,123 @@ local_history_takeover(){
   return 1
 }
 
+
+opp_next_in_range(){
+  _list="$1"; _cur="$2"; _upper="$3"
+  printf '%s\n' $_list 2>/dev/null | awk -v c="$_cur" -v u="$_upper" '$1~/^[0-9]+$/&&$1>c&&$1<=u{print $1}' | sort -n | head -n1
+}
+
+opp_prev_in_range(){
+  _list="$1"; _cur="$2"; _lower="$3"
+  printf '%s\n' $_list 2>/dev/null | awk -v c="$_cur" -v l="$_lower" '$1~/^[0-9]+$/&&$1<c&&$1>=l{print $1}' | sort -n | tail -n1
+}
+
+power_pressure(){
+  _p=$(num "$(kv POWER_MW "$SNAP")")
+  _p50=$(num "$(kv POWER_P50_MW "$LEARN")")
+  _p95=$(num "$(kv POWER_P95_MW "$LEARN")")
+  awk -v p="$_p" -v p50="$_p50" -v p95="$_p95" 'BEGIN{
+    if(p<=0||p50<=0) exit 1;
+    exit !((p>p50*1.12)||(p95>0&&p>p95))
+  }'
+}
+
+frame_critical(){
+  _fps=$(num "$(kv FPS_EST "$SNAP")"); _j=$(num "$(kv JANK_PCT "$SNAP")")
+  _p95=$(num "$(kv P95_MS "$SNAP")"); _p99=$(num "$(kv P99_MS "$SNAP")")
+  _bfps=$(num "$(kv FPS_P50 "$LEARN")"); _bj=$(num "$(kv JANK_P95 "$LEARN")")
+  _bp95=$(num "$(kv FRAME_P95_P95_MS "$LEARN")"); _bp99=$(num "$(kv FRAME_P99_P95_MS "$LEARN")")
+  awk -v f="$_fps" -v bf="$_bfps" -v j="$_j" -v bj="$_bj" -v p="$_p95" -v bp="$_bp95" -v q="$_p99" -v bq="$_bp99" 'BEGIN{
+    bad=(bf>0&&f>0&&f<bf*0.80)||(bp>0&&p>bp*1.25)||(bq>0&&q>bq*1.25);
+    if(bj>0&&j>bj*1.50+2)bad=1;
+    exit bad?0:1
+  }'
+}
+
+local_synthesize_takeover(){
+  [ "$(kv STATE "$LEARN")" = READY_HARDWARE_MODEL ] || { HDETAIL=local_synth_model_not_ready; return 1; }
+  [ "$(kv FRAME_EVIDENCE "$LEARN")" = VALID ] || { HDETAIL=local_synth_frame_model_not_ready; return 1; }
+  [ "$(kv FRAME_EVIDENCE "$SNAP")" = VALID ] || { HDETAIL=local_synth_live_frame_invalid; return 1; }
+
+  _pkg=$(kv ACTIVE_PACKAGE "$SNAP")
+  [ "$_pkg" = "$(kv PACKAGE "$WORKLOAD")" ] && [ "$_pkg" = "$(kv PACKAGE "$LEARN")" ] || { HDETAIL=local_synth_context_mismatch; return 1; }
+
+  _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")")
+  _cpu=$(num "$(kv CPU_TEMP_C "$SNAP")"); _gpu_t=$(num "$(kv GPU_TEMP_C "$SNAP")")
+  awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu_t" 'BEGIN{
+    exit !((s<=0||s<44)&&(b<=0||b<43)&&(c<=0||c<75)&&(g<=0||g<75))
+  }' || { HDETAIL=local_synth_wait_thermal_safe; return 1; }
+
+  _l0=$(kv LITTLE_MIN_KHZ "$LEARN"); _l1=$(kv LITTLE_MAX_KHZ "$LEARN")
+  _b0=$(kv BIG_MIN_KHZ "$LEARN"); _b1=$(kv BIG_MAX_KHZ "$LEARN")
+  _g0=$(kv GPU_MIN_HZ "$LEARN"); _g1=$(kv GPU_MAX_HZ "$LEARN")
+  _lav=$(kv LITTLE_AVAILABLE_KHZ "$SNAP"); _bav=$(kv BIG_AVAILABLE_KHZ "$SNAP"); _gav=$(kv GPU_AVAILABLE_HZ "$SNAP")
+  case "$_l0:$_l1:$_b0:$_b1:$_g0:$_g1" in *[!0-9:]*) HDETAIL=local_synth_invalid_envelope; return 1;; esac
+
+  _nl0="$_l0"; _nl1="$_l1"; _nb0="$_b0"; _nb1="$_b1"; _ng0="$_g0"; _ng1="$_g1"
+  _intent=NONE
+  _reason=NONE
+
+  if frame_degraded; then
+    _n=$(opp_next_in_range "$_bav" "$_b0" "$_b1"); [ -n "$_n" ] && _nb0="$_n"
+    _n=$(opp_next_in_range "$_gav" "$_g0" "$_g1"); [ -n "$_n" ] && _ng0="$_n"
+    if frame_critical; then
+      _n=$(opp_next_in_range "$_lav" "$_l0" "$_l1"); [ -n "$_n" ] && _nl0="$_n"
+      _intent=FRAME_RECOVERY
+      _reason=LOCAL_FRAME_CRITICAL_RECOVERY
+    else
+      _intent=FRAME_RECOVERY
+      _reason=LOCAL_FRAME_DEGRADED_RECOVERY
+    fi
+  elif power_pressure; then
+    _n=$(opp_prev_in_range "$_gav" "$_g1" "$_g0")
+    if [ -n "$_n" ]; then
+      _ng1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_POWER_TRIM_GPU
+    else
+      _n=$(opp_prev_in_range "$_bav" "$_b1" "$_b0")
+      if [ -n "$_n" ]; then
+        _nb1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_POWER_TRIM_BIG
+      else
+        _n=$(opp_prev_in_range "$_lav" "$_l1" "$_l0")
+        [ -n "$_n" ] || { HDETAIL=local_synth_no_lower_opp; return 1; }
+        _nl1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_POWER_TRIM_LITTLE
+      fi
+    fi
+  else
+    _orows=$(num "$(kv OUTCOME_ROWS "$LEARN")")
+    _feedback=$(kv OUTCOME_FEEDBACK "$LEARN")
+    [ "$_orows" -eq 0 ] 2>/dev/null && [ "$_feedback" != CAUTION ] || { HDETAIL=local_synth_no_action_needed; return 1; }
+    _n=$(opp_prev_in_range "$_gav" "$_g1" "$_g0")
+    [ -n "$_n" ] || { HDETAIL=local_synth_no_efficiency_probe_opp; return 1; }
+    _ng1="$_n"; _intent=POWER_EFFICIENCY; _reason=LOCAL_MATURE_MODEL_EFFICIENCY_PROBE
+  fi
+
+  [ "$_nl0" -le "$_nl1" ] && [ "$_nb0" -le "$_nb1" ] && [ "$_ng0" -le "$_ng1" ] || { HDETAIL=local_synth_invalid_range; return 1; }
+  [ "$_nl0" != "$_l0" ] || [ "$_nl1" != "$_l1" ] || [ "$_nb0" != "$_b0" ] || [ "$_nb1" != "$_b1" ] || [ "$_ng0" != "$_g0" ] || [ "$_ng1" != "$_g1" ] || { HDETAIL=local_synth_no_change; return 1; }
+
+  _tmp="$ROOT/runtime/.hermes_local_synth_candidate.$"
+  {
+    echo "PACKAGE=$_pkg"
+    echo "INTENT=$_intent"
+    echo "LITTLE_MIN_KHZ=$_nl0"; echo "LITTLE_MAX_KHZ=$_nl1"
+    echo "BIG_MIN_KHZ=$_nb0"; echo "BIG_MAX_KHZ=$_nb1"
+    echo "GPU_MIN_HZ=$_ng0"; echo "GPU_MAX_HZ=$_ng1"
+  } > "$_tmp"
+
+  if ! validate_candidate_file "$_tmp"; then
+    rm -f "$_tmp"
+    return 1
+  fi
+
+  _conf=$(kv CONFIDENCE "$LEARN"); case "$_conf" in ''|*[!0-9]*) _conf=80;; esac
+  [ "$_conf" -lt 80 ] && _conf=80
+  [ "$_conf" -gt 90 ] && _conf=90
+  write_hermes_plan "$_tmp" HERMES_LOCAL "$_conf" "$_reason" "$_intent"
+  write_local_vote "$HPLAN" TAKEOVER_LOCAL_SYNTH "$_reason"
+  rm -f "$_tmp"
+  HDETAIL="local_synth_${_reason}"
+  return 0
+}
 cloud_takeover(){
   _now=$(date +%s)
   _last=$(kv AT "$LAST"); case "$_last" in ''|*[!0-9]*) _last=0;; esac
