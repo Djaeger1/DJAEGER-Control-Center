@@ -73,11 +73,11 @@ private fun hccPresetFromBlock(block:String):String{
 private fun thoughtField(raw:String,key:String):String = raw.lineSequence().firstOrNull{it.startsWith("$key=")}?.substringAfter('=')?.trim()?.trim('\'') ?: ""
 private fun envField(raw:String,key:String):String = thoughtField(raw,key)
 private fun brainLabel(raw:String):String = when(raw){
-    "GEMINI"->"GEMINI • ADVISORY REASONER"
-    "OBSERVER","OBSERVER_LOCAL"->"LOCAL OBSERVER • DEVICE TRUTH"
-    "HERMES_LOCAL","HERMES_H2"->"HERMES LOCAL • VALIDATOR / REVIEWER"
-    "HERMES_CLOUD"->"HERMES CLOUD • ADVISORY REVIEWER"
-    "LOCAL_EXECUTOR","AI_CONSENSUS"->"LOCAL EXECUTOR • VERIFIED HARDWARE TRUTH"
+    "GEMINI"->"GEMINI • PRIMARY BRAIN"
+    "OBSERVER","OBSERVER_LOCAL"->"DEVICE TRUTH • NOT A BRAIN"
+    "HERMES_LOCAL","HERMES_H2","HERMES"->"HERMES • DEPUTY BRAIN"
+    "HERMES_CLOUD"->"HERMES CLOUD • DEPUTY BACKEND"
+    "LOCAL_EXECUTOR","AI_CONSENSUS"->"LEGACY • NO HARDWARE AUTHORITY"
     "NONE"->"NONE • NATIVE FAILSAFE"
     else->raw.ifBlank{"—"}
 }
@@ -130,7 +130,7 @@ private fun ageLabel(raw:String):String{
         thoughtSrc=="GEMINI"->"LAST GEMINI THOUGHT"
         thoughtSrc=="HERMES_LOCAL"||thoughtSrc=="HERMES_H2"->"PEMIKIRAN HERMES LOCAL"
         thoughtSrc=="HERMES_CLOUD"->"PEMIKIRAN HERMES CLOUD"
-        thoughtSrc=="LOCAL_EXECUTOR"->"PEMIKIRAN DJAEGER • LOCAL EXECUTOR"
+        thoughtSrc=="AI_AGENT"->"AI AGENT • HARDWARE OUTCOME"
         else->"PEMIKIRAN DJAEGER"
     }
     val statusLabel=when{
@@ -191,7 +191,7 @@ private fun ageLabel(raw:String):String{
     val matched=s.installed&&(exactMatched||identityMatched)
     val matchText=when{exactMatched->"YES • VERIFIED HANDSHAKE";identityMatched->"YES • LEGACY IDENTITY";!s.installed->"NO • MODULE NOT INSTALLED";adaptiveContract->"NO • HANDSHAKE NOT VERIFIED";else->"CHECKING • CONTRACT NOT PUBLISHED"}
     val body="Matched module: $matchText\nRole: $role\nState: $state\nActive command source: $input\nDecision authority: $decisionAuth\nExecution owner: $executionOwner\nHardware authority: $hwAuthority\nHardware truth: $truthAuthority • $truthSource\nMust obey active brain: $mustObey\nCan choose brain: $canChoose\nCan override brain: $canOverride\nWriter chain: $backend\nLast validation: $validation\nLast readback: $readback\nDecision priority: $priority\nShared intelligence: ${syncShared.ifBlank{"UNPUBLISHED"}}\nGemini intelligence: ${geminiScope.ifBlank{"UNPUBLISHED"}}\nHermes intelligence: ${hermesScope.ifBlank{"UNPUBLISHED"}}\nGemini reasoning limit from Hermes feature set: ${geminiReasoningLimit.ifBlank{"UNPUBLISHED"}}\nHermes teacher loop: ${hermesTeacherLoop.ifBlank{"UNPUBLISHED"}}\nHERMES Cloud: ${syncHermesCloud.ifBlank{"UNPUBLISHED"}}\nHERMES Cloud role: ${syncHermesCloudRole.ifBlank{"UNPUBLISHED"}}\nHERMES backend priority: ${syncHermesBackendPriority.ifBlank{"UNPUBLISHED"}}\nWorkload final: ${syncWorkloadFinal.ifBlank{"UNPUBLISHED"}}\nDual registry: ${syncDualRegistry.ifBlank{"UNPUBLISHED"}}\nPre-exec workload guard: ${syncPreexecGuard.ifBlank{"UNPUBLISHED"}}\nImmediate Gemini facts: DELTA / EVENT DRIVEN\nThird brain: $third"
-    BoxCard(if(adaptiveContract) "DJAEGER AI AGENT • LOCAL GATED SYSFS" else "AI AGENT • SYSFS1 • FULL HARDWARE CONTROLLER",body,true)
+    BoxCard(if(adaptiveContract) "DJAEGER AI AGENT • SOLE HARDWARE AUTHORITY" else "AI AGENT • SYSFS1 • FULL HARDWARE CONTROLLER",body,true)
 }
 
 private fun currentRange(raw:String,unit:String):String{
@@ -224,7 +224,7 @@ private fun planRange(a:String,b:String,unit:String):String{
     val sysfsOwner=envField(s.hermesKernel1,"SYSFS_OWNER").ifBlank{"AI_AGENT"}
     val executionOwner=envField(s.brain,"AGENT_EXECUTION_OWNER").ifBlank{"AI_AGENT"}
     val body="Hermes kernel model: $kState\nStrategy: $kStrategy\nBottleneck: $kBottleneck\nKernel capabilities: $kCaps • writable actuators: $kActs\nPlanned actions: $kActions\nHistorical kernel outcomes: $kMem • success $kOk • failed $kBad\n\nAgent SYSFS1 execution: $execStatus\nStrategy ID: $execStrategy\nActions: $execApplied / $execCount applied\nFailure: $execFail\nRoot Authority owner: $rootOwner\nSysfs owner: $sysfsOwner\nExecution owner: $executionOwner\nHermes direct hardware writes: 0"
-    BoxCard(if(adaptiveContract) "HERMES KERNEL REVIEW ↔ LOCAL EXECUTOR" else "HERMES KERNEL1 ↔ AI AGENT SYSFS1",body,true)
+    BoxCard(if(adaptiveContract) "HERMES DEPUTY ↔ AI AGENT" else "HERMES KERNEL1 ↔ AI AGENT SYSFS1",body,true)
 }
 
 @Composable fun HermesStatusCard(s:RuntimeState){
@@ -259,7 +259,7 @@ private fun planRange(a:String,b:String,unit:String):String{
     val contract=envField(s.controlCenterSync,"HERMES_CLOUD").ifBlank{"UNPUBLISHED"}
     val role=envField(s.controlCenterSync,"HERMES_CLOUD_ROLE").ifBlank{"REMOTE_BACKEND_OF_HERMES_H2_NOT_THIRD_BRAIN"}
     val policyLine=if(adaptiveContract) "Gemini/Hermes reasoning → AI Agent → internal hardware safety → SYSFS → exact readback/rollback" else "Gemini primary → HERMES H2 cloud → HERMES H2 local → AI Agent"
-    val executorLine=if(adaptiveContract) "Hardware executor: LOCAL GATED ONLY • cloud direct hardware authority NONE" else "Hardware executor: AI AGENT A1 ONLY"
+    val executorLine=if(adaptiveContract) "Hardware executor: AI AGENT ONLY • cloud direct hardware authority NONE" else "Hardware executor: AI AGENT A1 ONLY"
     val body="Contract: $contract\nEndpoint: module-configured • secret-safe status only\nHERMES H2 backend: $backend\nCloud state: $state\nAccess key: $auth • secret never displayed\nRoute: $route\nModel: $model\nLatency: $latency ms • HTTP: $http\nReason: $reason\nCloud tier fallback used: $fallback\nRequest ID: $requestId\nCurrent brain: $currentBrain\nRole: $role\nPolicy: $policyLine\nCloud direct hardware authority: NONE\n$executorLine"
     BoxCard("HERMES CLOUD • ONE HERMES • HERMESCLOUD1",body,true)
 }
@@ -300,7 +300,7 @@ private fun planRange(a:String,b:String,unit:String):String{
         else->hState
     }
     val hBackend=envField(s.brain,"HERMES_BACKEND").ifBlank{"LOCAL"}
-    val authority=when(currentBrain){"GEMINI"->"GEMINI ADVISORY PROPOSAL • NO DIRECT HARDWARE WRITES";"AI_CONSENSUS"->"CONSENSUS RESULT • AI AGENT OWNS HARDWARE";else->"HERMES/LOCAL REVIEW • backend $hBackend • NO DIRECT HARDWARE WRITES"}
+    val authority=when(currentBrain){"GEMINI"->"GEMINI PRIMARY BRAIN • NO DIRECT HARDWARE WRITES";"HERMES","HERMES_H2","HERMES_LOCAL"->"HERMES DEPUTY BRAIN • backend $hBackend • NO DIRECT HARDWARE WRITES";else->"NO ACTIVE BRAIN • AI AGENT REMAINS FAIL-CLOSED"}
     val body="State: $displayState\nMode: $hMode\nProfile: $hProfile\nConfidence: $hConfidence%\nVariable: $hVariable\nValue: $hValue\nVariable state: $hVariableState\nContext samples: $hSamples\nContext success rate: $hRate%\nEvidence scope: $hScope\nEvidence filter: $hFilter\nBrain source: ${currentBrain.ifBlank{"—"}}\nFinal source: ${finalSource.ifBlank{"—"}}\nAuthority: $authority\nReason: $hReason\n\nLANG3: CONVERSATIONAL • semantic planner + continuity + anti-repeat\nMATH1: $mathState • verify $mathVerify • sanity $mathSanity\nTarget frame: $mathFrame ms • FPS error: $mathFpsErr\nThermal headroom: $mathHeadroom °C • thermal/frame/control pressure: $mathThermal/$mathFramePressure/$mathControl\nControl Center sync: ${if(syncMatched) "MATCHED" else "MISMATCH/WAITING"} • $syncContract • module vc$syncModule / app vc$syncCc"
     BoxCard("HERMES H2 • KERNEL1 • LANG3 + MATH1",body,true)
 }
@@ -435,7 +435,7 @@ private fun registryPreview(raw:String,max:Int=8):String{
     val root=envField(s.workloadFinal,"ROOT_AUTHORITY_CHANGED").ifBlank{"UNAVAILABLE"}
     val sysfs=envField(s.workloadFinal,"SYSFS_AUTHORITY_CHANGED").ifBlank{"UNAVAILABLE"}
     val rescue=envField(s.workloadFinal,"RESCUE_PATH_CHANGED").ifBlank{"UNAVAILABLE"}
-    val body="Final workload enforcement: $finalState\nAPP→game policy: $app\nSYSTEM→game policy: $system\nUNKNOWN→game policy: $unknown\nStale policy: $stale\nRoot Authority changed: $root\nSYSFS authority changed: $sysfs\nRescue path changed: $rescue\nControl Center authority: UI/telemetry only • local gated executor owns approved SYSFS writes"
+    val body="Final workload enforcement: $finalState\nAPP→game policy: $app\nSYSTEM→game policy: $system\nUNKNOWN→game policy: $unknown\nStale policy: $stale\nRoot Authority changed: $root\nSYSFS authority changed: $sysfs\nRescue path changed: $rescue\nControl Center authority: UI/telemetry only • AI Agent alone owns DJAEGER SYSFS writes"
     BoxCard("WORKLOAD ENFORCEMENT SAFETY",body,true)
 }
 
@@ -741,7 +741,7 @@ private fun humanDecision(s:RuntimeState):String{
             HccFeedbackButton("KURANG NYAMAN",feedbackFlash=="LESS_COMFORTABLE",bridgeOp==null,{feedbackFlash="LESS_COMFORTABLE";bridgeOp="FEEDBACK_LESS_COMFORTABLE"},Modifier.weight(1f))
             HccFeedbackButton("TIDAK NYAMAN",feedbackFlash=="UNCOMFORTABLE",bridgeOp==null,{feedbackFlash="UNCOMFORTABLE";bridgeOp="FEEDBACK_UNCOMFORTABLE"},Modifier.weight(1f))
         }
-        BoxCard("DJAEGER-AI SYNC",if(adaptive) "Target module: DJAEGER AI Adaptive V6 Agent Authority\nTransport: verified APK↔module handshake + Gemini/Hermes reasoning\nControl path: observe → learn → reason → AI Agent → SYSFS → exact readback/rollback → learn\nSYSFS execution: AI Agent only • cloud direct authority NONE" else "Target module: v12.9.50-r3\nTransport: Gemini v12.9.50 protected baseline\nControl path: official typed djaeger-ai commands only\nDisplay/battery cooling: not controlled by Control Center",true)
+        BoxCard("DJAEGER-AI SYNC",if(adaptive) "Target module: DJAEGER AI Adaptive V7 Brain Pipeline\nTransport: Gemini PRIMARY → Hermes DEPUTY fallback → AI Agent\nControl path: observe → learn → brain decision → AI Agent → SYSFS → exact readback/rollback → learn\nSYSFS execution: AI Agent only • Observer is never a brain" else "Target module: v12.9.50-r3\nTransport: Gemini v12.9.50 protected baseline\nControl path: official typed djaeger-ai commands only\nDisplay/battery cooling: not controlled by Control Center",true)
         
         
         
@@ -788,7 +788,7 @@ private fun humanDecision(s:RuntimeState):String{
             }
             BoxCard("HERMES CONVERSATION",hermesChatResult,true)
         } else {
-            BoxCard("AI REASONING TRANSPORT","Adaptive Gaming uses Gemini for bounded proposals and HERMES Local/Cloud for validation/review in the background. Interactive chat is intentionally disabled in this runtime so a non-functional chat control cannot be mistaken for the gaming reasoning path.",true)
+            BoxCard("AI REASONING TRANSPORT","Adaptive Gaming uses Gemini as PRIMARY BRAIN. ONE HERMES becomes DEPUTY only when Gemini has no fresh valid decision. AI Agent alone controls hardware. Interactive chat is intentionally disabled so it cannot be confused with the gaming reasoning path.",true)
         }
         BoxCard("AI SUMMARY LIVE",aiSummary(s));BoxCard("LOCAL BRAIN LIVE",brainText,true);BoxCard("ADAPTIVE OPERATING ENVELOPE LIVE",s.envelope.ifBlank{"No envelope published yet"},true);BoxCard("GEMINI INTELLIGENCE HUMAN VIEW",retained,true);BoxCard("GEMINI HTTP STATE LIVE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE LIVE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)
     }
