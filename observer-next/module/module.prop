@@ -1,6 +1,6 @@
 id=djaeger_ai_observer
 name=DJAEGER AI Adaptive
-version=1.1.2-credrestore
-versionCode=205
+version=1.1.3-runtimefix
+versionCode=206
 author=DJAEGER
-description=Device-first adaptive AI credential restore: preserves raw 4-key Gemini vault/cooldowns, Hermes aliases/identity/endpoint, local Neuron estimate, dynamic THOUGHT, exact readback and fail-closed rollback.
+description=Adaptive runtime repair: legacy credential backup recovery, Poco thermal telemetry fix, validated SurfaceFlinger frame layer, dynamic THOUGHT, exact readback and fail-closed rollback.
