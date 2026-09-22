@@ -59,6 +59,7 @@ publish(){
     echo "EXECUTOR_REASON=$2"
     echo "ACTIVE_DIGEST=${ACTIVE_DIGEST:-NONE}"
     echo "APPLIED_PACKAGE=${APPLIED_PACKAGE:-NONE}"
+    echo "APPLIED_INTENT=${APPLIED_INTENT:-NONE}"
     echo "APPLIED_LITTLE=${APPLIED_LITTLE:-NA}"
     echo "APPLIED_BIG=${APPLIED_BIG:-NA}"
     echo "APPLIED_GPU=${APPLIED_GPU:-NA}"
@@ -98,7 +99,7 @@ restore_all(){
   valid_gpu "$GP" && pair_restore "$GP" min_freq max_freq "$(kv GPU_MIN "$BACKUP")" "$(kv GPU_MAX "$BACKUP")" || _ok=0
   if [ "$_ok" = 1 ]; then
     rm -f "$BACKUP" "$MONITOR"
-    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA
+    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA
     APPLIED_AT=0; MONITOR_BAD_COUNT=0; MONITOR_SAMPLES=0
     ROLLBACK_STATE=RESTORED
     return 0
@@ -137,6 +138,9 @@ gate(){
   _d="$(kv CANDIDATE_DIGEST "$APPROVAL")"
   [ -n "$_d" ] && [ "$_d" = "$(kv CANDIDATE_DIGEST "$POLICY")" ] && [ "$_d" = "$(kv CANDIDATE_DIGEST "$SHADOW")" ] || { GATE_REASON=DIGEST_MISMATCH; return 1; }
   [ "$(kv PACKAGE "$APPROVAL")" = "$(kv PACKAGE "$POLICY")" ] || { GATE_REASON=APPROVAL_PACKAGE_MISMATCH; return 1; }
+  _pi="$(kv INTENT "$POLICY")"; [ -n "$_pi" ] || _pi=FRAME_FIRST_BALANCED
+  _ai="$(kv INTENT "$APPROVAL")"; [ -n "$_ai" ] || _ai=FRAME_FIRST_BALANCED
+  [ "$_ai" = "$_pi" ] || { GATE_REASON=APPROVAL_INTENT_MISMATCH; return 1; }
   _exp="$(kv EXPIRES_AT "$APPROVAL")"; num "$_exp" && [ "$_exp" -ge "$(date +%s)" ] || { GATE_REASON=APPROVAL_EXPIRED; return 1; }
   [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { GATE_REASON=NON_GAME; return 1; }
   [ "$(kv PACKAGE "$WORKLOAD")" = "$(kv PACKAGE "$POLICY")" ] && [ "$(kv ACTIVE_PACKAGE "$SNAP")" = "$(kv PACKAGE "$POLICY")" ] || { GATE_REASON=PACKAGE_MISMATCH; return 1; }
@@ -180,6 +184,7 @@ apply_all(){
 
   ACTIVE_DIGEST="$GATE_DIGEST"
   APPLIED_PACKAGE="$(kv PACKAGE "$POLICY")"
+  APPLIED_INTENT="$(kv INTENT "$POLICY")"; [ -n "$APPLIED_INTENT" ] || APPLIED_INTENT=FRAME_FIRST_BALANCED
   APPLIED_LITTLE="$LMIN-$LMAX"; APPLIED_BIG="$BMIN-$BMAX"; APPLIED_GPU="$GMIN-$GMAX"
   READBACK=VERIFIED; ROLLBACK_STATE=ARMED
   APPLIED_AT=$(date +%s); MONITOR_BAD_COUNT=0; MONITOR_SAMPLES=0
@@ -195,6 +200,7 @@ apply_all(){
 load_active(){
   ACTIVE_DIGEST="$(kv ACTIVE_DIGEST "$STATE")"; [ -n "$ACTIVE_DIGEST" ] || ACTIVE_DIGEST=NONE
   APPLIED_PACKAGE="$(kv APPLIED_PACKAGE "$STATE")"; [ -n "$APPLIED_PACKAGE" ] || APPLIED_PACKAGE=NONE
+  APPLIED_INTENT="$(kv APPLIED_INTENT "$STATE")"; [ -n "$APPLIED_INTENT" ] || APPLIED_INTENT=FRAME_FIRST_BALANCED
   APPLIED_LITTLE="$(kv APPLIED_LITTLE "$STATE")"; [ -n "$APPLIED_LITTLE" ] || APPLIED_LITTLE=NA
   APPLIED_BIG="$(kv APPLIED_BIG "$STATE")"; [ -n "$APPLIED_BIG" ] || APPLIED_BIG=NA
   APPLIED_GPU="$(kv APPLIED_GPU "$STATE")"; [ -n "$APPLIED_GPU" ] || APPLIED_GPU=NA
@@ -221,13 +227,19 @@ post_apply_monitor(){
   [ -r "$LEARN" ] || return 0
   [ "$(kv PACKAGE "$LEARN")" = "$APPLIED_PACKAGE" ] || return 0
   _fps="$(kv FPS_EST "$SNAP")"; _jank="$(kv JANK_PCT "$SNAP")"; _p95="$(kv P95_MS "$SNAP")"; _power="$(kv POWER_MW "$SNAP")"
-  _bfps="$(kv FPS_P50 "$LEARN")"; _bjank="$(kv JANK_P95 "$LEARN")"; _bp95="$(kv FRAME_P95_P95_MS "$LEARN")"; _bpower="$(kv POWER_P95_MW "$LEARN")"
+  _bfps="$(kv FPS_P50 "$LEARN")"; _bjank="$(kv JANK_P95 "$LEARN")"; _bp95="$(kv FRAME_P95_P95_MS "$LEARN")"
+  _bpower50="$(kv POWER_P50_MW "$LEARN")"; _bpower95="$(kv POWER_P95_MW "$LEARN")"
+  _intent="$APPLIED_INTENT"; [ -n "$_intent" ] || _intent=FRAME_FIRST_BALANCED
   _bad=0
-  awk -v f="$_fps" -v bf="$_bfps" -v j="$_jank" -v bj="$_bjank" -v p="$_p95" -v bp="$_bp95" -v w="$_power" -v bw="$_bpower" 'BEGIN{
+  awk -v intent="$_intent" -v f="$_fps" -v bf="$_bfps" -v j="$_jank" -v bj="$_bjank" -v p="$_p95" -v bp="$_bp95" -v w="$_power" -v p50="$_bpower50" -v p95="$_bpower95" 'BEGIN{
     if(f!~/^[0-9]+([.][0-9]+)?$/ || p!~/^[0-9]+([.][0-9]+)?$/ || bf<=0 || bp<=0) exit 2;
-    bad=(f<bf*0.92 || p>bp*1.20);
-    if(j~/^[0-9]+([.][0-9]+)?$/ && bj>0 && j>bj*1.35+1) bad=1;
-    if(w~/^[0-9]+([.][0-9]+)?$/ && bw>0 && w>bw*1.20) bad=1;
+    bad=(f<bf*0.95 || p>bp*1.10);
+    if(j~/^[0-9]+([.][0-9]+)?$/ && bj>0 && j>bj*1.20+1) bad=1;
+    if(w~/^[0-9]+([.][0-9]+)?$/){
+      if(intent=="POWER_EFFICIENCY" && p50>0 && w>p50*1.10) bad=1;
+      else if(intent=="FRAME_RECOVERY" && p95>0 && w>p95*1.10) bad=1;
+      else if(intent!="FRAME_RECOVERY" && intent!="POWER_EFFICIENCY" && p95>0 && w>p95*1.05) bad=1;
+    }
     exit bad?1:0
   }'
   _rc=$?
@@ -242,7 +254,7 @@ post_apply_monitor(){
     echo "UPDATED_AT=$_now"
   } > "$_mtmp"; chmod 600 "$_mtmp"; mv -f "$_mtmp" "$MONITOR"
   if [ "$MONITOR_SAMPLES" -eq 5 ] && [ "$MONITOR_BAD_COUNT" -eq 0 ]; then
-    record_outcome KEPT POST_APPLY_STABLE "$APPLIED_PACKAGE" "$ACTIVE_DIGEST"
+    record_outcome KEPT "POST_APPLY_STABLE_${APPLIED_INTENT}" "$APPLIED_PACKAGE" "$ACTIVE_DIGEST"
   fi
   [ "$MONITOR_BAD_COUNT" -lt 3 ] || return 1
   return 0
@@ -323,7 +335,7 @@ reconcile(){
   if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
     rollback_active "$GATE_REASON"
   else
-    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; READBACK=NA; ROLLBACK_STATE=STANDBY
+    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; READBACK=NA; ROLLBACK_STATE=STANDBY
     publish IDLE "$GATE_REASON"
   fi
 }
