@@ -609,9 +609,21 @@ case "$MODE" in
     READBACK=NA; ROLLBACK_STATE=NO_BACKUP
     publish IDLE EXPLICIT_RECOVERY_NO_BACKUP
     ;;
+  relinquish)
+    # Explicit no-write recovery for a transaction whose owned SYSFS was
+    # overridden by another kernel/vendor controller. This intentionally
+    # discards the stale rollback backup and resumes from fresh Device Truth.
+    load_active
+    if [ -r "$BACKUP" ]; then
+      release_external_override
+      exit 0
+    fi
+    READBACK=NA; ROLLBACK_STATE=NO_BACKUP
+    publish IDLE EXPLICIT_RELINQUISH_NO_BACKUP
+    ;;
   daemon)
     trap 'load_active; if [ "$PREV_EXECUTOR_STATE" != ROLLBACK_FAILED ] && { [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; }; then rollback_active SERVICE_STOP >/dev/null 2>&1 || true; fi; exit 0' INT TERM
     while :; do reconcile >/dev/null 2>&1 || true; sleep 2; done
     ;;
-  *) echo "usage: executor.sh ROOT {once|recover|daemon}"; exit 2 ;;
+  *) echo "usage: executor.sh ROOT {once|recover|relinquish|daemon}"; exit 2 ;;
 esac
