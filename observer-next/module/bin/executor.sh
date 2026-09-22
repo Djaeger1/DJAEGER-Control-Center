@@ -19,6 +19,7 @@ BACKUP="$ROOT/runtime/execution_backup.env"
 MONITOR="$ROOT/runtime/execution_monitor.env"
 OUTCOMES="$ROOT/history/outcomes.csv"
 OUTCOME_MARK="$ROOT/runtime/execution_outcome.mark"
+RESTORE_DIAG="$ROOT/runtime/execution_restore.env"
 LEARN="$ROOT/history/learned_envelope.env"
 MODEFILE="$ROOT/config/execution_mode"
 
@@ -92,11 +93,34 @@ pair_restore(){ pair_apply "$1" "$2" "$3" "$4" "$5"; }
 
 restore_all(){
   [ -r "$BACKUP" ] || { ROLLBACK_STATE=NO_BACKUP; return 0; }
+
   LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
+  _ltmin="$(kv LITTLE_MIN "$BACKUP")"; _ltmax="$(kv LITTLE_MAX "$BACKUP")"
+  _btmin="$(kv BIG_MIN "$BACKUP")"; _btmax="$(kv BIG_MAX "$BACKUP")"
+  _gtmin="$(kv GPU_MIN "$BACKUP")"; _gtmax="$(kv GPU_MAX "$BACKUP")"
+
   _ok=1
-  valid_cpu "$LP" && pair_restore "$LP" scaling_min_freq scaling_max_freq "$(kv LITTLE_MIN "$BACKUP")" "$(kv LITTLE_MAX "$BACKUP")" || _ok=0
-  valid_cpu "$BP" && pair_restore "$BP" scaling_min_freq scaling_max_freq "$(kv BIG_MIN "$BACKUP")" "$(kv BIG_MAX "$BACKUP")" || _ok=0
-  valid_gpu "$GP" && pair_restore "$GP" min_freq max_freq "$(kv GPU_MIN "$BACKUP")" "$(kv GPU_MAX "$BACKUP")" || _ok=0
+  _ls=FAIL; _bs=FAIL; _gs=FAIL
+
+  if valid_cpu "$LP" && pair_restore "$LP" scaling_min_freq scaling_max_freq "$_ltmin" "$_ltmax"; then _ls=OK; else _ok=0; fi
+  if valid_cpu "$BP" && pair_restore "$BP" scaling_min_freq scaling_max_freq "$_btmin" "$_btmax"; then _bs=OK; else _ok=0; fi
+  if valid_gpu "$GP" && pair_restore "$GP" min_freq max_freq "$_gtmin" "$_gtmax"; then _gs=OK; else _ok=0; fi
+
+  _rtmp="$RESTORE_DIAG.tmp.$"
+  {
+    echo "UPDATED_AT=$(date +%s)"
+    echo "LITTLE_STATUS=$_ls"
+    echo "LITTLE_TARGET=$_ltmin-$_ltmax"
+    echo "LITTLE_READBACK=$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
+    echo "BIG_STATUS=$_bs"
+    echo "BIG_TARGET=$_btmin-$_btmax"
+    echo "BIG_READBACK=$(readv "$BP/scaling_min_freq")-$(readv "$BP/scaling_max_freq")"
+    echo "GPU_STATUS=$_gs"
+    echo "GPU_TARGET=$_gtmin-$_gtmax"
+    echo "GPU_READBACK=$(readv "$GP/min_freq")-$(readv "$GP/max_freq")"
+  } > "$_rtmp"
+  chmod 600 "$_rtmp"; mv -f "$_rtmp" "$RESTORE_DIAG"
+
   if [ "$_ok" = 1 ]; then
     rm -f "$BACKUP" "$MONITOR"
     ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA
@@ -104,6 +128,9 @@ restore_all(){
     ROLLBACK_STATE=RESTORED
     return 0
   fi
+
+  # Fail closed and preserve BACKUP + exact diagnostics. Do not hammer sysfs
+  # every 2 seconds; reconcile() latches this state until an explicit recovery.
   ROLLBACK_STATE=RESTORE_FAILED
   return 1
 }
@@ -200,6 +227,8 @@ apply_all(){
 }
 
 load_active(){
+  PREV_EXECUTOR_STATE="$(kv EXECUTOR_STATE "$STATE")"; [ -n "$PREV_EXECUTOR_STATE" ] || PREV_EXECUTOR_STATE=UNKNOWN
+  PREV_EXECUTOR_REASON="$(kv EXECUTOR_REASON "$STATE")"; [ -n "$PREV_EXECUTOR_REASON" ] || PREV_EXECUTOR_REASON=UNKNOWN
   ACTIVE_DIGEST="$(kv ACTIVE_DIGEST "$STATE")"; [ -n "$ACTIVE_DIGEST" ] || ACTIVE_DIGEST=NONE
   APPLIED_PACKAGE="$(kv APPLIED_PACKAGE "$STATE")"; [ -n "$APPLIED_PACKAGE" ] || APPLIED_PACKAGE=NONE
   APPLIED_INTENT="$(kv APPLIED_INTENT "$STATE")"; [ -n "$APPLIED_INTENT" ] || APPLIED_INTENT=FRAME_FIRST_BALANCED
@@ -280,6 +309,16 @@ rollback_active(){
 
 reconcile(){
   load_active
+
+  # A failed restore is a hard fail-closed latch. Repeated writes can fight the
+  # kernel/thermal owner and create an endless CANDIDATE_SWITCH loop.
+  if [ "$PREV_EXECUTOR_STATE" = ROLLBACK_FAILED ] && [ -r "$BACKUP" ]; then
+    READBACK=RESTORE_FAILED
+    ROLLBACK_STATE=RESTORE_FAILED
+    publish ROLLBACK_FAILED RESTORE_FAILURE_LATCHED
+    return 1
+  fi
+
   if gate; then
     if [ "$ACTIVE_DIGEST" = "$GATE_DIGEST" ] && [ -r "$BACKUP" ]; then
       if ! active_readback_ok; then
@@ -299,14 +338,16 @@ reconcile(){
 
     if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
       _old_pkg="$APPLIED_PACKAGE"; _old_digest="$ACTIVE_DIGEST"; _old_little="$APPLIED_LITTLE"; _old_big="$APPLIED_BIG"; _old_gpu="$APPLIED_GPU"
+      _switch_reason=CANDIDATE_SWITCH
+      [ "$_old_digest" = NONE ] && _switch_reason=STALE_BACKUP_RECOVERY
       if ! restore_all; then
         READBACK=RESTORE_FAILED
-        record_outcome ROLLBACK_FAILED CANDIDATE_SWITCH "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
-        publish ROLLBACK_FAILED CANDIDATE_SWITCH_RESTORE_FAILED
+        record_outcome ROLLBACK_FAILED "$_switch_reason" "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
+        publish ROLLBACK_FAILED "${_switch_reason}_RESTORE_FAILED"
         return 1
       fi
       READBACK=RESTORED
-      record_outcome ROLLED_BACK CANDIDATE_SWITCH "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
+      record_outcome ROLLED_BACK "$_switch_reason" "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
     fi
 
     if apply_all; then
