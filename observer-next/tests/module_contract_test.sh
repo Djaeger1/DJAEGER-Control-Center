@@ -245,6 +245,7 @@ EXPIRES_AT=$((NOW+180))
 EXECUTOR_ALLOWED=YES
 PACKAGE=sts.al
 INTENT=FRAME_FIRST_BALANCED
+ACTUATORS=ALL
 CANDIDATE_DIGEST=abc123
 LITTLE_MIN_KHZ=600000
 LITTLE_MAX_KHZ=1400000
@@ -278,6 +279,88 @@ grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx '1800000' "$LP/scaling_max_freq"
 grep -Fqx '2400000' "$BP/scaling_max_freq"
 grep -Fqx '900000000' "$GP/max_freq"
+
+# GPU-only ownership: CPU policies must remain byte-for-byte untouched while
+# the candidate trims only GPU. Rollback must likewise touch only GPU.
+cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+SHADOW_STATE=PASS
+CANDIDATE_DIGEST=gpuonly123
+SHADOW_WINDOWS=80
+UPDATED_AT=$NOW
+EOF
+cat > "$TEST_ROOT/policy/candidate.env" <<EOF
+SCHEMA=DJAEGER_ADAPTIVE_POLICY_V3
+AT=$NOW
+PACKAGE=sts.al
+CONFIDENCE=90
+INTENT=POWER_EFFICIENCY
+ACTUATORS=GPU
+CANDIDATE_DIGEST=gpuonly123
+LITTLE_MIN_KHZ=600000
+LITTLE_MAX_KHZ=1400000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=1800000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=600000000
+EOF
+cat > "$TEST_ROOT/policy/approved.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_V2
+AT=$NOW
+EXPIRES_AT=$((NOW+180))
+EXECUTOR_ALLOWED=YES
+PACKAGE=sts.al
+INTENT=POWER_EFFICIENCY
+ACTUATORS=GPU
+CANDIDATE_DIGEST=gpuonly123
+LITTLE_MIN_KHZ=600000
+LITTLE_MAX_KHZ=1400000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=1800000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=600000000
+EOF
+LP_MIN_BEFORE=$(cat "$LP/scaling_min_freq"); LP_MAX_BEFORE=$(cat "$LP/scaling_max_freq")
+BP_MIN_BEFORE=$(cat "$BP/scaling_min_freq"); BP_MAX_BEFORE=$(cat "$BP/scaling_max_freq")
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+grep -Fqx 'EXECUTOR_STATE=APPLIED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'APPLIED_ACTUATORS=GPU' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx "$LP_MIN_BEFORE" "$LP/scaling_min_freq"
+grep -Fqx "$LP_MAX_BEFORE" "$LP/scaling_max_freq"
+grep -Fqx "$BP_MIN_BEFORE" "$BP/scaling_min_freq"
+grep -Fqx "$BP_MAX_BEFORE" "$BP/scaling_max_freq"
+grep -Fqx '600000000' "$GP/max_freq"
+
+rm -f "$TEST_ROOT/policy/approved.env"
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
+grep -Fqx 'EXECUTOR_STATE=ROLLED_BACK' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx "$LP_MIN_BEFORE" "$LP/scaling_min_freq"
+grep -Fqx "$LP_MAX_BEFORE" "$LP/scaling_max_freq"
+grep -Fqx "$BP_MIN_BEFORE" "$BP/scaling_min_freq"
+grep -Fqx "$BP_MAX_BEFORE" "$BP/scaling_max_freq"
+grep -Fqx '900000000' "$GP/max_freq"
+
+# Restore full-policy fixture for the existing drift regression.
+cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+SHADOW_STATE=PASS
+CANDIDATE_DIGEST=abc123
+SHADOW_WINDOWS=80
+UPDATED_AT=$NOW
+EOF
+cat > "$TEST_ROOT/policy/candidate.env" <<EOF
+SCHEMA=DJAEGER_ADAPTIVE_POLICY_V3
+AT=$NOW
+PACKAGE=sts.al
+CONFIDENCE=90
+INTENT=FRAME_FIRST_BALANCED
+ACTUATORS=ALL
+CANDIDATE_DIGEST=abc123
+LITTLE_MIN_KHZ=600000
+LITTLE_MAX_KHZ=1400000
+BIG_MIN_KHZ=900000
+BIG_MAX_KHZ=1800000
+GPU_MIN_HZ=300000000
+GPU_MAX_HZ=600000000
+EOF
 
 # Re-apply and prove active SYSFS drift is reconciled by rollback.
 cat > "$TEST_ROOT/policy/approved.env" <<EOF
@@ -405,6 +488,13 @@ grep -Fq 'intent=="POWER_EFFICIENCY"' "$MODULE/bin/shadow.sh"
 grep -Fq 'intent=="FRAME_RECOVERY"' "$MODULE/bin/shadow.sh"
 grep -Fq 'APPLIED_INTENT=' "$MODULE/bin/executor.sh"
 grep -Fq 'APPROVAL_INTENT_MISMATCH' "$MODULE/bin/executor.sh"
+grep -Fq 'APPROVAL_ACTUATOR_MISMATCH' "$MODULE/bin/executor.sh"
+grep -Fq 'APPLIED_ACTUATORS=' "$MODULE/bin/executor.sh"
+grep -Fq 'act_has "$ACTUATORS" GPU' "$MODULE/bin/executor.sh"
+grep -Fq 'echo "ACTUATORS=$ACTUATORS"' "$MODULE/bin/executor.sh"
+grep -Fq 'echo "ACTUATORS=$_actuators"' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'echo "ACTUATORS=$ACTUATORS"' "$MODULE/bin/consensus.sh"
+grep -Fq 'echo "ACTUATORS=$(kv ACTUATORS "$POLICY")"' "$MODULE/bin/shadow.sh"
 grep -Fq '_approved_digest="$(kv CANDIDATE_DIGEST "$APPROVAL")"' "$MODULE/bin/shadow.sh"
 grep -Fq 'rm -f "$APPROVAL"' "$MODULE/bin/shadow.sh"
 grep -Fq 'RESTORE_FAILURE_LATCHED' "$MODULE/bin/executor.sh"
