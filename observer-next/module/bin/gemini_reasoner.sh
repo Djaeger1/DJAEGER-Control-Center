@@ -4,6 +4,11 @@
 # the next READY key; no cloud response has direct hardware authority.
 
 ROOT="$1"
+BIN_DIR="${0%/*}"
+if [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim gemini_reasoner
+fi
 SNAP="$ROOT/runtime/snapshot.env"
 LEARN="$ROOT/history/learned_envelope.env"
 WORKLOAD="$ROOT/runtime/workload.env"
