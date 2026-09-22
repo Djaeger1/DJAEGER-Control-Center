@@ -2,6 +2,11 @@
 # RUNTIMEFIX1: choose a SurfaceFlinger layer by real advancing presentation
 # timestamps, not merely by the first layer name containing the package.
 ROOT="$1"
+BIN_DIR="${0%/*}"
+if [ -r "$BIN_DIR/singleton.sh" ]; then
+  . "$BIN_DIR/singleton.sh"
+  djaeger_singleton_claim frame_observer
+fi
 SNAP="$ROOT/runtime/snapshot.env"
 OUT="$ROOT/runtime/frame.env"
 CACHE="$ROOT/runtime/frame_layer.env"
