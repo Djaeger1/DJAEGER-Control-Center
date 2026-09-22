@@ -186,5 +186,6 @@ while true; do
     echo "UPDATED_AT=$(date +%s)"
   } > "$_t"
   chmod 600 "$_t"; mv -f "$_t" "$STATE"
-  sleep 30
+  # Local arbitration is cheap and should react quickly to a fresh brain proposal.
+  sleep 5
 done
