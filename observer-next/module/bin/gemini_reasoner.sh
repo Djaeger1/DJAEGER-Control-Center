@@ -263,7 +263,7 @@ EOF
       429) write_state ALL_KEYS_COOLDOWN rate_limited_all_ready_keys ;;
       401|403) write_state AUTH_ERROR key_auth_failed ;;
       000|'') HTTP=000; write_state HTTP_ERROR network_or_timeout ;;
-      *) write_state HTTP_ERROR request_failed ;;
+      *) write_state HTTP_ERROR "request_failed_http_${HTTP}" ;;
     esac
     sleep 60
     continue
