@@ -13,6 +13,7 @@ TMPBASE="$ROOT/runtime/learner.$$"
 WORKLOAD="$ROOT/runtime/workload.env"
 LAST_PKG=""
 LAST_N=0
+LAST_OUTCOME_N=0
 
 qcol() {
   pkg="$1"; col="$2"; pct="$3"; tmp="$TMPBASE.i.$col.$pct"
@@ -43,14 +44,32 @@ qframe() {
 
 while true; do
   [ -r "$SNAP" ] && [ -r "$HISTORY" ] || { sleep 15; continue; }
-  PKG=$(sed -n 's/^ACTIVE_PACKAGE=//p' "$SNAP" | head -n1)
+  ACTIVE_PKG=$(sed -n 's/^ACTIVE_PACKAGE=//p' "$SNAP" | head -n1)
   WPKG=$(sed -n 's/^PACKAGE=//p' "$WORKLOAD" 2>/dev/null | head -n1)
   WCLASS=$(sed -n 's/^WORKLOAD_CLASS=//p' "$WORKLOAD" 2>/dev/null | head -n1)
-  [ "$WCLASS" = GAME ] && [ "$WPKG" = "$PKG" ] || { sleep 30; continue; }
+
+  if [ "$WCLASS" = GAME ] && [ "$WPKG" = "$ACTIVE_PKG" ]; then
+    PKG="$ACTIVE_PKG"
+  else
+    # Outcome truth must keep refreshing after the user leaves the game.
+    # Reuse the existing learned-model package rather than switching the
+    # hardware model to the foreground app (launcher/terminal/ChatGPT).
+    PKG=$(sed -n 's/^PACKAGE=//p' "$OUT" 2>/dev/null | head -n1)
+    [ -n "$PKG" ] || { sleep 30; continue; }
+  fi
 
   N=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
   [ "$N" -ge 120 ] 2>/dev/null || { sleep 30; continue; }
-  if [ "$PKG" = "$LAST_PKG" ] && [ "$N" -lt $((LAST_N+20)) ] 2>/dev/null; then
+
+  OUTN=0
+  if [ -r "$OUTCOMES" ]; then
+    OUTN=$(awk -F, -v p="$PKG" 'NR>1&&$2==p{n++}END{print n+0}' "$OUTCOMES" 2>/dev/null)
+  fi
+  case "$OUTN" in ''|*[!0-9]*) OUTN=0;; esac
+
+  if [ "$PKG" = "$LAST_PKG" ] &&
+     [ "$N" -lt $((LAST_N+20)) ] 2>/dev/null &&
+     [ "$OUTN" -le "$LAST_OUTCOME_N" ] 2>/dev/null; then
     sleep 30
     continue
   fi
@@ -163,5 +182,6 @@ while true; do
   mv -f "$T" "$OUT"
   LAST_PKG="$PKG"
   LAST_N="$N"
+  LAST_OUTCOME_N="$OUTCOME_ROWS"
   sleep 60
 done
