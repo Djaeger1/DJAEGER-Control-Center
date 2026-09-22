@@ -417,6 +417,9 @@ grep -Fq '_learned_samples="$(pub_kv SAMPLES "$_learn")"' "$MODULE/bin/publisher
 grep -Fq 'SESSION_PACKAGE_SAMPLES=' "$MODULE/bin/publisher.sh"
 grep -Fq '_thought_status=DEPUTY_LOCAL_OBSERVE' "$MODULE/bin/publisher.sh"
 grep -Fq 'request_failed_http_${HTTP}' "$MODULE/bin/gemini_reasoner.sh"
+grep -Fq 'write_state OBSERVE non_game_workload; sleep 5' "$MODULE/bin/gemini_reasoner.sh"
+grep -Fq 'HDETAIL=non_game_workload' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'sleep 5' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'KEEP_ROWS=$(awk -F, -v p="$PKG" '\''NR>1&&$2==p&&$4=="KEPT"' "$MODULE/bin/learner.sh"
 # Singleton workers must actually terminate on TERM; timeout/service stop must never hang.
 TERM_ROOT="$TEST_ROOT/term-root"
