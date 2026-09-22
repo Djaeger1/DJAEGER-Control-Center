@@ -174,20 +174,23 @@ restore_all(){
 }
 
 snapshot_fresh(){
-  _e="$(kv EPOCH "$SNAP")"; num "$_e" || return 1
+  _src="${1:-$SNAP}"
+  _e="$(kv EPOCH "$_src")"; num "$_e" || return 1
   _age=$(( $(date +%s) - _e ))
   [ "$_age" -ge 0 ] && [ "$_age" -le 12 ]
 }
 
 frame_fresh(){
-  [ "$(kv FRAME_EVIDENCE "$SNAP")" = VALID ] || return 1
-  _f="$(kv FRAME_AT "$SNAP")"; num "$_f" || return 1
+  _src="${1:-$SNAP}"
+  [ "$(kv FRAME_EVIDENCE "$_src")" = VALID ] || return 1
+  _f="$(kv FRAME_AT "$_src")"; num "$_f" || return 1
   _age=$(( $(date +%s) - _f ))
   [ "$_age" -ge 0 ] && [ "$_age" -le 20 ]
 }
 
 thermal_safe(){
-  _skin="$(kv SKIN_TEMP_C "$SNAP")"; _bat="$(kv BATTERY_TEMP_C "$SNAP")"; _cpu="$(kv CPU_TEMP_C "$SNAP")"; _gpu="$(kv GPU_TEMP_C "$SNAP")"
+  _src="${1:-$SNAP}"
+  _skin="$(kv SKIN_TEMP_C "$_src")"; _bat="$(kv BATTERY_TEMP_C "$_src")"; _cpu="$(kv CPU_TEMP_C "$_src")"; _gpu="$(kv GPU_TEMP_C "$_src")"
   awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu" 'BEGIN{
     if(s!~/^[0-9]+([.][0-9]+)?$/||b!~/^[0-9]+([.][0-9]+)?$/||c!~/^[0-9]+([.][0-9]+)?$/) exit 1;
     gok=(g!~/^[0-9]+([.][0-9]+)?$/ || g<75);
@@ -200,64 +203,97 @@ thermal_safe(){
 gate(){
   [ "$(cat "$MODEFILE" 2>/dev/null)" = AUTO ] || { GATE_REASON=MODE_OFF; return 1; }
   [ -r "$APPROVAL" ] && [ -r "$POLICY" ] && [ -r "$SHADOW" ] || { GATE_REASON=APPROVAL_MISSING; return 1; }
-  [ "$(kv EXECUTOR_ALLOWED "$APPROVAL")" = YES ] || { GATE_REASON=APPROVAL_DENIED; return 1; }
-  [ "$(kv SHADOW_STATE "$SHADOW")" = PASS ] || { GATE_REASON=SHADOW_NOT_PASS; return 1; }
-  _d="$(kv CANDIDATE_DIGEST "$APPROVAL")"
-  [ -n "$_d" ] && [ "$_d" = "$(kv CANDIDATE_DIGEST "$POLICY")" ] && [ "$_d" = "$(kv CANDIDATE_DIGEST "$SHADOW")" ] || { GATE_REASON=DIGEST_MISMATCH; return 1; }
-  [ "$(kv PACKAGE "$APPROVAL")" = "$(kv PACKAGE "$POLICY")" ] || { GATE_REASON=APPROVAL_PACKAGE_MISMATCH; return 1; }
-  _pi="$(kv INTENT "$POLICY")"; [ -n "$_pi" ] || _pi=FRAME_FIRST_BALANCED
-  _ai="$(kv INTENT "$APPROVAL")"; [ -n "$_ai" ] || _ai=FRAME_FIRST_BALANCED
-  [ "$_ai" = "$_pi" ] || { GATE_REASON=APPROVAL_INTENT_MISMATCH; return 1; }
-  ACTUATORS="$(kv ACTUATORS "$POLICY")"; [ -n "$ACTUATORS" ] || ACTUATORS=ALL
-  _aa="$(kv ACTUATORS "$APPROVAL")"; [ -n "$_aa" ] || _aa=ALL
-  valid_actuators "$ACTUATORS" || { GATE_REASON=INVALID_ACTUATOR_MASK; return 1; }
-  [ "$_aa" = "$ACTUATORS" ] || { GATE_REASON=APPROVAL_ACTUATOR_MISMATCH; return 1; }
-  _exp="$(kv EXPIRES_AT "$APPROVAL")"; num "$_exp" && [ "$_exp" -ge "$(date +%s)" ] || { GATE_REASON=APPROVAL_EXPIRED; return 1; }
-  [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { GATE_REASON=NON_GAME; return 1; }
-  [ "$(kv PACKAGE "$WORKLOAD")" = "$(kv PACKAGE "$POLICY")" ] && [ "$(kv ACTIVE_PACKAGE "$SNAP")" = "$(kv PACKAGE "$POLICY")" ] || { GATE_REASON=PACKAGE_MISMATCH; return 1; }
-  snapshot_fresh || { GATE_REASON=STALE_SNAPSHOT; return 1; }
-  frame_fresh || { GATE_REASON=FRAME_EVIDENCE_STALE; return 1; }
-  thermal_safe || { GATE_REASON=THERMAL_GUARD; return 1; }
 
-  LP="$(kv LITTLE_POLICY_PATH "$SNAP")"; BP="$(kv BIG_POLICY_PATH "$SNAP")"; GP="$(kv GPU_DEVFREQ_PATH "$SNAP")"
+  _POLICY="$ROOT/runtime/.executor_policy.$PPID"
+  _APPROVAL="$ROOT/runtime/.executor_approval.$PPID"
+  _SHADOW="$ROOT/runtime/.executor_shadow.$PPID"
+  _SNAP="$ROOT/runtime/.executor_snapshot.$PPID"
+  _WORKLOAD="$ROOT/runtime/.executor_workload.$PPID"
+
+  cp "$POLICY" "$_POLICY" 2>/dev/null &&
+  cp "$APPROVAL" "$_APPROVAL" 2>/dev/null &&
+  cp "$SHADOW" "$_SHADOW" 2>/dev/null &&
+  cp "$SNAP" "$_SNAP" 2>/dev/null &&
+  cp "$WORKLOAD" "$_WORKLOAD" 2>/dev/null || { GATE_REASON=COHERENT_SNAPSHOT_FAILED; return 1; }
+
+  [ "$(kv EXECUTOR_ALLOWED "$_APPROVAL")" = YES ] || { GATE_REASON=APPROVAL_DENIED; return 1; }
+  [ "$(kv SHADOW_STATE "$_SHADOW")" = PASS ] || { GATE_REASON=SHADOW_NOT_PASS; return 1; }
+
+  _d="$(kv CANDIDATE_DIGEST "$_APPROVAL")"
+  [ -n "$_d" ] &&
+  [ "$_d" = "$(kv CANDIDATE_DIGEST "$_POLICY")" ] &&
+  [ "$_d" = "$(kv CANDIDATE_DIGEST "$_SHADOW")" ] || { GATE_REASON=DIGEST_MISMATCH; return 1; }
+
+  GATE_PACKAGE="$(kv PACKAGE "$_POLICY")"
+  [ -n "$GATE_PACKAGE" ] || { GATE_REASON=PACKAGE_MISSING; return 1; }
+  [ "$(kv PACKAGE "$_APPROVAL")" = "$GATE_PACKAGE" ] || { GATE_REASON=APPROVAL_PACKAGE_MISMATCH; return 1; }
+
+  GATE_INTENT="$(kv INTENT "$_POLICY")"; [ -n "$GATE_INTENT" ] || GATE_INTENT=FRAME_FIRST_BALANCED
+  _ai="$(kv INTENT "$_APPROVAL")"; [ -n "$_ai" ] || _ai=FRAME_FIRST_BALANCED
+  [ "$_ai" = "$GATE_INTENT" ] || { GATE_REASON=APPROVAL_INTENT_MISMATCH; return 1; }
+
+  GATE_ACTUATORS="$(kv ACTUATORS "$_POLICY")"; [ -n "$GATE_ACTUATORS" ] || GATE_ACTUATORS=ALL
+  _aa="$(kv ACTUATORS "$_APPROVAL")"; [ -n "$_aa" ] || _aa=ALL
+  valid_actuators "$GATE_ACTUATORS" || { GATE_REASON=INVALID_ACTUATOR_MASK; return 1; }
+  [ "$_aa" = "$GATE_ACTUATORS" ] || { GATE_REASON=APPROVAL_ACTUATOR_MISMATCH; return 1; }
+
+  _exp="$(kv EXPIRES_AT "$_APPROVAL")"; num "$_exp" && [ "$_exp" -ge "$(date +%s)" ] || { GATE_REASON=APPROVAL_EXPIRED; return 1; }
+  [ "$(kv WORKLOAD_CLASS "$_WORKLOAD")" = GAME ] || { GATE_REASON=NON_GAME; return 1; }
+  [ "$(kv PACKAGE "$_WORKLOAD")" = "$GATE_PACKAGE" ] &&
+  [ "$(kv ACTIVE_PACKAGE "$_SNAP")" = "$GATE_PACKAGE" ] || { GATE_REASON=PACKAGE_MISMATCH; return 1; }
+
+  snapshot_fresh "$_SNAP" || { GATE_REASON=STALE_SNAPSHOT; return 1; }
+  frame_fresh "$_SNAP" || { GATE_REASON=FRAME_EVIDENCE_STALE; return 1; }
+  thermal_safe "$_SNAP" || { GATE_REASON=THERMAL_GUARD; return 1; }
+
+  LP="$(kv LITTLE_POLICY_PATH "$_SNAP")"; BP="$(kv BIG_POLICY_PATH "$_SNAP")"; GP="$(kv GPU_DEVFREQ_PATH "$_SNAP")"
   valid_cpu "$LP" && valid_cpu "$BP" && valid_gpu "$GP" || { GATE_REASON=PATH_REJECTED; return 1; }
 
-  LMIN="$(kv LITTLE_MIN_KHZ "$POLICY")"; LMAX="$(kv LITTLE_MAX_KHZ "$POLICY")"
-  BMIN="$(kv BIG_MIN_KHZ "$POLICY")"; BMAX="$(kv BIG_MAX_KHZ "$POLICY")"
-  GMIN="$(kv GPU_MIN_HZ "$POLICY")"; GMAX="$(kv GPU_MAX_HZ "$POLICY")"
-  for _v in "$LMIN" "$LMAX" "$BMIN" "$BMAX" "$GMIN" "$GMAX"; do num "$_v" || { GATE_REASON=NON_NUMERIC; return 1; }; done
-  [ "$(kv LITTLE_MIN_KHZ "$APPROVAL")" = "$LMIN" ] &&
-  [ "$(kv LITTLE_MAX_KHZ "$APPROVAL")" = "$LMAX" ] &&
-  [ "$(kv BIG_MIN_KHZ "$APPROVAL")" = "$BMIN" ] &&
-  [ "$(kv BIG_MAX_KHZ "$APPROVAL")" = "$BMAX" ] &&
-  [ "$(kv GPU_MIN_HZ "$APPROVAL")" = "$GMIN" ] &&
-  [ "$(kv GPU_MAX_HZ "$APPROVAL")" = "$GMAX" ] || { GATE_REASON=APPROVAL_POLICY_MISMATCH; return 1; }
-  contains_freq "$LMIN" "$(kv LITTLE_AVAILABLE_KHZ "$SNAP")" && contains_freq "$LMAX" "$(kv LITTLE_AVAILABLE_KHZ "$SNAP")" || { GATE_REASON=LITTLE_OPP_REJECTED; return 1; }
-  contains_freq "$BMIN" "$(kv BIG_AVAILABLE_KHZ "$SNAP")" && contains_freq "$BMAX" "$(kv BIG_AVAILABLE_KHZ "$SNAP")" || { GATE_REASON=BIG_OPP_REJECTED; return 1; }
-  contains_freq "$GMIN" "$(kv GPU_AVAILABLE_HZ "$SNAP")" && contains_freq "$GMAX" "$(kv GPU_AVAILABLE_HZ "$SNAP")" || { GATE_REASON=GPU_OPP_REJECTED; return 1; }
+  LMIN="$(kv LITTLE_MIN_KHZ "$_POLICY")"; LMAX="$(kv LITTLE_MAX_KHZ "$_POLICY")"
+  BMIN="$(kv BIG_MIN_KHZ "$_POLICY")"; BMAX="$(kv BIG_MAX_KHZ "$_POLICY")"
+  GMIN="$(kv GPU_MIN_HZ "$_POLICY")"; GMAX="$(kv GPU_MAX_HZ "$_POLICY")"
 
-  GATE_DIGEST="$_d"; GATE_REASON=PASS
+  for _v in "$LMIN" "$LMAX" "$BMIN" "$BMAX" "$GMIN" "$GMAX"; do
+    num "$_v" || { GATE_REASON=NON_NUMERIC; return 1; }
+  done
+
+  [ "$(kv LITTLE_MIN_KHZ "$_APPROVAL")" = "$LMIN" ] &&
+  [ "$(kv LITTLE_MAX_KHZ "$_APPROVAL")" = "$LMAX" ] &&
+  [ "$(kv BIG_MIN_KHZ "$_APPROVAL")" = "$BMIN" ] &&
+  [ "$(kv BIG_MAX_KHZ "$_APPROVAL")" = "$BMAX" ] &&
+  [ "$(kv GPU_MIN_HZ "$_APPROVAL")" = "$GMIN" ] &&
+  [ "$(kv GPU_MAX_HZ "$_APPROVAL")" = "$GMAX" ] || { GATE_REASON=APPROVAL_POLICY_MISMATCH; return 1; }
+
+  contains_freq "$LMIN" "$(kv LITTLE_AVAILABLE_KHZ "$_SNAP")" &&
+  contains_freq "$LMAX" "$(kv LITTLE_AVAILABLE_KHZ "$_SNAP")" || { GATE_REASON=LITTLE_OPP_REJECTED; return 1; }
+  contains_freq "$BMIN" "$(kv BIG_AVAILABLE_KHZ "$_SNAP")" &&
+  contains_freq "$BMAX" "$(kv BIG_AVAILABLE_KHZ "$_SNAP")" || { GATE_REASON=BIG_OPP_REJECTED; return 1; }
+  contains_freq "$GMIN" "$(kv GPU_AVAILABLE_HZ "$_SNAP")" &&
+  contains_freq "$GMAX" "$(kv GPU_AVAILABLE_HZ "$_SNAP")" || { GATE_REASON=GPU_OPP_REJECTED; return 1; }
+
+  ACTUATORS="$GATE_ACTUATORS"
+  GATE_DIGEST="$_d"
+  GATE_REASON=PASS
   return 0
 }
-
 apply_all(){
   _tmp="$BACKUP.tmp.$$"
   {
-    echo "ACTUATORS=$ACTUATORS"
+    echo "ACTUATORS=$GATE_ACTUATORS"
     echo "LITTLE_PATH=$LP"; echo "LITTLE_MIN=$(readv "$LP/scaling_min_freq")"; echo "LITTLE_MAX=$(readv "$LP/scaling_max_freq")"
     echo "BIG_PATH=$BP"; echo "BIG_MIN=$(readv "$BP/scaling_min_freq")"; echo "BIG_MAX=$(readv "$BP/scaling_max_freq")"
     echo "GPU_PATH=$GP"; echo "GPU_MIN=$(readv "$GP/min_freq")"; echo "GPU_MAX=$(readv "$GP/max_freq")"
   } > "$_tmp"
   chmod 600 "$_tmp"; mv -f "$_tmp" "$BACKUP"
 
-  if act_has "$ACTUATORS" LITTLE; then pair_apply "$LP" scaling_min_freq scaling_max_freq "$LMIN" "$LMAX" || return 1; fi
-  if act_has "$ACTUATORS" BIG; then pair_apply "$BP" scaling_min_freq scaling_max_freq "$BMIN" "$BMAX" || return 1; fi
-  if act_has "$ACTUATORS" GPU; then pair_apply "$GP" min_freq max_freq "$GMIN" "$GMAX" || return 1; fi
+  if act_has "$GATE_ACTUATORS" LITTLE; then pair_apply "$LP" scaling_min_freq scaling_max_freq "$LMIN" "$LMAX" || return 1; fi
+  if act_has "$GATE_ACTUATORS" BIG; then pair_apply "$BP" scaling_min_freq scaling_max_freq "$BMIN" "$BMAX" || return 1; fi
+  if act_has "$GATE_ACTUATORS" GPU; then pair_apply "$GP" min_freq max_freq "$GMIN" "$GMAX" || return 1; fi
 
   ACTIVE_DIGEST="$GATE_DIGEST"
-  APPLIED_PACKAGE="$(kv PACKAGE "$POLICY")"
-  APPLIED_INTENT="$(kv INTENT "$POLICY")"; [ -n "$APPLIED_INTENT" ] || APPLIED_INTENT=FRAME_FIRST_BALANCED
-  APPLIED_ACTUATORS="$ACTUATORS"
+  APPLIED_PACKAGE="$GATE_PACKAGE"
+  APPLIED_INTENT="$GATE_INTENT"
+  APPLIED_ACTUATORS="$GATE_ACTUATORS"
   APPLIED_LITTLE="$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
   APPLIED_BIG="$(readv "$BP/scaling_min_freq")-$(readv "$BP/scaling_max_freq")"
   APPLIED_GPU="$(readv "$GP/min_freq")-$(readv "$GP/max_freq")"
@@ -289,19 +325,43 @@ load_active(){
   MONITOR_SAMPLES="$(kv SAMPLES "$MONITOR")"; case "$MONITOR_SAMPLES" in ''|*[!0-9]*) MONITOR_SAMPLES=0;; esac
 }
 
-active_readback_ok(){
-  if act_has "$ACTUATORS" LITTLE; then
-    [ "$(readv "$LP/scaling_min_freq")" = "$LMIN" ] && [ "$(readv "$LP/scaling_max_freq")" = "$LMAX" ] || return 1
-  fi
-  if act_has "$ACTUATORS" BIG; then
-    [ "$(readv "$BP/scaling_min_freq")" = "$BMIN" ] && [ "$(readv "$BP/scaling_max_freq")" = "$BMAX" ] || return 1
-  fi
-  if act_has "$ACTUATORS" GPU; then
-    [ "$(readv "$GP/min_freq")" = "$GMIN" ] && [ "$(readv "$GP/max_freq")" = "$GMAX" ] || return 1
-  fi
+active_context_safe(){
+  [ "$(cat "$MODEFILE" 2>/dev/null)" = AUTO ] || { ACTIVE_GUARD_REASON=MODE_OFF; return 1; }
+  [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { ACTIVE_GUARD_REASON=NON_GAME; return 1; }
+  [ "$(kv PACKAGE "$WORKLOAD")" = "$APPLIED_PACKAGE" ] &&
+  [ "$(kv ACTIVE_PACKAGE "$SNAP")" = "$APPLIED_PACKAGE" ] || { ACTIVE_GUARD_REASON=PACKAGE_MISMATCH; return 1; }
+
+  snapshot_fresh "$SNAP" || { ACTIVE_GUARD_REASON=STALE_SNAPSHOT; return 1; }
+  frame_fresh "$SNAP" || { ACTIVE_GUARD_REASON=FRAME_EVIDENCE_STALE; return 1; }
+  thermal_safe "$SNAP" || { ACTIVE_GUARD_REASON=THERMAL_GUARD; return 1; }
+
+  LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
+  valid_cpu "$LP" && valid_cpu "$BP" && valid_gpu "$GP" || { ACTIVE_GUARD_REASON=PATH_REJECTED; return 1; }
+  valid_actuators "$APPLIED_ACTUATORS" || { ACTIVE_GUARD_REASON=INVALID_ACTUATOR_MASK; return 1; }
+
+  ACTIVE_GUARD_REASON=PASS
   return 0
 }
 
+active_readback_ok(){
+  _almin="${APPLIED_LITTLE%%-*}"; _almax="${APPLIED_LITTLE#*-}"
+  _abmin="${APPLIED_BIG%%-*}"; _abmax="${APPLIED_BIG#*-}"
+  _agmin="${APPLIED_GPU%%-*}"; _agmax="${APPLIED_GPU#*-}"
+
+  if act_has "$APPLIED_ACTUATORS" LITTLE; then
+    [ "$(readv "$LP/scaling_min_freq")" = "$_almin" ] &&
+    [ "$(readv "$LP/scaling_max_freq")" = "$_almax" ] || return 1
+  fi
+  if act_has "$APPLIED_ACTUATORS" BIG; then
+    [ "$(readv "$BP/scaling_min_freq")" = "$_abmin" ] &&
+    [ "$(readv "$BP/scaling_max_freq")" = "$_abmax" ] || return 1
+  fi
+  if act_has "$APPLIED_ACTUATORS" GPU; then
+    [ "$(readv "$GP/min_freq")" = "$_agmin" ] &&
+    [ "$(readv "$GP/max_freq")" = "$_agmax" ] || return 1
+  fi
+  return 0
+}
 post_apply_monitor(){
   _now=$(date +%s)
   [ "$APPLIED_AT" -gt 0 ] 2>/dev/null || return 0
@@ -362,7 +422,7 @@ reconcile(){
   load_active
 
   # A failed restore is a hard fail-closed latch. Repeated writes can fight the
-  # kernel/thermal owner and create an endless CANDIDATE_SWITCH loop.
+  # kernel/thermal owner and create an endless recovery loop.
   if [ "$PREV_EXECUTOR_STATE" = ROLLBACK_FAILED ] && [ -r "$BACKUP" ]; then
     READBACK=RESTORE_FAILED
     ROLLBACK_STATE=RESTORE_FAILED
@@ -370,70 +430,122 @@ reconcile(){
     return 1
   fi
 
-  if gate; then
-    if [ "$ACTIVE_DIGEST" = "$GATE_DIGEST" ] && [ -r "$BACKUP" ]; then
-      if ! active_readback_ok; then
-        READBACK=DRIFT
-        rollback_active SYSFS_DRIFT
-        return 1
-      fi
-      if ! post_apply_monitor; then
-        READBACK=VERIFIED
-        rollback_active POST_APPLY_REGRESSION
-        return 1
-      fi
+  _gate_ready=0
+
+  # Once a transaction is applied, pin that exact digest long enough to measure
+  # the result. Candidate churn or a temporary approval gap must not abort the
+  # live trial. Only device-truth safety, SYSFS drift or measured regression can
+  # roll it back before a KEEP decision.
+  if [ "$ACTIVE_DIGEST" != NONE ] && [ -r "$BACKUP" ]; then
+    if ! active_context_safe; then
+      rollback_active "$ACTIVE_GUARD_REASON"
+      return 1
+    fi
+
+    if ! active_readback_ok; then
+      READBACK=DRIFT
+      rollback_active SYSFS_DRIFT
+      return 1
+    fi
+
+    if ! post_apply_monitor; then
       READBACK=VERIFIED
-      publish APPLIED ACTIVE_APPROVAL
+      rollback_active POST_APPLY_REGRESSION
+      return 1
+    fi
+
+    READBACK=VERIFIED
+    _now="$(date +%s)"
+    _active_age=$((_now-APPLIED_AT))
+
+    if [ "$MONITOR_SAMPLES" -lt 5 ] 2>/dev/null || [ "$_active_age" -lt 25 ] 2>/dev/null; then
+      publish APPLIED ACTIVE_TRIAL_PINNED
       return 0
     fi
 
-    if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
-      _old_pkg="$APPLIED_PACKAGE"; _old_digest="$ACTIVE_DIGEST"; _old_little="$APPLIED_LITTLE"; _old_big="$APPLIED_BIG"; _old_gpu="$APPLIED_GPU"
-      _switch_reason=CANDIDATE_SWITCH
-      [ "$_old_digest" = NONE ] && _switch_reason=STALE_BACKUP_RECOVERY
-      if ! restore_all; then
-        READBACK=RESTORE_FAILED
-        record_outcome ROLLBACK_FAILED "$_switch_reason" "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
-        publish ROLLBACK_FAILED "${_switch_reason}_RESTORE_FAILED"
-        return 1
-      fi
-      READBACK=RESTORED
-      record_outcome ROLLED_BACK "$_switch_reason" "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
-    fi
-
-    if apply_all; then
-      if active_readback_ok; then
-        READBACK=VERIFIED
-        record_outcome APPLIED_VERIFIED CONSENSUS_SHADOW_APPROVED "$APPLIED_PACKAGE" "$ACTIVE_DIGEST"
-        publish APPLIED CONSENSUS_SHADOW_APPROVED
+    # The current transaction has accumulated enough stable samples to qualify
+    # for KEEP. Only now may a different fully-approved candidate supersede it.
+    if gate; then
+      if [ "$GATE_DIGEST" = "$ACTIVE_DIGEST" ]; then
+        publish APPLIED KEPT_ACTIVE
         return 0
       fi
-      READBACK=DRIFT
-    else
-      READBACK=FAILED
-    fi
 
-    _failed_pkg="$(kv PACKAGE "$POLICY")"; _failed_digest="$GATE_DIGEST"
-    if restore_all; then
-      record_outcome ROLLED_BACK APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest"
+      _old_pkg="$APPLIED_PACKAGE"; _old_digest="$ACTIVE_DIGEST"
+      _old_little="$APPLIED_LITTLE"; _old_big="$APPLIED_BIG"; _old_gpu="$APPLIED_GPU"
+
+      if ! restore_all; then
+        READBACK=RESTORE_FAILED
+        record_outcome ROLLBACK_FAILED CANDIDATE_SWITCH_AFTER_KEEP "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
+        publish ROLLBACK_FAILED CANDIDATE_SWITCH_AFTER_KEEP_RESTORE_FAILED
+        return 1
+      fi
+
       READBACK=RESTORED
-      publish ROLLED_BACK APPLY_OR_READBACK_FAILED
+      record_outcome SUPERSEDED CANDIDATE_SWITCH_AFTER_KEEP "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
+      _gate_ready=1
     else
-      record_outcome ROLLBACK_FAILED APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest"
-      READBACK=RESTORE_FAILED
-      publish ROLLBACK_FAILED APPLY_OR_READBACK_FAILED
+      publish APPLIED KEPT_ACTIVE
+      return 0
     fi
-    return 1
+  fi
+
+  if [ "$_gate_ready" -ne 1 ]; then
+    if gate; then
+      _gate_ready=1
+    else
+      if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
+        rollback_active "$GATE_REASON"
+      else
+        ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_ACTUATORS=NONE
+        APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; READBACK=NA; ROLLBACK_STATE=STANDBY
+        publish IDLE "$GATE_REASON"
+      fi
+      return 1
+    fi
   fi
 
   if [ "$ACTIVE_DIGEST" != NONE ] || [ -r "$BACKUP" ]; then
-    rollback_active "$GATE_REASON"
-  else
-    ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_ACTUATORS=NONE; APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; READBACK=NA; ROLLBACK_STATE=STANDBY
-    publish IDLE "$GATE_REASON"
-  fi
-}
+    _old_pkg="$APPLIED_PACKAGE"; _old_digest="$ACTIVE_DIGEST"
+    _old_little="$APPLIED_LITTLE"; _old_big="$APPLIED_BIG"; _old_gpu="$APPLIED_GPU"
+    _switch_reason=CANDIDATE_SWITCH
+    [ "$_old_digest" = NONE ] && _switch_reason=STALE_BACKUP_RECOVERY
 
+    if ! restore_all; then
+      READBACK=RESTORE_FAILED
+      record_outcome ROLLBACK_FAILED "$_switch_reason" "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
+      publish ROLLBACK_FAILED "${_switch_reason}_RESTORE_FAILED"
+      return 1
+    fi
+
+    READBACK=RESTORED
+    record_outcome ROLLED_BACK "$_switch_reason" "$_old_pkg" "$_old_digest" "$_old_little" "$_old_big" "$_old_gpu"
+  fi
+
+  if apply_all; then
+    if active_readback_ok; then
+      READBACK=VERIFIED
+      record_outcome APPLIED_VERIFIED CONSENSUS_SHADOW_APPROVED "$APPLIED_PACKAGE" "$ACTIVE_DIGEST"
+      publish APPLIED CONSENSUS_SHADOW_APPROVED
+      return 0
+    fi
+    READBACK=DRIFT
+  else
+    READBACK=FAILED
+  fi
+
+  _failed_pkg="$GATE_PACKAGE"; _failed_digest="$GATE_DIGEST"
+  if restore_all; then
+    record_outcome ROLLED_BACK APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest"
+    READBACK=RESTORED
+    publish ROLLED_BACK APPLY_OR_READBACK_FAILED
+  else
+    record_outcome ROLLBACK_FAILED APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest"
+    READBACK=RESTORE_FAILED
+    publish ROLLBACK_FAILED APPLY_OR_READBACK_FAILED
+  fi
+  return 1
+}
 case "$MODE" in
   once) reconcile ;;
   recover)
