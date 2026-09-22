@@ -421,7 +421,9 @@ pair_post_restore_state(){
 }
 
 resolve_restore_failure(){
-  _reason="$1"; _pkg="$2"; _digest="$3"; _little="$4"; _big="$5"; _gpu="$6"
+  # Use a dedicated name: record_outcome() also uses the global shell variable
+  # "_reason", so reusing it here mutates our caller reason in /system/bin/sh.
+  _resolve_reason="$1"; _pkg="$2"; _digest="$3"; _little="$4"; _big="$5"; _gpu="$6"
   [ -r "$BACKUP" ] || return 1
 
   LP="$(kv LITTLE_PATH "$BACKUP")"; BP="$(kv BIG_PATH "$BACKUP")"; GP="$(kv GPU_PATH "$BACKUP")"
@@ -449,7 +451,7 @@ resolve_restore_failure(){
   {
     echo "UPDATED_AT=$(date +%s)"
     echo "ACTUATORS=$_act"
-    echo "FAILURE_REASON=$_reason"
+    echo "FAILURE_REASON=$_resolve_reason"
     echo "LITTLE_POST_STATE=$_ls"
     echo "LITTLE_READBACK=$(readv "$LP/scaling_min_freq")-$(readv "$LP/scaling_max_freq")"
     echo "BIG_POST_STATE=$_bs"
@@ -464,19 +466,19 @@ resolve_restore_failure(){
   if [ "$_external" -eq 1 ]; then
     READBACK=EXTERNAL_OVERRIDE
     ROLLBACK_STATE=RELINQUISHED
-    record_outcome RELEASED "${_reason}_EXTERNAL_OVERRIDE" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
-    suppress_digest "$_digest" "$_pkg" "${_reason}_EXTERNAL_OVERRIDE" 180
+    record_outcome RELEASED "${_resolve_reason}_EXTERNAL_OVERRIDE" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+    suppress_digest "$_digest" "$_pkg" "${_resolve_reason}_EXTERNAL_OVERRIDE" 180
   else
     READBACK=RESTORED
     ROLLBACK_STATE=RESTORED
-    record_outcome ROLLED_BACK "${_reason}_READBACK_RECOVERED" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
+    record_outcome ROLLED_BACK "${_resolve_reason}_READBACK_RECOVERED" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
   fi
 
   rm -f "$BACKUP" "$MONITOR"
   ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_ACTUATORS=NONE
   APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; APPLIED_AT=0
   MONITOR_BAD_COUNT=0; MONITOR_SAMPLES=0
-  publish IDLE "${_reason}_RESOLVED"
+  publish IDLE "${_resolve_reason}_RESOLVED"
   return 0
 }
 post_apply_monitor(){
