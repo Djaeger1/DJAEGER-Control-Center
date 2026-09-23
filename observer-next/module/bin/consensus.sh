@@ -54,6 +54,7 @@ while true; do
   GS=$(kv GEMINI_STATE "$GSTATE"); [ -n "$GS" ] || GS=WAITING
   HV=$(kv VOTE "$HL"); [ -n "$HV" ] || HV=ABSENT
   HM=$(kv HERMES_MODE "$HSTATE"); [ -n "$HM" ] || HM=DEPUTY_STANDBY
+  HA=$(kv HERMES_ACTIVE_SOURCE "$HSTATE"); [ -n "$HA" ] || HA=HERMES_H2
 
   if gemini_live "$GS"; then
     BRAIN_SOURCE=GEMINI
@@ -90,6 +91,11 @@ while true; do
         CSTATE=HERMES_TAKEOVER_DIGEST_MISMATCH
       fi
     else
+      case "$HA" in
+        HERMES_LOCAL) BRAIN_SOURCE=HERMES_LOCAL ;;
+        HERMES_CLOUD) BRAIN_SOURCE=HERMES_CLOUD ;;
+        *) BRAIN_SOURCE=HERMES_H2 ;;
+      esac
       CSTATE=HERMES_DEPUTY_OBSERVE
     fi
   else
