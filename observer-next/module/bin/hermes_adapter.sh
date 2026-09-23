@@ -27,6 +27,7 @@ LAST="$ROOT/config/hermes_review_last.env"
 GSTATE="$ROOT/runtime/gemini_reasoner.env"
 HPLAN="$ROOT/policy/hermes_proposal.env"
 OUTCOMES="$ROOT/history/outcomes.csv"
+EXECUTION="$ROOT/runtime/execution.env"
 CLOUD_MIN_INTERVAL=900
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
@@ -601,8 +602,8 @@ cloud_takeover(){
     command -v neuron_record_success >/dev/null 2>&1 && neuron_record_success "$_mode" "$_req" "$_resp"
   fi
   rm -f "$_req"
-  { echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$$"; chmod 600 "$LAST.tmp.$$"; mv -f "$LAST.tmp.$$" "$LAST"
   [ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"; rm -f "$_resp"; return 1; }
+  { echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$"; chmod 600 "$LAST.tmp.$"; mv -f "$LAST.tmp.$" "$LAST"
   HAUTH=CONFIGURED
   _text=$(tr '\n' ' ' < "$_resp" 2>/dev/null | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g;s/\\r//g')
   HMODEL=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$_resp" 2>/dev/null | head -n1 | sed 's/.*:[[:space:]]*"//;s/"$//')
@@ -720,8 +721,30 @@ while true; do
   HMODE=TAKEOVER
   HACTIVE_SOURCE=HERMES_H2
 
-  # Offline autonomy order:
-  # proven local outcome -> local synthesis from mature knowledge -> cloud escalation.
+  # Gemini unavailable: use cloud cognition when local execution is unresolved,
+  # regressing, or currently under frame/power pressure. Local memory remains
+  # the immediate fallback if cloud is unavailable.
+  _force_cloud=0
+  _exec_now="$(kv EXECUTOR_STATE "$EXECUTION")"
+  _rb_now="$(kv ROLLBACK_STATE "$EXECUTION")"
+  _last_outcome="$(kv LAST_OUTCOME "$LEARN")"
+  _validation_rbf="$(num "$(kv VALIDATION_ROLLBACK_FAILED_ROWS "$LEARN")")"
+  case "$_exec_now:$_rb_now:$_last_outcome" in
+    ROLLBACK_FAILED:*|*:RESTORE_FAILED:*|*:*:ROLLBACK_FAILED) _force_cloud=1 ;;
+  esac
+  [ "$_validation_rbf" -gt 0 ] 2>/dev/null && _force_cloud=1
+  frame_degraded && _force_cloud=1
+  power_pressure && _force_cloud=1
+
+  if [ "$_force_cloud" -eq 1 ] 2>/dev/null && cloud_takeover; then
+    HLOCAL_STATE=TAKEOVER_CLOUD
+    HACTIVE_SOURCE=HERMES_CLOUD
+    HMODE=TAKEOVER_CLOUD_ESCALATED
+    write_state HERMES_TAKEOVER
+    sleep 45
+    continue
+  fi
+
   if local_history_takeover; then
     HLOCAL_STATE=TAKEOVER_LOCAL
     HACTIVE_SOURCE=HERMES_LOCAL
