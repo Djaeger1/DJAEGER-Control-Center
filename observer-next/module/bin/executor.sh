@@ -320,7 +320,14 @@ gate(){
 apply_all(){
   _tmp="$BACKUP.tmp.$$"
   {
+    echo "AT=$(date +%s)"
+    echo "DIGEST=$GATE_DIGEST"
+    echo "PACKAGE=$GATE_PACKAGE"
+    echo "INTENT=$GATE_INTENT"
     echo "ACTUATORS=$GATE_ACTUATORS"
+    echo "TARGET_LITTLE=${LMIN}-${LMAX}"
+    echo "TARGET_BIG=${BMIN}-${BMAX}"
+    echo "TARGET_GPU=${GMIN}-${GMAX}"
     echo "LITTLE_PATH=$LP"; echo "LITTLE_MIN=$(readv "$LP/scaling_min_freq")"; echo "LITTLE_MAX=$(readv "$LP/scaling_max_freq")"
     echo "BIG_PATH=$BP"; echo "BIG_MIN=$(readv "$BP/scaling_min_freq")"; echo "BIG_MAX=$(readv "$BP/scaling_max_freq")"
     echo "GPU_PATH=$GP"; echo "GPU_MIN=$(readv "$GP/min_freq")"; echo "GPU_MAX=$(readv "$GP/max_freq")"
@@ -450,6 +457,46 @@ pair_post_restore_state(){
   else
     echo EXTERNAL
   fi
+}
+
+recover_latched_identity(){
+  # New transactions carry identity in the backup itself. Legacy/partial
+  # apply failures may have lost ACTIVE_DIGEST before the latch was published;
+  # recover only from well-formed ledger rows and never write sysfs here.
+  _ri_pkg="$(kv PACKAGE "$BACKUP")"
+  _ri_digest="$(kv DIGEST "$BACKUP")"
+  _ri_little="$(kv TARGET_LITTLE "$BACKUP")"
+  _ri_big="$(kv TARGET_BIG "$BACKUP")"
+  _ri_gpu="$(kv TARGET_GPU "$BACKUP")"
+
+  if [ -z "$_ri_digest" ] || [ "$_ri_digest" = NONE ]; then
+    _ri_line="$(awk -F, 'NR>1&&NF==13&&$4=="ROLLBACK_FAILED"{v=$0}END{print v}' "$OUTCOMES" 2>/dev/null)"
+    if [ -n "$_ri_line" ]; then
+      _ri_pkg="$(printf '%s\n' "$_ri_line" | awk -F, '{print $2}')"
+      _ri_digest="$(printf '%s\n' "$_ri_line" | awk -F, '{print $3}')"
+    fi
+  fi
+
+  if [ -n "$_ri_digest" ] && [ "$_ri_digest" != NONE ]; then
+    _ri_targets="$(awk -F, -v d="$_ri_digest" '
+      NR>1&&NF==13&&$3==d&&
+      $11~/^[0-9]+-[0-9]+$/&&$12~/^[0-9]+-[0-9]+$/&&$13~/^[0-9]+-[0-9]+$/ {
+        v=$11 "," $12 "," $13
+      }
+      END{print v}
+    ' "$OUTCOMES" 2>/dev/null)"
+    if [ -n "$_ri_targets" ]; then
+      _ri_little="$(printf '%s\n' "$_ri_targets" | cut -d, -f1)"
+      _ri_big="$(printf '%s\n' "$_ri_targets" | cut -d, -f2)"
+      _ri_gpu="$(printf '%s\n' "$_ri_targets" | cut -d, -f3)"
+    fi
+  fi
+
+  [ -n "$_ri_pkg" ] || _ri_pkg=NONE
+  [ -n "$_ri_digest" ] || _ri_digest=NONE
+  [ -n "$_ri_little" ] || _ri_little=NA
+  [ -n "$_ri_big" ] || _ri_big=NA
+  [ -n "$_ri_gpu" ] || _ri_gpu=NA
 }
 
 resolve_restore_failure(){
@@ -974,7 +1021,22 @@ case "$MODE" in
     # still equals DJAEGER's applied value.
     load_active
     if [ -r "$BACKUP" ]; then
-      if resolve_restore_failure LATCHED_RECHECK "$APPLIED_PACKAGE" "$ACTIVE_DIGEST" "$APPLIED_LITTLE" "$APPLIED_BIG" "$APPLIED_GPU"; then
+      _resolve_pkg="$APPLIED_PACKAGE"
+      _resolve_digest="$ACTIVE_DIGEST"
+      _resolve_little="$APPLIED_LITTLE"
+      _resolve_big="$APPLIED_BIG"
+      _resolve_gpu="$APPLIED_GPU"
+
+      if [ "$_resolve_digest" = NONE ] || [ "$_resolve_little" = NA ] || [ "$_resolve_big" = NA ] || [ "$_resolve_gpu" = NA ]; then
+        recover_latched_identity
+        [ "$_resolve_pkg" = NONE ] && _resolve_pkg="$_ri_pkg"
+        [ "$_resolve_digest" = NONE ] && _resolve_digest="$_ri_digest"
+        [ "$_resolve_little" = NA ] && _resolve_little="$_ri_little"
+        [ "$_resolve_big" = NA ] && _resolve_big="$_ri_big"
+        [ "$_resolve_gpu" = NA ] && _resolve_gpu="$_ri_gpu"
+      fi
+
+      if resolve_restore_failure LATCHED_RECHECK "$_resolve_pkg" "$_resolve_digest" "$_resolve_little" "$_resolve_big" "$_resolve_gpu"; then
         exit 0
       fi
       READBACK=RESTORE_FAILED
