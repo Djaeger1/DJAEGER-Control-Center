@@ -110,6 +110,10 @@ grep -Fqx 'MANUAL|com.example.game|Example App' <<<"$(run_ctl app-registry-list)
 # ---- Runtime / executor contract ----
 mkdir -p "$TEST_ROOT/runtime" "$TEST_ROOT/history" "$TEST_ROOT/policy" "$TEST_ROOT/config"
 NOW=$(date +%s)
+cat > "$TEST_ROOT/runtime/startup.env" <<EOF
+STARTUP_SCHEMA=DJAEGER_STARTUP_V2
+STARTUP_AT=$((NOW-1))
+EOF
 cat > "$TEST_ROOT/runtime/snapshot.env" <<EOF
 SCHEMA=DJAEGER_OBSERVER_V4
 EPOCH=$NOW
@@ -218,7 +222,9 @@ cat > "$TEST_ROOT/runtime/consensus.env" <<EOF
 CONSENSUS_STATE=PENDING_SHADOW
 UPDATED_AT=$NOW
 EOF
-cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+cat > "$TEST_ROOT/runtime/shadow_contextual_v4.env" <<EOF
+SHADOW_SCHEMA=DJAEGER_CONTEXTUAL_SHADOW_V4
+WORKER_VERSION=CONTEXTUAL_SHADOW_V4
 SHADOW_STATE=PASS
 CANDIDATE_DIGEST=abc123
 SHADOW_WINDOWS=80
@@ -238,11 +244,12 @@ BIG_MAX_KHZ=1800000
 GPU_MIN_HZ=300000000
 GPU_MAX_HZ=600000000
 EOF
-cat > "$TEST_ROOT/policy/approved.env" <<EOF
-SCHEMA=DJAEGER_EXEC_APPROVAL_V2
+cat > "$TEST_ROOT/policy/approved_contextual_v4.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_CONTEXTUAL_V4
 AT=$NOW
 EXPIRES_AT=$((NOW+180))
 EXECUTOR_ALLOWED=YES
+SHADOW_SOURCE=CONTEXTUAL_V4
 PACKAGE=sts.al
 INTENT=FRAME_FIRST_BALANCED
 ACTUATORS=ALL
@@ -275,7 +282,7 @@ grep -Fqx '600000000' "$GP/max_freq"
 
 # Approval churn must NOT abort a just-applied trial. The active digest is
 # pinned until outcome evidence exists; only device-truth safety can end it.
-rm -f "$TEST_ROOT/policy/approved.env"
+rm -f "$TEST_ROOT/policy/approved_contextual_v4.env"
 DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
 grep -Fqx 'EXECUTOR_STATE=APPLIED' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx 'EXECUTOR_REASON=ACTIVE_TRIAL_PINNED' "$TEST_ROOT/runtime/execution.env"
@@ -305,7 +312,9 @@ EOF
 
 # GPU-only ownership: CPU policies must remain byte-for-byte untouched while
 # the candidate trims only GPU. Rollback must likewise touch only GPU.
-cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+cat > "$TEST_ROOT/runtime/shadow_contextual_v4.env" <<EOF
+SHADOW_SCHEMA=DJAEGER_CONTEXTUAL_SHADOW_V4
+WORKER_VERSION=CONTEXTUAL_SHADOW_V4
 SHADOW_STATE=PASS
 CANDIDATE_DIGEST=gpuonly123
 SHADOW_WINDOWS=80
@@ -326,11 +335,12 @@ BIG_MAX_KHZ=1800000
 GPU_MIN_HZ=300000000
 GPU_MAX_HZ=600000000
 EOF
-cat > "$TEST_ROOT/policy/approved.env" <<EOF
-SCHEMA=DJAEGER_EXEC_APPROVAL_V2
+cat > "$TEST_ROOT/policy/approved_contextual_v4.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_CONTEXTUAL_V4
 AT=$NOW
 EXPIRES_AT=$((NOW+180))
 EXECUTOR_ALLOWED=YES
+SHADOW_SOURCE=CONTEXTUAL_V4
 PACKAGE=sts.al
 INTENT=POWER_EFFICIENCY
 ACTUATORS=GPU
@@ -353,7 +363,7 @@ grep -Fqx "$BP_MIN_BEFORE" "$BP/scaling_min_freq"
 grep -Fqx "$BP_MAX_BEFORE" "$BP/scaling_max_freq"
 grep -Fqx '600000000' "$GP/max_freq"
 
-rm -f "$TEST_ROOT/policy/approved.env"
+rm -f "$TEST_ROOT/policy/approved_contextual_v4.env"
 DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" once
 grep -Fqx 'EXECUTOR_STATE=APPLIED' "$TEST_ROOT/runtime/execution.env"
 grep -Fqx 'EXECUTOR_REASON=ACTIVE_TRIAL_PINNED' "$TEST_ROOT/runtime/execution.env"
@@ -387,7 +397,9 @@ EOF
 # Qualcomm/MIUI may legitimately relax a raised LITTLE min_freq back toward
 # the pre-transaction floor while preserving the exact max_freq. That bounded
 # power-saving relaxation must not be misclassified as external ownership loss.
-cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+cat > "$TEST_ROOT/runtime/shadow_contextual_v4.env" <<EOF
+SHADOW_SCHEMA=DJAEGER_CONTEXTUAL_SHADOW_V4
+WORKER_VERSION=CONTEXTUAL_SHADOW_V4
 SHADOW_STATE=PASS
 CANDIDATE_DIGEST=nativerelax123
 SHADOW_WINDOWS=80
@@ -408,11 +420,12 @@ BIG_MAX_KHZ=2400000
 GPU_MIN_HZ=300000000
 GPU_MAX_HZ=900000000
 EOF
-cat > "$TEST_ROOT/policy/approved.env" <<EOF
-SCHEMA=DJAEGER_EXEC_APPROVAL_V2
+cat > "$TEST_ROOT/policy/approved_contextual_v4.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_CONTEXTUAL_V4
 AT=$NOW
 EXPIRES_AT=$((NOW+180))
 EXECUTOR_ALLOWED=YES
+SHADOW_SOURCE=CONTEXTUAL_V4
 PACKAGE=sts.al
 INTENT=FRAME_FIRST_BALANCED
 ACTUATORS=ALL
@@ -457,7 +470,9 @@ SOURCE=TEST
 EOF
 
 # Restore full-policy fixture for the existing drift regression.
-cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+cat > "$TEST_ROOT/runtime/shadow_contextual_v4.env" <<EOF
+SHADOW_SCHEMA=DJAEGER_CONTEXTUAL_SHADOW_V4
+WORKER_VERSION=CONTEXTUAL_SHADOW_V4
 SHADOW_STATE=PASS
 CANDIDATE_DIGEST=abc123
 SHADOW_WINDOWS=80
@@ -482,11 +497,12 @@ EOF
 # Re-apply and prove a later external SYSFS override is not fought.
 # Once a verified transaction is changed by another kernel/vendor owner,
 # DJAEGER relinquishes ownership and leaves the external value untouched.
-cat > "$TEST_ROOT/policy/approved.env" <<EOF
-SCHEMA=DJAEGER_EXEC_APPROVAL_V2
+cat > "$TEST_ROOT/policy/approved_contextual_v4.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_CONTEXTUAL_V4
 AT=$NOW
 EXPIRES_AT=$((NOW+180))
 EXECUTOR_ALLOWED=YES
+SHADOW_SOURCE=CONTEXTUAL_V4
 PACKAGE=sts.al
 INTENT=FRAME_FIRST_BALANCED
 CANDIDATE_DIGEST=abc123
@@ -529,7 +545,9 @@ printf '900000\n' > "$BP/scaling_min_freq"; printf '2400000\n' > "$BP/scaling_ma
 printf '300000000\n' > "$GP/min_freq"; printf '900000000\n' > "$GP/max_freq"
 chmod 666 "$LP/"* "$BP/"* "$GP/"*
 
-cat > "$TEST_ROOT/runtime/shadow.env" <<EOF
+cat > "$TEST_ROOT/runtime/shadow_contextual_v4.env" <<EOF
+SHADOW_SCHEMA=DJAEGER_CONTEXTUAL_SHADOW_V4
+WORKER_VERSION=CONTEXTUAL_SHADOW_V4
 SHADOW_STATE=PASS
 CANDIDATE_DIGEST=cleanuporder123
 SHADOW_WINDOWS=80
@@ -550,11 +568,12 @@ BIG_MAX_KHZ=1800000
 GPU_MIN_HZ=300000000
 GPU_MAX_HZ=600000000
 EOF
-cat > "$TEST_ROOT/policy/approved.env" <<EOF
-SCHEMA=DJAEGER_EXEC_APPROVAL_V2
+cat > "$TEST_ROOT/policy/approved_contextual_v4.env" <<EOF
+SCHEMA=DJAEGER_EXEC_APPROVAL_CONTEXTUAL_V4
 AT=$NOW
 EXPIRES_AT=$((NOW+180))
 EXECUTOR_ALLOWED=YES
+SHADOW_SOURCE=CONTEXTUAL_V4
 PACKAGE=sts.al
 INTENT=FRAME_FIRST_BALANCED
 ACTUATORS=ALL
