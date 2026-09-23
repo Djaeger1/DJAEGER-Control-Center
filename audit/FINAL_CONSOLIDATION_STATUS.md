@@ -7,7 +7,7 @@ Runtime quarantine proof head: `d8d7cdfb5590ac2f64f97ab960c3fb2844bd1e05`
 
 ## Contract
 
-DJAEGER AI Gaming only. Do not mix DJAEGER Work / Hermes Work.
+DJAEGER AI Gaming only. Do not mix foreign content-worker project / foreign content-worker project.
 
 Decision hierarchy:
 1. Gemini primary / highest brain.
@@ -90,7 +90,7 @@ Reconstructed, audited but NOT active:
   - PERSIST_REJECT_STRATEGY_MULTI
   - MULTIACTUATOR_PERSIST_NORMALIZE
 
-Credential migration remains isolated from DJAEGER Work / Hermes Work and preserves the allowlisted Gemini/Hermes credential fields without publishing secrets.
+Credential migration remains isolated from foreign content-worker project / foreign content-worker project and preserves the allowlisted Gemini/Hermes credential fields without publishing secrets.
 
 No final-consolidation commit triggered a workflow/build.
 
@@ -166,7 +166,7 @@ Final module/APK packaging is allowed only after all of these are true:
 - GPU live-range unit contract matches the APK
 - shell syntax/tests pass
 - Android tests/build pass
-- no DJAEGER Work/Hermes Work contamination
+- no foreign content-worker project contamination
 - no workflow/build is used as a substitute for real-phone validation
 
 Until then, the installed live runtime remains the strongest proven state and must not be replaced by an incomplete build.
