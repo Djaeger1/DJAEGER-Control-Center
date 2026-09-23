@@ -1,0 +1,117 @@
+name: djaeger-remote-root-module
+
+on:
+  push:
+    branches:
+      - prototype/djaeger-remote-boot-agent
+    paths:
+      - "prototype/android-rdc-mvp/**"
+      - "prototype/djaeger-remote-module/**"
+      - ".github/workflows/djaeger-remote-root-module.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: prototype/djaeger-remote-boot-agent
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build single-file Android RDC agent
+        run: |
+          set -euxo pipefail
+          rm -rf .tmp-rdc-build
+          mkdir -p .tmp-rdc-build
+          cd .tmp-rdc-build
+          npm init -y
+          npm install --no-audit --no-fund @supabase/supabase-js@2.89.0 esbuild@0.27.2
+          npx esbuild ../prototype/android-rdc-mvp/agent.mjs \
+            --bundle \
+            --platform=node \
+            --format=esm \
+            --target=node18 \
+            --outfile=../djaeger-rdc-agent.mjs
+          cd ..
+          grep -q "transport_broadcast_v1" djaeger-rdc-agent.mjs
+          grep -q "PAIRING_REQUIRED" djaeger-rdc-agent.mjs
+          grep -q "channel health watchdog restart" djaeger-rdc-agent.mjs
+
+      - name: Publish generated agent to branch
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts/android-rdc-mvp
+          cp djaeger-rdc-agent.mjs artifacts/android-rdc-mvp/djaeger-rdc-agent.mjs
+          sha256sum artifacts/android-rdc-mvp/djaeger-rdc-agent.mjs > artifacts/android-rdc-mvp/SHA256SUMS.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/android-rdc-mvp
+          if ! git diff --cached --quiet; then
+            git commit -m "build(remote-agent): publish Android root bridge [skip ci]"
+            git push origin HEAD:prototype/djaeger-remote-boot-agent
+          fi
+
+      - name: Download and verify pinned Android ARM64 Node
+        run: |
+          set -euxo pipefail
+          URL="https://github.com/Towartz/nodejs-arm/releases/download/node-android-v26.7.0-run165/node-v26.7.0-android-arm64-v8a.zip"
+          EXPECTED="5f815af78861ebbb7850e2e27d393b6f6f6cc55225f6d008ffe955f409f73ed3"
+          curl -fL --retry 3 --retry-delay 2 "$URL" -o node-android.zip
+          ACTUAL="$(sha256sum node-android.zip | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECTED"
+          rm -rf node-unpack
+          mkdir node-unpack
+          unzip -q node-android.zip node -d node-unpack
+          chmod 0755 node-unpack/node
+          file node-unpack/node
+          readelf -h node-unpack/node | grep -q "AArch64"
+
+      - name: Assemble installable module
+        run: |
+          set -euxo pipefail
+          rm -rf module-stage
+          cp -a prototype/djaeger-remote-module module-stage
+          mkdir -p module-stage/runtime module-stage/agent module-stage/state
+          cp node-unpack/node module-stage/runtime/node
+          cp djaeger-rdc-agent.mjs module-stage/agent/djaeger-rdc-agent.mjs
+
+          chmod 0755 \
+            module-stage/service.sh \
+            module-stage/post-fs-data.sh \
+            module-stage/action.sh \
+            module-stage/uninstall.sh \
+            module-stage/customize.sh \
+            module-stage/bin/djaeger-remote-launcher.sh \
+            module-stage/runtime/node
+          chmod 0644 module-stage/module.prop module-stage/config.env module-stage/agent/djaeger-rdc-agent.mjs
+
+          test "$(grep '^id=' module-stage/module.prop)" = "id=djaeger_remote_boot"
+          test "$(grep '^version=' module-stage/module.prop)" = "version=1.0.0"
+          test -x module-stage/runtime/node
+          test -f module-stage/agent/djaeger-rdc-agent.mjs
+
+          sha256sum module-stage/runtime/node > NODE-SHA256.txt
+          sha256sum module-stage/agent/djaeger-rdc-agent.mjs > AGENT-SHA256.txt
+
+          (cd module-stage && zip -qr ../DJAEGER-Remote-Root-Bridge-v1.0.0.zip .)
+          unzip -t DJAEGER-Remote-Root-Bridge-v1.0.0.zip
+          sha256sum DJAEGER-Remote-Root-Bridge-v1.0.0.zip > MODULE-SHA256.txt
+
+      - name: Upload final module
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Remote-Root-Bridge-v1.0.0
+          path: |
+            DJAEGER-Remote-Root-Bridge-v1.0.0.zip
+            MODULE-SHA256.txt
+            NODE-SHA256.txt
+            AGENT-SHA256.txt
+          if-no-files-found: error
