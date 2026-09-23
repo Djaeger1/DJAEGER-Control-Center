@@ -21,6 +21,7 @@ HL="$ROOT/policy/hermes_local_vote.env"
 HSTATE="$ROOT/runtime/hermes_adapter.env"
 OUT="$ROOT/policy/candidate.env"
 STATE="$ROOT/runtime/consensus.env"
+SHADOW="$ROOT/runtime/shadow.env"
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 
@@ -184,7 +185,20 @@ while true; do
       echo "GPU_MAX_HZ=$GMAX"
     } > "$_t"
     chmod 600 "$_t"; mv -f "$_t" "$OUT"
-    CSTATE=PENDING_SHADOW
+
+    # A matching shadow result is authoritative for this exact digest.
+    # Do not keep reporting PENDING after the evaluator has already decided.
+    _shadow_digest="$(kv CANDIDATE_DIGEST "$SHADOW")"
+    _shadow_state="$(kv SHADOW_STATE "$SHADOW")"
+    if [ "$_shadow_digest" = "$sd" ]; then
+      case "$_shadow_state" in
+        PASS) CSTATE=SHADOW_PASS ;;
+        REJECT) CSTATE=SHADOW_REJECTED ;;
+        *) CSTATE=PENDING_SHADOW ;;
+      esac
+    else
+      CSTATE=PENDING_SHADOW
+    fi
   else
     rm -f "$OUT"
   fi
@@ -196,6 +210,9 @@ while true; do
     echo "GEMINI_STATE=$GS"
     echo "HERMES_MODE=$HM"
     echo "HERMES_LOCAL_VOTE=$HV"
+    echo "SHADOW_STATE=$(kv SHADOW_STATE "$SHADOW")"
+    echo "SHADOW_REASON=$(kv SHADOW_REASON "$SHADOW")"
+    echo "SHADOW_DIGEST=$(kv CANDIDATE_DIGEST "$SHADOW")"
     echo "OBJECTIVE=HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD"
     echo "UPDATED_AT=$(date +%s)"
   } > "$_t"
