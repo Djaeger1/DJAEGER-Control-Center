@@ -21,6 +21,12 @@ GUARD="$ROOT/config/hermes_thought_teacher_guard.env"
 WORKER_STATE="$ROOT/runtime/hermes_thought_worker_state.env"
 ERRLOG="$ROOT/runtime/hermes_thought_worker.err"
 WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4
+# DJAEGER_THOUGHT_KNOWLEDGE_INIT_V1
+mkdir -p "$ROOT/history" "$ROOT/runtime" 2>/dev/null
+if [ ! -s "$KNOW" ]; then
+  printf 'fingerprint|at|reason|text\n' > "$KNOW"
+  chmod 600 "$KNOW" 2>/dev/null
+fi
 exec 2>>"$ERRLOG"
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
