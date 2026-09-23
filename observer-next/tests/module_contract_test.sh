@@ -911,7 +911,7 @@ s=open(sys.argv[1],encoding='utf-8').read()
 http=s.index('[ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"')
 guard=s.index('{ echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$"', http)
 assert http < guard, "failed Hermes Cloud request must not arm 900s success guard"
-cloud=s.index('if cloud_takeover; then', s.index('ONE HERMES Cloud is the preferred deputy cognition'))
+cloud=s.index('if cloud_takeover; then', s.index('Gemini unavailable outside the local comfort path'))
 local=s.index('if local_history_takeover; then', cloud)
 assert cloud < local, "Hermes Cloud must precede local-history fallback when Gemini is unavailable"
 PY
