@@ -328,6 +328,8 @@ apply_all(){
     echo "TARGET_LITTLE=${LMIN}-${LMAX}"
     echo "TARGET_BIG=${BMIN}-${BMAX}"
     echo "TARGET_GPU=${GMIN}-${GMAX}"
+    echo "BASELINE_SKIN_C=$(kv SKIN_TEMP_C "$SNAP")"
+    echo "BASELINE_POWER_MW=$(kv POWER_MW "$SNAP")"
     echo "LITTLE_PATH=$LP"; echo "LITTLE_MIN=$(readv "$LP/scaling_min_freq")"; echo "LITTLE_MAX=$(readv "$LP/scaling_max_freq")"
     echo "BIG_PATH=$BP"; echo "BIG_MIN=$(readv "$BP/scaling_min_freq")"; echo "BIG_MAX=$(readv "$BP/scaling_max_freq")"
     echo "GPU_PATH=$GP"; echo "GPU_MIN=$(readv "$GP/min_freq")"; echo "GPU_MAX=$(readv "$GP/max_freq")"
@@ -352,6 +354,8 @@ apply_all(){
     echo "DIGEST=$ACTIVE_DIGEST"
     echo "BAD_COUNT=0"
     echo "SAMPLES=0"
+    echo "BASELINE_SKIN_C=$(kv BASELINE_SKIN_C "$BACKUP")"
+    echo "BASELINE_POWER_MW=$(kv BASELINE_POWER_MW "$BACKUP")"
   } > "$_mtmp"; chmod 600 "$_mtmp"; mv -f "$_mtmp" "$MONITOR"
   return 0
 }
@@ -567,19 +571,26 @@ post_apply_monitor(){
   [ -r "$LEARN" ] || return 0
   [ "$(kv PACKAGE "$LEARN")" = "$APPLIED_PACKAGE" ] || return 0
   _fps="$(kv FPS_EST "$SNAP")"; _jank="$(kv JANK_PCT "$SNAP")"; _p95="$(kv P95_MS "$SNAP")"; _power="$(kv POWER_MW "$SNAP")"
+  _skin="$(kv SKIN_TEMP_C "$SNAP")"
+  _comfort_skin0="$(kv BASELINE_SKIN_C "$MONITOR")"
+  _comfort_power0="$(kv BASELINE_POWER_MW "$MONITOR")"
   _bfps="$(kv FPS_P50 "$LEARN")"; _bjank="$(kv JANK_P95 "$LEARN")"; _bp95="$(kv FRAME_P95_P95_MS "$LEARN")"
   _bpower50="$(kv POWER_P50_MW "$LEARN")"; _bpower95="$(kv POWER_P95_MW "$LEARN")"
   _intent="$APPLIED_INTENT"; [ -n "$_intent" ] || _intent=FRAME_FIRST_BALANCED
   _bad=0
-  awk -v intent="$_intent" -v f="$_fps" -v bf="$_bfps" -v j="$_jank" -v bj="$_bjank" -v p="$_p95" -v bp="$_bp95" -v w="$_power" -v p50="$_bpower50" -v p95="$_bpower95" 'BEGIN{
+  awk -v intent="$_intent" -v f="$_fps" -v bf="$_bfps" -v j="$_jank" -v bj="$_bjank" -v p="$_p95" -v bp="$_bp95" -v w="$_power" -v p50="$_bpower50" -v p95="$_bpower95" -v skin="$_skin" -v skin0="$_comfort_skin0" 'BEGIN{
     if(f!~/^[0-9]+([.][0-9]+)?$/ || p!~/^[0-9]+([.][0-9]+)?$/ || bf<=0 || bp<=0) exit 2;
     bad=(f<bf*0.95 || p>bp*1.10);
     if(j~/^[0-9]+([.][0-9]+)?$/ && bj>0 && j>bj*1.20+1) bad=1;
+    comfort=(skin0~/^[0-9]+([.][0-9]+)?$/ && skin0>=42 && intent!="FRAME_RECOVERY");
     if(w~/^[0-9]+([.][0-9]+)?$/){
-      if(intent=="POWER_EFFICIENCY" && p50>0 && w>p50*1.10) bad=1;
+      if(intent=="POWER_EFFICIENCY" && p50>0 && w>p50*(comfort?1.05:1.10)) bad=1;
       else if(intent=="FRAME_RECOVERY" && p95>0 && w>p95*1.10) bad=1;
       else if(intent!="FRAME_RECOVERY" && intent!="POWER_EFFICIENCY" && p95>0 && w>p95*1.05) bad=1;
     }
+    # Human comfort trial: tolerate sensor noise/thermal inertia, but reject a
+    # sustained meaningful rise above the pre-apply skin temperature.
+    if(comfort && skin~/^[0-9]+([.][0-9]+)?$/ && skin>skin0+1.0) bad=1;
     exit bad?1:0
   }'
   _rc=$?
@@ -591,12 +602,19 @@ post_apply_monitor(){
     echo "DIGEST=$ACTIVE_DIGEST"
     echo "BAD_COUNT=$MONITOR_BAD_COUNT"
     echo "SAMPLES=$MONITOR_SAMPLES"
+    echo "BASELINE_SKIN_C=$_comfort_skin0"
+    echo "BASELINE_POWER_MW=$_comfort_power0"
+    echo "CURRENT_SKIN_C=$_skin"
     echo "UPDATED_AT=$_now"
   } > "$_mtmp"; chmod 600 "$_mtmp"; mv -f "$_mtmp" "$MONITOR"
   if [ "$MONITOR_SAMPLES" -eq 5 ] && [ "$MONITOR_BAD_COUNT" -eq 0 ]; then
     _kept_little="$APPLIED_LITTLE"
     [ "${ACTIVE_NATIVE_RELAXED:-0}" -eq 1 ] 2>/dev/null && _kept_little="$ACTIVE_EFFECTIVE_LITTLE"
-    record_outcome KEPT "POST_APPLY_STABLE_${APPLIED_INTENT}" "$APPLIED_PACKAGE" "$ACTIVE_DIGEST" "$_kept_little" "$APPLIED_BIG" "$APPLIED_GPU"
+    _keep_reason="POST_APPLY_STABLE_${APPLIED_INTENT}"
+    if awk -v s0="$_comfort_skin0" -v s="$_skin" 'BEGIN{exit !(s0~/^[0-9]+([.][0-9]+)?$/&&s0>=42&&s~/^[0-9]+([.][0-9]+)?$/&&s<=s0+0.5)}'; then
+      _keep_reason="POST_APPLY_HUMAN_COMFORT_STABLE_${APPLIED_INTENT}"
+    fi
+    record_outcome KEPT "$_keep_reason" "$APPLIED_PACKAGE" "$ACTIVE_DIGEST" "$_kept_little" "$APPLIED_BIG" "$APPLIED_GPU"
   fi
   [ "$MONITOR_BAD_COUNT" -lt 3 ] || return 1
   return 0
