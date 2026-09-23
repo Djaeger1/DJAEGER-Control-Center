@@ -91,27 +91,53 @@ LEARN / CORRECT
 REPEAT
 ```
 
-## 4. CURRENT CANONICAL ARTIFACT PAIR — v1.1.7 ADAPTIVEFIX
+## 4. CURRENT CANONICAL ARTIFACT PAIR — DJAEGER GAMING v1.1.8 V3.4 FINAL
 
-This is the **current canonical artifact pair recorded by project memory** as of 2026-09-23. It is an artifact-level identity, **not** proof that this exact pair is currently installed and live-verified on the phone.
+This is the **current canonical built artifact pair** as of 2026-09-23. It is build/offline verified, **not yet post-install live verified** on the phone.
 
 Canonical pair:
-- APK: `DJAEGER-AI-Adaptive-v1.1.7-adaptivefix-FINAL.apk`
-- APK SHA-256: `d4792eeb3fa04e9ca9a9cf35a423ee0a8f22e1bdfad39e219dbcc3c08ae92be0`
-- Module: `DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip`
-- Module SHA-256: `be21b78431e92909ff7bc78a9ffd9d07ab6c78bd6d83f38fe7a4fe22392ca6e2`
+- APK: `DJAEGER-GAMING-v1.1.8-V3.4-FINAL.apk`
+- APK version: `1.1.8-v3.4-final`
+- APK versionCode: `112`
+- APK SHA-256: `97bc32bb68c93fa8ac6527a86bd18bd0a1b4752b13b0a65192f6fc3be03cca37`
+- Module: `DJAEGER-GAMING-Module-v1.1.8-V3.4-FINAL.zip`
+- Module versionCode: `211`
+- Module SHA-256: `7c7fcd05682b7543f9668c7b58c698973cba8a47b5f9127fa677bf92b683a5d8`
+- Build branch: `djaeger-gaming-v3.4-final-consolidation`
+- Build source commit: `fb2c41009e20416deff88523c84fe02072b33fb4`
+- GitHub Actions final-pair run: `35873269162`
+- Artifact ID: `10757025416`
+- Artifact archive digest: `sha256:4464b8d2ada6d9d35b8be6f70a3f27d2b46a6967bfcd2267db8423abb5d05635`
 
-Important state:
-- This pair exists as built project artifacts and has a matching checksum manifest in the ChatGPT Library.
-- The final APK was signed with an **ephemeral build key**.
-- Therefore direct update compatibility over a previously installed APK is **not guaranteed** unless the signer matches.
-- The pair must **not** be called live-verified merely because the artifacts exist or the build passed.
-- Post-install validation on the actual phone is still required before `LATEST_DEVICE_VERIFIED_PAIR` can be populated.
+Verified build properties:
+- Source isolation: PASS
+- Shell syntax: PASS
+- V3.4 lifecycle / Shadow / memory gates: PASS
+- Module contract + fake-sysfs regressions: PASS
+- Android unit tests + release build: PASS
+- APK package identity: `com.djaeger.observer` / VC112 / `1.1.8-v3.4-final`
+- Launcher label: `DJAEGER GAMING`
+- APK Signature Scheme v2: PASS
+- APK Signature Scheme v3: PASS
+- Signer certificate SHA-256: `bb3f854a7763b5f9a5c87d279e3cbf1c538b03d9ab120f6b375a97c8d06b0269`
+- Thought worker: `ONE_HERMES_THOUGHT_V3_4`
+- Persistent memory ceiling: `104857600` bytes (100 MiB)
+- Published execution range source: `LIVE_POLICY_BOUNDS`
+- Cloud hardware authority: NONE
+- Sysfs authority: AI Agent internal executor only
+
+Signing caveat:
+- This final APK uses a **new release signer** because no persistent prior private signing key was available.
+- Therefore drop-in Android update over an older installed APK is **not guaranteed**.
+- Do not confuse signer compatibility with module/runtime compatibility; module state/credential recovery is separate.
 
 Hard rule:
 - **BUILD SUCCESS ≠ DEVICE SUCCESS**
 - **ARTIFACT VALID ≠ INSTALLED RUNTIME VALID**
-- Require post-install evidence before promoting a pair to `VERIFIED_LIVE`.
+- Do not promote this pair to `VERIFIED_LIVE` until post-install real-device evidence passes.
+
+Historical note:
+- v1.1.7 adaptivefix (module 210 / app 111) is superseded as the canonical artifact pair, but remains historical evidence and may still be the currently installed package until device identity is verified.
 
 ## 5. ADAPTIVE ENGINE CONTRACT
 
@@ -186,12 +212,19 @@ MEMORY_FILE=CHATGPT.md
 MEMORY_REPOSITORY=Djaeger1/DJAEGER-Control-Center
 MEMORY_BRANCH=main
 
-LATEST_CANONICAL_ARTIFACT_PAIR=v1.1.7-adaptivefix-FINAL
-LATEST_CANONICAL_APK=DJAEGER-AI-Adaptive-v1.1.7-adaptivefix-FINAL.apk
-LATEST_CANONICAL_APK_SHA256=d4792eeb3fa04e9ca9a9cf35a423ee0a8f22e1bdfad39e219dbcc3c08ae92be0
-LATEST_CANONICAL_MODULE=DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip
-LATEST_CANONICAL_MODULE_SHA256=be21b78431e92909ff7bc78a9ffd9d07ab6c78bd6d83f38fe7a4fe22392ca6e2
-CANONICAL_ARTIFACT_STATUS=VERIFIED_ARTIFACT_IDENTITY
+LATEST_CANONICAL_ARTIFACT_PAIR=v1.1.8-v3.4-final
+LATEST_CANONICAL_APK=DJAEGER-GAMING-v1.1.8-V3.4-FINAL.apk
+LATEST_CANONICAL_APK_VERSION_CODE=112
+LATEST_CANONICAL_APK_SHA256=97bc32bb68c93fa8ac6527a86bd18bd0a1b4752b13b0a65192f6fc3be03cca37
+LATEST_CANONICAL_APK_SIGNER_SHA256=bb3f854a7763b5f9a5c87d279e3cbf1c538b03d9ab120f6b375a97c8d06b0269
+LATEST_CANONICAL_MODULE=DJAEGER-GAMING-Module-v1.1.8-V3.4-FINAL.zip
+LATEST_CANONICAL_MODULE_VERSION_CODE=211
+LATEST_CANONICAL_MODULE_SHA256=7c7fcd05682b7543f9668c7b58c698973cba8a47b5f9127fa677bf92b683a5d8
+LATEST_CANONICAL_BUILD_BRANCH=djaeger-gaming-v3.4-final-consolidation
+LATEST_CANONICAL_BUILD_COMMIT=fb2c41009e20416deff88523c84fe02072b33fb4
+LATEST_CANONICAL_BUILD_RUN=35873269162
+LATEST_CANONICAL_ARTIFACT_ID=10757025416
+CANONICAL_ARTIFACT_STATUS=BUILD_OFFLINE_VERIFIED_NOT_LIVE
 
 LATEST_DEVICE_VERIFIED_PAIR=UNKNOWN
 LATEST_DEVICE_VERIFIED_AT=UNKNOWN
@@ -214,24 +247,22 @@ Interpretation:
 
 ## 11. ACTIVE BLOCKERS
 
-- V3.4 GAME live runtime is verified PASS, but the exact currently installed APK/module package identity is not yet reconciled.
-- The V3.4 runtime patches proven via terminal/live testing are not yet fully consolidated into the canonical source tree.
-- The final combined source/lifecycle audit is now PASS (run 35871582592) and V3.4 real-device runtime verification was already PASS.
-- The next artifact may now be built as exactly one matched module + APK pair, but it must not be called live-verified until post-install device evidence passes.
-- The canonical artifact pair **is recorded**; do not list it as unknown unless newer artifact evidence supersedes it.
+- The final source is consolidated on branch `djaeger-gaming-v3.4-final-consolidation` and the final pair build is SUCCESS.
+- The exact currently installed APK/module pair on the phone is still not reconciled.
+- The new v1.1.8 V3.4 final pair is **build/offline verified only**; post-install real-device validation is still required.
+- APK signer continuity with the older installed app is not guaranteed because the final APK has a new signer.
+- Do not mark `LATEST_DEVICE_VERIFIED_PAIR` as v1.1.8 until actual device evidence proves the new pair is installed and healthy.
 
 ## 12. NEXT ACTION
 
 On the next DJAEGER GAMING work session:
-- Read this file **before answering version/state questions**.
-- Start from the recovered V3.4 live checkpoint; do **not** restart from v1.1.7 packaging work.
-- Use branch `djaeger-gaming-v3.4-final-consolidation` at or after audit commit `2d6dc1d1183dbab5ed47451425f73f1f1249b5f4`.
-- Determine the exact source version identity from module/APK metadata; do not invent a version number.
-- Build **exactly one final matched module + APK pair** from the audited source.
-- Verify package identity, hashes, signer, and CI before presenting the pair.
-- Do not call the new pair live-verified until post-install real-device evidence passes.
-- Separately reconcile the exact currently installed APK/module package identity when evidence is available.
-
+- Read this file before answering version/state questions.
+- Treat `DJAEGER GAMING v1.1.8 V3.4 FINAL` (module 211 / app 112) as the canonical **artifact pair**.
+- Do not rebuild the pair unless a verified defect requires it.
+- Next unresolved gate is **post-install real-device validation** of this exact pair.
+- Before any APK replacement, account for the new signer; do not assume update-in-place compatibility.
+- After installation evidence exists, verify exact package/module identity, V3.4 worker, singleton lifecycle, Control Center handshake, live CPU/GPU range publication, 100 MiB memory, Shadow/executor safety state, and credential restoration.
+- Only after those checks pass may `LATEST_DEVICE_VERIFIED_PAIR` be promoted to v1.1.8 V3.4 FINAL.
 
 ## 14. NEW CHAT / CHAT-LIMIT BOOTSTRAP
 
@@ -262,6 +293,19 @@ User fallback:
 
 
 ## 13. CHANGELOG
+### 2026-09-23 — DJAEGER GAMING v1.1.8 V3.4 FINAL pair built
+- Final identity: module VC211 / APK VC112 / version `1.1.8-v3.4-final`.
+- Canonical files: `DJAEGER-GAMING-Module-v1.1.8-V3.4-FINAL.zip` and `DJAEGER-GAMING-v1.1.8-V3.4-FINAL.apk`.
+- Final source commit: `fb2c41009e20416deff88523c84fe02072b33fb4`.
+- Final-pair workflow run `35873269162`: SUCCESS.
+- Artifact ID `10757025416`; archive digest `sha256:4464b8d2ada6d9d35b8be6f70a3f27d2b46a6967bfcd2267db8423abb5d05635`.
+- APK SHA-256: `97bc32bb68c93fa8ac6527a86bd18bd0a1b4752b13b0a65192f6fc3be03cca37`.
+- Module SHA-256: `7c7fcd05682b7543f9668c7b58c698973cba8a47b5f9127fa677bf92b683a5d8`.
+- APK signer SHA-256: `bb3f854a7763b5f9a5c87d279e3cbf1c538b03d9ab120f6b375a97c8d06b0269`; v2/v3 verification PASS.
+- Signing continuity warning: new signer; drop-in update over older APK is not guaranteed.
+- Pair remains build/offline verified, not live-device verified.
+- v1.1.7 adaptivefix is superseded as canonical artifact identity.
+
 ### 2026-09-23 — V3.4 final consolidation audit PASS
 - Preserved detached final source commit `8183a91c088721a14e28bcf82e2009a2f67b737f` on branch `djaeger-gaming-v3.4-final-consolidation`.
 - Added audit-only CI gate; no APK/module packaging was performed by the audit workflow.
