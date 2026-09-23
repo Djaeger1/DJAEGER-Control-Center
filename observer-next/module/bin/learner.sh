@@ -6,6 +6,8 @@ if [ -r "$BIN_DIR/singleton.sh" ]; then
   djaeger_singleton_claim learner
 fi
 HISTORY="$ROOT/history/telemetry.csv"
+ANALYSIS_HISTORY="$HISTORY"
+LEARN_WINDOW_BYTES=8388608
 SNAP="$ROOT/runtime/snapshot.env"
 OUT="$ROOT/history/learned_envelope.env"
 OUTCOMES="$ROOT/history/outcomes.csv"
@@ -15,9 +17,22 @@ LAST_PKG=""
 LAST_N=0
 LAST_OUTCOME_N=0
 
+prepare_analysis_history() {
+  ANALYSIS_HISTORY="$HISTORY"
+  _bytes=$(wc -c < "$HISTORY" 2>/dev/null)
+  case "$_bytes" in ''|*[!0-9]*) _bytes=0;; esac
+  if [ "$_bytes" -gt "$LEARN_WINDOW_BYTES" ]; then
+    ANALYSIS_HISTORY="$TMPBASE.history"
+    rm -f "$ANALYSIS_HISTORY"
+    { head -n1 "$HISTORY"; tail -c "$LEARN_WINDOW_BYTES" "$HISTORY" | sed '1d'; } > "$ANALYSIS_HISTORY"
+  fi
+}
+
+trap 'rm -f "$TMPBASE.history" "$TMPBASE".i.* "$TMPBASE".f.*' EXIT HUP INT TERM
+
 qcol() {
   pkg="$1"; col="$2"; pct="$3"; tmp="$TMPBASE.i.$col.$pct"
-  awk -F, -v p="$pkg" -v c="$col" 'NR>1 && $3==p && $23=="STOCK_BASELINE" && $c ~ /^[0-9]+$/ && $c>0 {print $c}' "$HISTORY" 2>/dev/null | sort -n > "$tmp"
+  awk -F, -v p="$pkg" -v c="$col" 'NR>1 && $3==p && $23=="STOCK_BASELINE" && $c ~ /^[0-9]+$/ && $c>0 {print $c}' "$ANALYSIS_HISTORY" 2>/dev/null | sort -n > "$tmp"
   n=$(wc -l < "$tmp" 2>/dev/null)
   case "$n" in ''|0) rm -f "$tmp"; echo 0; return;; esac
   idx=$(( (n*pct + 99) / 100 ))
@@ -32,7 +47,7 @@ qframe() {
   awk -F, -v p="$pkg" -v c="$col" '
     NR>1 && $3==p && $23=="STOCK_BASELINE" && $20+0>=20 && $21 ~ /^[0-9]+$/ && !seen[$21]++ &&
     $c ~ /^[0-9]+([.][0-9]+)?$/ && $c>=0 {print $c}
-  ' "$HISTORY" 2>/dev/null | sort -n > "$tmp"
+  ' "$ANALYSIS_HISTORY" 2>/dev/null | sort -n > "$tmp"
   n=$(wc -l < "$tmp" 2>/dev/null)
   case "$n" in ''|0) rm -f "$tmp"; echo 0; return;; esac
   idx=$(( (n*pct + 99) / 100 ))
@@ -58,7 +73,8 @@ while true; do
     [ -n "$PKG" ] || { sleep 30; continue; }
   fi
 
-  N=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+  prepare_analysis_history
+  N=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"{n++}END{print n+0}' "$ANALYSIS_HISTORY" 2>/dev/null)
   [ "$N" -ge 120 ] 2>/dev/null || { sleep 30; continue; }
 
   OUTN=0
@@ -74,7 +90,7 @@ while true; do
     continue
   fi
 
-  FN=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"&&$20+0>=20&&$21~/^[0-9]+$/&&!seen[$21]++{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
+  FN=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"&&$20+0>=20&&$21~/^[0-9]+$/&&!seen[$21]++{n++}END{print n+0}' "$ANALYSIS_HISTORY" 2>/dev/null)
 
   L05=$(qcol "$PKG" 7 5); L95=$(qcol "$PKG" 7 95)
   B05=$(qcol "$PKG" 8 5); B95=$(qcol "$PKG" 8 95)
