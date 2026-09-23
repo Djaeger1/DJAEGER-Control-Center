@@ -99,6 +99,9 @@ local_progress_class(){
         else
           _pc=THERMAL_STEADY
         fi
+      elif [ "$_prev_reason" = "$_reason" ]; then
+        _prev_pc=$(kv PROGRESS_CLASS "$PROGRESS"); [ -n "$_prev_pc" ] || _prev_pc=THERMAL_HOLD_ENTERED
+        _pc="$_prev_pc"
       else
         _pc=THERMAL_HOLD_ENTERED
       fi
@@ -112,7 +115,7 @@ local_progress_class(){
   esac
 
   if [ "$_prev_reason" != "$_reason" ] || [ "$_age" -ge 45 ] 2>/dev/null; then
-    _pt="$PROGRESS.tmp.$"
+    _pt="$PROGRESS.tmp.$$"
     {
       echo "AT=$_now"
       echo "REASON=$(clean "$_reason")"
