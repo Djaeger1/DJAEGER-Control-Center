@@ -93,7 +93,7 @@ REPEAT
 
 ## 4. CURRENT CANONICAL ARTIFACT PAIR — DJAEGER GAMING v1.1.8 V3.4 FINAL
 
-This is the **current canonical built artifact pair** as of 2026-09-23. It is build/offline verified, **not yet post-install live verified** on the phone.
+This is the **current canonical built artifact pair** as of 2026-09-23. It was installed on the real phone. Post-install validation discovered one packaging/lifecycle gap in the module: V3.4 `hermes_thought_worker.sh` was not included in `service.sh` startup lifecycle, and its knowledge TSV was not initialized on a clean first boot. The current phone is now **live verified with POSTINSTALL_HOTFIX1**; the original ZIP itself must not be described as defect-free.
 
 Canonical pair:
 - APK: `DJAEGER-GAMING-v1.1.8-V3.4-FINAL.apk`
@@ -125,6 +125,29 @@ Verified build properties:
 - Published execution range source: `LIVE_POLICY_BOUNDS`
 - Cloud hardware authority: NONE
 - Sysfs authority: AI Agent internal executor only
+
+### Known post-install issue / HOTFIX1
+
+Real-device evidence after installing module VC211 + APK VC112 found:
+- APK identity on device: `versionCode=112`, `versionName=1.1.8-v3.4-final`.
+- Module identity on device: `versionCode=211`, `version=1.1.8-v3.4-final`.
+- Pair handshake: `PAIR_VERIFIED=YES`.
+- `service.sh` from the original final ZIP did **not** start `hermes_thought_worker.sh` after reboot.
+- `hermes_thought_worker.err` showed repeated missing-file errors for `history/hermes_thought_knowledge.tsv`.
+
+Live-device HOTFIX1 applied without flash/reboot:
+- patched installed `service.sh` so `hermes_thought_worker` participates in stop/kill/start/startup-proof lifecycle;
+- initialized persistent `history/hermes_thought_knowledge.tsv` with the expected header and mode 600;
+- restored the worker binary to the original artifact copy after an unsuccessful experimental inline edit, then started the original V3.4 worker cleanly;
+- V3.4 worker owner PID became singleton and healthy; timestamp advanced, `LAST_STAGE=PUBLISHED`, `LAST_ERROR=NONE`, and error log stopped growing.
+
+Source HOTFIX1:
+- Branch: `djaeger-gaming-v3.4-postinstall-hotfix1`
+- Service lifecycle fix commit: `ff7123ad7318fca34f6ef8ca2b413e33ea2332f5`
+- Worker first-boot knowledge init commit: `3c6e816e1639766bf082d940f2f73ac24245c800`
+- Audit head: `3165fe4bff0211cf933a54f54fa52df22af88829`
+- Audit run: `35876436725` — SUCCESS
+- Audit gates: source isolation PASS, shell syntax PASS, hotfix contract/module regressions PASS, Android unit tests PASS.
 
 Signing caveat:
 - This final APK uses a **new release signer** because no persistent prior private signing key was available.
@@ -224,45 +247,61 @@ LATEST_CANONICAL_BUILD_BRANCH=djaeger-gaming-v3.4-final-consolidation
 LATEST_CANONICAL_BUILD_COMMIT=fb2c41009e20416deff88523c84fe02072b33fb4
 LATEST_CANONICAL_BUILD_RUN=35873269162
 LATEST_CANONICAL_ARTIFACT_ID=10757025416
-CANONICAL_ARTIFACT_STATUS=BUILD_OFFLINE_VERIFIED_NOT_LIVE
+CANONICAL_ARTIFACT_STATUS=BUILD_VERIFIED_KNOWN_POSTINSTALL_LIFECYCLE_GAP
 
-LATEST_DEVICE_VERIFIED_PAIR=UNKNOWN
-LATEST_DEVICE_VERIFIED_AT=UNKNOWN
-LATEST_DEVICE_RUNTIME_STATUS=V3_4_GAME_LIVE_VERIFY_PASS
+LATEST_DEVICE_VERIFIED_PAIR=v1.1.8-v3.4-final+POSTINSTALL_HOTFIX1
+LATEST_DEVICE_VERIFIED_AT=2026-09-23T21:46:25+07:00
+LATEST_DEVICE_APK_VERSION_CODE=112
+LATEST_DEVICE_MODULE_VERSION_CODE=211
+LATEST_DEVICE_PAIR_VERIFIED=YES
+LATEST_DEVICE_RUNTIME_STATUS=LIVE_VERIFIED_WITH_POSTINSTALL_HOTFIX1
 LATEST_DEVICE_RUNTIME_EVIDENCE_AT=2026-09-23
 LATEST_DEVICE_HERMES_ACTIVE_SOURCE=HERMES_LOCAL
 LATEST_DEVICE_THOUGHT_WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4
-LATEST_DEVICE_PROGRESS=STEADY
-LATEST_DEVICE_FRAME_CLASS=FRAME_SMOOTH
-LATEST_DEVICE_EVIDENCE=shadow:WAITING,executor:IDLE,intent:NONE,progress:STEADY
-LATEST_DEVICE_VERIFY_MARKER=V3_4_GAME_VERIFY=PASS
+LATEST_DEVICE_THOUGHT_LAST_STAGE=PUBLISHED
+LATEST_DEVICE_THOUGHT_LAST_ERROR=NONE
+LATEST_DEVICE_MEMORY_MAX_BYTES=104857600
+LATEST_DEVICE_EXEC_RANGE_SOURCE=LIVE_POLICY_BOUNDS
+LATEST_DEVICE_SHADOW_STATE=WAITING
+LATEST_DEVICE_SHADOW_REASON=candidate_missing
+LATEST_DEVICE_EXECUTOR_STATE=IDLE
+LATEST_DEVICE_TELEMETRY_HTTP=200
+LATEST_DEVICE_TELEMETRY_MODULE_VERSION_CODE=211
+LATEST_DEVICE_GEMINI_KEY_COUNT=4
+LATEST_DEVICE_HERMES_ACCESS_KEY_PRESENT=YES
+LATEST_DEVICE_NEURON_LOCAL_ESTIMATE_PRESENT=YES
+LATEST_DEVICE_HOTFIX=POSTINSTALL_HOTFIX1
+LATEST_DEVICE_REBOOT_PERSISTENCE=SOURCE_AUDITED_NOT_SECOND_REBOOT_TESTED
 ```
 
 Interpretation:
-- The canonical artifact pair is explicitly recorded and must not be guessed from memory.
-- The latest recovered **real-device runtime checkpoint** is V3.4 GAME LIVE VERIFY PASS with HERMES_LOCAL / ONE_HERMES_THOUGHT_V3_4 / STEADY / FRAME_SMOOTH.
-- `LATEST_DEVICE_VERIFIED_PAIR=UNKNOWN` remains intentionally separate: the recovered runtime evidence proves the V3.4 runtime state, but does not by itself identify the exact packaged APK/module filenames currently installed.
-- Do not silently copy `LATEST_CANONICAL_ARTIFACT_PAIR` into `LATEST_DEVICE_VERIFIED_PAIR`.
-- Real-device package identity evidence is still required before those pair fields may be changed.
+- Real-device package identity is now proven: module VC211 + APK VC112, version `1.1.8-v3.4-final`, handshake `PAIR_VERIFIED=YES`.
+- The current phone is **LIVE_VERIFIED_WITH_POSTINSTALL_HOTFIX1**, not the untouched original ZIP state.
+- V3.4 THOUGHT is live with one singleton owner, `HERMES_LOCAL`, `LAST_STAGE=PUBLISHED`, `LAST_ERROR=NONE`, and advancing timestamps.
+- Memory ceiling is 100 MiB and publisher reports `EXEC_RANGE_SOURCE=LIVE_POLICY_BOUNDS`.
+- Railway receives fresh VC211 telemetry with HTTP 200 during real workloads, including the game package `sts.al`.
+- Nonsecret credential continuity is proven by `GEMINI_KEY_COUNT=4`, `HERMES_ACCESS_KEY_PRESENT=YES`, and local neuron estimate present.
+- A second reboot has **not** been performed solely to re-prove persistence; the installed `service.sh` is patched and source HOTFIX1 audit passed, so do not ask for another reboot casually.
 
 ## 11. ACTIVE BLOCKERS
 
-- The final source is consolidated on branch `djaeger-gaming-v3.4-final-consolidation` and the final pair build is SUCCESS.
-- The exact currently installed APK/module pair on the phone is still not reconciled.
-- The new v1.1.8 V3.4 final pair is **build/offline verified only**; post-install real-device validation is still required.
-- APK signer continuity with the older installed app is not guaranteed because the final APK has a new signer.
-- Do not mark `LATEST_DEVICE_VERIFIED_PAIR` as v1.1.8 until actual device evidence proves the new pair is installed and healthy.
+- Current device runtime is healthy after `POSTINSTALL_HOTFIX1`; no reinstall or reboot is required now.
+- The original v1.1.8 module ZIP has a known first-boot lifecycle gap and must not be reused as a clean-install "perfect final" without HOTFIX1.
+- Source HOTFIX1 is audited successfully but has **not** been repackaged into a new release identity. Do not silently rebuild different bytes under the same v1.1.8 / VC211 identity.
+- A future packaged cleanup release must use a new version/versionCode and include both lifecycle + knowledge-init source fixes.
+- Full adaptive control-cycle validation after this install has not yet observed a complete candidate → Shadow approval → executor APPLY → readback → KEEP/ROLLBACK cycle; current safe state is Shadow WAITING / executor IDLE.
+- APK signer continuity caveat remains historical for older APKs, but APK VC112 is now installed successfully on the current phone.
 
 ## 12. NEXT ACTION
 
 On the next DJAEGER GAMING work session:
 - Read this file before answering version/state questions.
-- Treat `DJAEGER GAMING v1.1.8 V3.4 FINAL` (module 211 / app 112) as the canonical **artifact pair**.
-- Do not rebuild the pair unless a verified defect requires it.
-- Next unresolved gate is **post-install real-device validation** of this exact pair.
-- Before any APK replacement, account for the new signer; do not assume update-in-place compatibility.
-- After installation evidence exists, verify exact package/module identity, V3.4 worker, singleton lifecycle, Control Center handshake, live CPU/GPU range publication, 100 MiB memory, Shadow/executor safety state, and credential restoration.
-- Only after those checks pass may `LATEST_DEVICE_VERIFIED_PAIR` be promoted to v1.1.8 V3.4 FINAL.
+- Start from **v1.1.8 V3.4 FINAL + POSTINSTALL_HOTFIX1 live on device**; do not reinstall the original v1.1.8 pair and do not repeat the completed post-install checks.
+- Use source branch `djaeger-gaming-v3.4-postinstall-hotfix1` as the latest fixed source reference.
+- Continue real gameplay validation until at least one legitimate adaptive candidate reaches Shadow and either safely executes with readback or is rejected for a documented safety reason.
+- Preserve the rule: no cloud sysfs authority; only the local AI Agent executor may write hardware bounds.
+- Do not make a new packaged release unless needed. If packaging is later required, bump version/versionCode and include HOTFIX1; never publish changed bytes under the old v1.1.8 / VC211 identity.
+- Do not request another reboot merely to prove the hotfix unless a later symptom makes reboot persistence the active blocker.
 
 ## 14. NEW CHAT / CHAT-LIMIT BOOTSTRAP
 
@@ -293,6 +332,22 @@ User fallback:
 
 
 ## 13. CHANGELOG
+### 2026-09-23 — Post-install live verification + HOTFIX1
+- User installed and rebooted DJAEGER GAMING v1.1.8 V3.4 FINAL.
+- Real device proves APK VC112 / module VC211 / version `1.1.8-v3.4-final`.
+- Control Center handshake: `PAIR_VERIFIED=YES`.
+- Memory: `MAX_BYTES=104857600`; live execution range source: `LIVE_POLICY_BOUNDS`.
+- Railway accepted fresh module VC211 telemetry over HTTP 200 after installation and during real game workload `sts.al`.
+- Credential continuity (nonsecret): Gemini key count 4, Hermes access key present, local neuron estimate present.
+- Post-install defect found: original `service.sh` did not start `hermes_thought_worker.sh` after reboot; missing knowledge TSV also generated repeated worker errors.
+- Live HOTFIX1: patched installed service lifecycle and initialized persistent knowledge TSV. Worker binary was restored to the original artifact after an unsuccessful inline-edit attempt, then started cleanly.
+- V3.4 worker verified live: one singleton owner, HERMES_LOCAL, advancing AT/heartbeat, `LAST_STAGE=PUBLISHED`, `LAST_ERROR=NONE`, error log no longer grows.
+- Source HOTFIX1 branch: `djaeger-gaming-v3.4-postinstall-hotfix1`.
+- Source commits: lifecycle `ff7123ad7318fca34f6ef8ca2b413e33ea2332f5`; first-boot knowledge init `3c6e816e1639766bf082d940f2f73ac24245c800`.
+- Audit head `3165fe4bff0211cf933a54f54fa52df22af88829`; Actions run `35876436725` SUCCESS.
+- Device status promoted to `v1.1.8-v3.4-final+POSTINSTALL_HOTFIX1`.
+- Original v1.1.8 ZIP remains a historical build artifact with a known lifecycle gap; do not reinstall it as if HOTFIX1 were included.
+
 ### 2026-09-23 — DJAEGER GAMING v1.1.8 V3.4 FINAL pair built
 - Final identity: module VC211 / APK VC112 / version `1.1.8-v3.4-final`.
 - Canonical files: `DJAEGER-GAMING-Module-v1.1.8-V3.4-FINAL.zip` and `DJAEGER-GAMING-v1.1.8-V3.4-FINAL.apk`.
