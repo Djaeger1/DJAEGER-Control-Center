@@ -44,10 +44,26 @@ ensure_thought_worker(){
   nohup sh "$THOUGHT_BIN" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 }
 
+CONTEXTUAL_SHADOW_BIN="$BIN_DIR/shadow_contextual_v4.sh"
+CONTEXTUAL_SHADOW_LOCK="$ROOT/runtime/locks/shadow_contextual_v4.lock/pid"
+ensure_contextual_shadow(){
+  [ -r "$CONTEXTUAL_SHADOW_BIN" ] || return 0
+  _sp="$(cat "$CONTEXTUAL_SHADOW_LOCK" 2>/dev/null)"
+  case "$_sp" in
+    ""|*[!0-9]*) _sp=0 ;;
+  esac
+  if [ "$_sp" -gt 1 ] 2>/dev/null && kill -0 "$_sp" 2>/dev/null; then
+    return 0
+  fi
+  nohup sh "$CONTEXTUAL_SHADOW_BIN" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
+}
+
+ensure_contextual_shadow
 ensure_thought_worker
 
 while true; do
   publisher_still_owns_lock || exit 0
+  ensure_contextual_shadow
   ensure_thought_worker
   if [ -r "$ROOT/runtime/snapshot.env" ]; then
     publish_cc "$ROOT"
