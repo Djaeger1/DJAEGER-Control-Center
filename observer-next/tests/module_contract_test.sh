@@ -1097,6 +1097,15 @@ grep -Fq 'hard_thermal_guard_active()' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'TAKEOVER_THERMAL_HOLD' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'human_comfort_hard_thermal_guard_wait_native_cooling' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'DEPUTY_THERMAL_HOLD' "$MODULE/bin/publisher.sh"
+grep -Fq 'HA=$(kv HERMES_ACTIVE_SOURCE "$HSTATE")' "$MODULE/bin/consensus.sh"
+python3 - "$MODULE/bin/consensus.sh" <<'PY'
+import sys
+s=open(sys.argv[1],encoding='utf-8').read()
+assert 'case "$HA" in' in s
+assert 'HERMES_LOCAL) BRAIN_SOURCE=HERMES_LOCAL' in s
+assert 'HERMES_CLOUD) BRAIN_SOURCE=HERMES_CLOUD' in s
+PY
+grep -Fq 'Skin sudah masuk comfort pressure untuk preferensi panas pengguna. Saya akan mencari opsi lebih dingin' "$MODULE/bin/publisher.sh"
 python3 - "$MODULE/bin/hermes_adapter.sh" <<'PY'
 import sys
 s=open(sys.argv[1],encoding='utf-8').read()
