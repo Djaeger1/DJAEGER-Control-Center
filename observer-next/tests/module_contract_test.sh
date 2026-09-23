@@ -747,13 +747,13 @@ grep -Fqx 'GPU_POST_STATE=EXTERNAL' "$TEST_ROOT/runtime/execution_restore.env"
 rm -f "$TEST_ROOT/runtime/execution_backup.env" "$TEST_ROOT/runtime/execution_monitor.env" "$TEST_ROOT/runtime/execution_suppress.env"
 
 # ---- APK/module atomic snapshot contract ----
-SYNC_OUT=$(run_ctl sync-request 110 DJAEGER_AI_ADAPTIVE_V3 contract-test-1)
+SYNC_OUT=$(run_ctl sync-request 111 DJAEGER_AI_ADAPTIVE_V3 contract-test-1)
 grep -Fqx 'SYNC_STATUS=VERIFIED' <<<"$SYNC_OUT"
 grep -Fqx 'PAIR_VERIFIED=YES' <<<"$SYNC_OUT"
 SNAPSHOT="$TEST_ROOT/cc_snapshot"
 grep -Fqx 'CONTRACT=DJAEGER_AI_ADAPTIVE_V3' "$SNAPSHOT"
-grep -Fqx 'MODULE_VERSION_CODE=209' "$SNAPSHOT"
-grep -Fqx 'CONTROL_CENTER_VERSION_CODE=110' "$SNAPSHOT"
+grep -Fqx 'MODULE_VERSION_CODE=210' "$SNAPSHOT"
+grep -Fqx 'CONTROL_CENTER_VERSION_CODE=111' "$SNAPSHOT"
 grep -Fqx 'PAIR_VERIFIED=YES' "$SNAPSHOT"
 grep -Fqx 'WORKLOAD_CLASS=GAME' "$SNAPSHOT"
 grep -Fqx 'CLOUD_HARDWARE_AUTHORITY=NONE' "$SNAPSHOT"
