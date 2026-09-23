@@ -274,7 +274,7 @@ case "$1" in
     [ -n "$gp" ] && [ -w "$gp/min_freq" ] && [ -w "$gp/max_freq" ] && _a=$((_a+2))
     echo "WRITABLE_ACTUATORS=$_a" ;;
   maturity-audit)
-    learn="$HISTORY/learned_envelope.env"; shadow="$RUNTIME/shadow.env"; exec="$RUNTIME/execution.env"
+    learn="$HISTORY/learned_envelope.env"; shadow="$RUNTIME/shadow_contextual_v4.env"; exec="$RUNTIME/execution.env"
     echo "PACKAGE=$(kv PACKAGE "$learn")"
     echo "LEARNING_STATE=$(kv STATE "$learn")"
     echo "SAMPLES=$(kv SAMPLES "$learn")"
@@ -291,7 +291,7 @@ case "$1" in
     echo "EXECUTION_MODE=AUTO" ;;
   execution-off)
     echo OFF > "$CONFIG/execution_mode"; chmod 600 "$CONFIG/execution_mode"
-    rm -f "$ROOT/policy/approved.env"
+    rm -f "$ROOT/policy/approved.env" "$ROOT/policy/approved_contextual_v4.env"
     sh "$ROOT/../modules/djaeger_ai_observer/bin/executor.sh" "$ROOT" once >/dev/null 2>&1 || true
     echo "EXECUTION_MODE=OFF" ;;
   migration-status)
