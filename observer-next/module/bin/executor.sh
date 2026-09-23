@@ -308,6 +308,7 @@ gate(){
     _sreason="$(kv REASON "$SUPPRESS")"
     case "$_sreason" in
       POST_APPLY_REGRESSION) GATE_REASON=RECENT_POST_APPLY_REGRESSION ;;
+      APPLY_OR_READBACK_FAILED) GATE_REASON=RECENT_APPLY_OR_READBACK_FAILED ;;
       THERMAL_GUARD) GATE_REASON=RECENT_THERMAL_GUARD ;;
       *) GATE_REASON=RECENT_EXTERNAL_OVERRIDE ;;
     esac
@@ -498,7 +499,7 @@ resolve_restore_failure(){
     READBACK=EXTERNAL_OVERRIDE
     ROLLBACK_STATE=RELINQUISHED
     record_outcome RELEASED "${_resolve_reason}_EXTERNAL_OVERRIDE" "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
-    suppress_digest "$_digest" "$_pkg" "${_resolve_reason}_EXTERNAL_OVERRIDE" 180
+    suppress_digest "$_digest" "$_pkg" "${_resolve_reason}_EXTERNAL_OVERRIDE" 900
   else
     READBACK=RESTORED
     ROLLBACK_STATE=RESTORED
@@ -723,7 +724,7 @@ release_external_override(){
   READBACK=EXTERNAL_OVERRIDE
   ROLLBACK_STATE=RELINQUISHED
   record_outcome RELEASED SYSFS_EXTERNAL_OVERRIDE "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
-  suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE 120
+  suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE 900
 
   rm -f "$BACKUP" "$MONITOR"
   ACTIVE_DIGEST=NONE
@@ -766,7 +767,7 @@ relinquish_no_write(){
   READBACK=EXTERNAL_OVERRIDE
   ROLLBACK_STATE=RELINQUISHED
   record_outcome RELEASED SYSFS_EXTERNAL_OVERRIDE "$_pkg" "$_digest" "$_little" "$_big" "$_gpu"
-  suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE 120
+  suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE 900
   rm -f "$BACKUP" "$MONITOR"
   ACTIVE_DIGEST=NONE; APPLIED_PACKAGE=NONE; APPLIED_INTENT=NONE; APPLIED_ACTUATORS=NONE
   APPLIED_LITTLE=NA; APPLIED_BIG=NA; APPLIED_GPU=NA; APPLIED_AT=0
@@ -909,15 +910,32 @@ reconcile(){
   fi
 
   _failed_pkg="$GATE_PACKAGE"; _failed_digest="$GATE_DIGEST"
+  _failed_little="${LMIN}-${LMAX}"
+  _failed_big="${BMIN}-${BMAX}"
+  _failed_gpu="${GMIN}-${GMAX}"
+
   if restore_all; then
-    record_outcome ROLLED_BACK APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest"
     READBACK=RESTORED
+    record_outcome ROLLED_BACK APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest" "$_failed_little" "$_failed_big" "$_failed_gpu"
+    # A digest that could not be applied/read back cleanly must not be retried
+    # every daemon tick. Quarantine only this digest; a newly learned digest
+    # remains eligible immediately.
+    suppress_digest "$_failed_digest" "$_failed_pkg" APPLY_OR_READBACK_FAILED 900
     publish ROLLED_BACK APPLY_OR_READBACK_FAILED
-  else
-    record_outcome ROLLBACK_FAILED APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest"
-    READBACK=RESTORE_FAILED
-    publish ROLLBACK_FAILED APPLY_OR_READBACK_FAILED
+    return 1
   fi
+
+  # A failed apply can be partial: some axes may already contain candidate
+  # values while native power/thermal ownership moves others. Reclassify using
+  # the intended candidate targets before creating a permanent restore latch.
+  if resolve_restore_failure APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest" "$_failed_little" "$_failed_big" "$_failed_gpu"; then
+    suppress_digest "$_failed_digest" "$_failed_pkg" APPLY_OR_READBACK_FAILED 900
+    return 1
+  fi
+
+  READBACK=RESTORE_FAILED
+  record_outcome ROLLBACK_FAILED APPLY_OR_READBACK_FAILED "$_failed_pkg" "$_failed_digest" "$_failed_little" "$_failed_big" "$_failed_gpu"
+  publish ROLLBACK_FAILED APPLY_OR_READBACK_FAILED
   return 1
 }
 case "$MODE" in
