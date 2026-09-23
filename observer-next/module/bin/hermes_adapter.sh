@@ -899,7 +899,7 @@ cloud_takeover(){
     _raw_model=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$_resp" 2>/dev/null | head -n1 | sed 's/.*:[[:space:]]*"//;s/"$//')
     [ -n "$_raw_model" ] || _raw_model=NA
     _raw_delta="$(kv LAST_DELTA "$NEURON")"; [ -n "$_raw_delta" ] || _raw_delta=0
-    _cltmp="$CLOUD_LAST.tmp.$"
+    _cltmp="$CLOUD_LAST.tmp.$$"
     {
       echo "AT=$(date +%s)"
       echo "HTTP=200"
@@ -913,7 +913,7 @@ cloud_takeover(){
   fi
   rm -f "$_req"
   [ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"; rm -f "$_resp"; return 1; }
-  { echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$"; chmod 600 "$LAST.tmp.$"; mv -f "$LAST.tmp.$" "$LAST"
+  { echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$$"; chmod 600 "$LAST.tmp.$$"; mv -f "$LAST.tmp.$$" "$LAST"
   HAUTH=CONFIGURED
   _text=$(tr '\n' ' ' < "$_resp" 2>/dev/null | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g;s/\\r//g')
   HMODEL=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$_resp" 2>/dev/null | head -n1 | sed 's/.*:[[:space:]]*"//;s/"$//')
