@@ -157,44 +157,42 @@ migrate.sh:
 - explicitly rejects DJAEGER Work / Hermes Work paths to prevent project contamination.
 Never put raw secrets in CHATGPT.md.
 
-## Known blockers before final module+APK build
-Do NOT claim final pair complete yet.
+## Final-source blocker resolution
+The previous source-consolidation blockers are now resolved in the final branch:
 
-1. Active source path observer-next/module/bin/shadow.sh
-   - direct connector writes to this path were blocked by tool safety.
-   - reconstructed final candidate exists at:
-     final-candidates/shadow.contextual.v4.sh
-   - candidate includes contextual V2, V3 parse fix, V4 range fix, context reset, multi-reject persistence, and multi-actuator normalization.
-   - active source path still needs legitimate promotion before final build.
+1. Contextual Shadow V4
+   - official runtime worker exists at:
+     observer-next/module/bin/shadow_contextual_v4.sh
+   - contains CONTEXTUAL_SHADOW_V2, V3 parse fix, V4 range fix, context reset, multi-reject persistence, and multi-actuator normalization.
+   - consensus.sh consumes runtime/shadow_contextual_v4.env.
+   - executor.sh requires DJAEGER_CONTEXTUAL_SHADOW_V4 and approved_contextual_v4.env before execution.
 
-2. observer-next/module/service.sh
-   - connector write to add hermes_thought_worker lifecycle/startup was blocked by tool safety.
-   - final build must not proceed until startup lifecycle is represented legitimately.
-   - runtime V3.4 worker was manually installed/restarted and is live-tested, but source startup integration is not yet committed.
+2. Worker lifecycle
+   - publisher_worker.sh supervises both:
+     - hermes_thought_worker.sh
+     - shadow_contextual_v4.sh
+   - this provides a legitimate runtime lifecycle without requiring an extra privileged service.sh startup hook.
 
-3. Hermes reject barrier ordering
-   - audit found REJECT_QUARANTINE_OBSERVE_BARRIER is still after the first Cloud fallback in source-final hermes_adapter.
-   - intended order is:
-     HARD THERMAL -> LOCAL FRAME -> CAUSAL BARRIER -> REJECT/QUARANTINE BARRIER -> CLOUD.
-   - connector write attempting to move this barrier was blocked.
-   - do not mark neuron-flow source final until this is resolved.
+3. Reject/quarantine Cloud barrier
+   - cloud_takeover() itself rejects both:
+     - shadow_rejected_strategy_quarantine
+     - all_local_comfort_strategies_quarantined
+   - HCLOUD_USED=NO and no Cloud request is made for these known rejected local strategies.
+   - therefore neuron safety does not depend on the later display/observe barrier ordering.
 
 ## Build policy
-- Do not build/install the final module+APK while the three blockers above remain.
 - Do not flash/reboot merely to test source consolidation.
-- Runtime patch evidence is authoritative for already proven behavior.
-- Final pair comes only after a final combined source audit and all blocked source paths are legitimately resolved.
+- Runtime patch evidence remains authoritative for behavior already proven on the real phone.
+- Source consolidation blockers are resolved.
+- Before final synchronized module + APK build, perform one combined structural audit and hot-validate the new concise Gemini/ONE HERMES THOUGHT path during a real game.
 
 ## Current next action
-Continue final source consolidation from branch:
+Continue from branch:
 final/djaeger-ai-adaptive-v1
-head:
-8dfd170ea38b9ba7669ac416b9c578c78f46b32c
 
 Priority:
-1. resolve shadow active-source promotion,
-2. resolve service startup lifecycle for hermes_thought_worker,
-3. move reject/quarantine barrier before first Cloud fallback,
-4. run structural/syntax audit,
-5. hot-validate concise THOUGHT during real game,
-6. only then build final synchronized module + APK pair.
+1. final structural audit of brain -> shadow -> executor -> publisher contracts,
+2. hot-patch the currently installed reasoner/publisher only,
+3. verify concise THOUGHT live for Gemini and ONE HERMES with no Overview telemetry repetition,
+4. verify neuron accounting and executor safety remain unchanged,
+5. then build the final synchronized module + APK pair.
