@@ -1093,6 +1093,18 @@ grep -Fq 'BASELINE_SKIN_C=$(kv SKIN_TEMP_C "$SNAP")' "$MODULE/bin/executor.sh"
 grep -Fq 'skin>skin0+1.0' "$MODULE/bin/executor.sh"
 grep -Fq 'POST_APPLY_HUMAN_COMFORT_STABLE_' "$MODULE/bin/executor.sh"
 grep -Fq 'if ! frame_degraded && thermal_pressure; then' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'hard_thermal_guard_active()' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'TAKEOVER_THERMAL_HOLD' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'human_comfort_hard_thermal_guard_wait_native_cooling' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'DEPUTY_THERMAL_HOLD' "$MODULE/bin/publisher.sh"
+python3 - "$MODULE/bin/hermes_adapter.sh" <<'PY'
+import sys
+s=open(sys.argv[1],encoding='utf-8').read()
+hold=s.index('if hard_thermal_guard_active; then')
+comfort=s.index('if ! frame_degraded && thermal_pressure; then', hold)
+cloud=s.index('if cloud_takeover; then', comfort)
+assert hold < comfort < cloud, "thermal hold and local comfort trim must precede cloud takeover"
+PY
 python3 - "$MODULE/bin/hermes_adapter.sh" <<'PY'
 import sys
 s=open(sys.argv[1],encoding='utf-8').read()
