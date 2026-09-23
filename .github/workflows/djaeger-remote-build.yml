@@ -8,7 +8,7 @@ on:
       - '.github/workflows/djaeger-remote-build.yml'
   workflow_dispatch:
 
-# sdk runner compatibility retry 3
+# sdk discovery retry 4
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -38,12 +38,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android platform from runner SDK
+      - name: Prepare Android SDK from runner
         shell: bash
         run: |
           set -euxo pipefail
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
-          test -x "$SDKMANAGER"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          find "$ANDROID_HOME/cmdline-tools" -maxdepth 4 -type f -name sdkmanager -print || true
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 4 -type f -name sdkmanager -print | head -n1)"
+          test -n "$SDKMANAGER"
+          chmod +x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
