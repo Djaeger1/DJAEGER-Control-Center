@@ -747,7 +747,7 @@ grep -Fqx 'GPU_POST_STATE=EXTERNAL' "$TEST_ROOT/runtime/execution_restore.env"
 rm -f "$TEST_ROOT/runtime/execution_backup.env" "$TEST_ROOT/runtime/execution_monitor.env" "$TEST_ROOT/runtime/execution_suppress.env"
 
 # ---- APK/module atomic snapshot contract ----
-SYNC_OUT=$(run_ctl sync-request 111 DJAEGER_AI_ADAPTIVE_V3 contract-test-1)
+SYNC_OUT=$(run_ctl sync-request 112 DJAEGER_AI_ADAPTIVE_V3 contract-test-1)
 grep -Fqx 'SYNC_STATUS=VERIFIED' <<<"$SYNC_OUT"
 grep -Fqx 'PAIR_VERIFIED=YES' <<<"$SYNC_OUT"
 SNAPSHOT="$TEST_ROOT/cc_snapshot"
@@ -949,8 +949,8 @@ PY
 grep -Fq 'tail -c 1 "$OUTCOMES"' "$MODULE/bin/executor.sh"
 grep -Fq 'Preserve CSV row boundaries' "$MODULE/bin/executor.sh"
 grep -Fq 'METHOD=DAILY_ROLLOVER_PUBLISHER' "$MODULE/bin/publisher.sh"
-grep -Fq 'expected_apk=111' "$MODULE/bin/observerctl.sh"
-grep -Fq '[ "$module_code" = 210 ]' "$MODULE/bin/observerctl.sh"
+grep -Fq 'expected_apk=112' "$MODULE/bin/observerctl.sh"
+grep -Fq '[ "$module_code" = 211 ]' "$MODULE/bin/observerctl.sh"
 grep -Fq 'CANDIDATE_SWITCH_AFTER_KEEP' "$MODULE/bin/executor.sh"
 grep -Fq 'APPLIED_PACKAGE="$GATE_PACKAGE"' "$MODULE/bin/executor.sh"
 grep -Fq 'APPLIED_INTENT="$GATE_INTENT"' "$MODULE/bin/executor.sh"
