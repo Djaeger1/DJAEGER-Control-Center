@@ -78,7 +78,7 @@ else
     BEGIN{inside=0; done=0}
     {
       print
-      if ($0 == "  _tmp=\"$ROOT/runtime/.hermes_local_synth_candidate.$$\\"") {
+      if ($0 == "  _tmp=\"$ROOT/runtime/.hermes_local_synth_candidate.$$\"") {
         inside=1
         next
       }
