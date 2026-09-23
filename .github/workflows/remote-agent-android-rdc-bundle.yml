@@ -1,0 +1,140 @@
+name: remote-agent-android-rdc-bundle
+
+on:
+  push:
+    branches:
+      - prototype/djaeger-remote-boot-agent
+    paths:
+      - ".github/workflows/remote-agent-android-rdc-bundle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pinned upstream Remote Desktop Commander
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/wonderwhy-er/DesktopCommanderMCP.git upstream
+          cd upstream
+          git checkout 75048278f4866f0d8bde26f6f9aa3b8d39dca870
+          test "$(git rev-parse HEAD)" = "75048278f4866f0d8bde26f6f9aa3b8d39dca870"
+
+      - name: Install and build
+        working-directory: upstream
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        run: |
+          set -euxo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          npm prune --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Verify built remote entry
+        working-directory: upstream
+        run: |
+          set -euxo pipefail
+          test -f dist/index.js
+          test -f dist/remote-device/device.js
+          grep -q '"version": "0.2.51"' package.json
+          grep -q "Device ready:" dist/remote-device/device.js
+          grep -q "syncReachabilityStatus" dist/remote-device/device.js
+
+      - name: Assemble Android test bundle
+        run: |
+          set -euxo pipefail
+          mkdir -p bundle/agent
+          cp -a upstream/dist bundle/agent/
+          cp -a upstream/node_modules bundle/agent/
+          cp upstream/package.json bundle/agent/
+          cat > bundle/run-rdc-agent.sh <<'SH'
+          #!/system/bin/sh
+          set -u
+          BASE="$(cd "$(dirname "$0")" && pwd)"
+          NODE="${1:-/data/local/tmp/djaeger-node-test/node}"
+          STATE="${2:-/data/local/tmp/djaeger-rdc-state}"
+          LOG="$STATE/rdc-agent.log"
+
+          mkdir -p "$STATE/home" "$STATE/tmp"
+          chmod 700 "$STATE" "$STATE/home" "$STATE/tmp"
+          touch "$LOG"
+          chmod 600 "$LOG"
+
+          if [ ! -x "$NODE" ]; then
+            echo "RESULT=NODE_NOT_EXECUTABLE"
+            echo "NODE=$NODE"
+            exit 40
+          fi
+
+          export HOME="$STATE/home"
+          export TMPDIR="$STATE/tmp"
+          export MCP_SERVER_URL="https://mcp.desktopcommander.app"
+          export DEBUG_MODE=false
+          export PATH="/system/bin:/system/xbin:/vendor/bin:/product/bin"
+
+          echo "DJAEGER_RDC_TEST=START"
+          echo "NODE=$("$NODE" -v 2>&1)"
+          echo "AGENT_COMMIT=75048278f4866f0d8bde26f6f9aa3b8d39dca870"
+          echo "LOG=$LOG"
+
+          "$NODE" "$BASE/agent/dist/index.js" remote >"$LOG" 2>&1 &
+          PID=$!
+          echo "$PID" > "$STATE/rdc-agent.pid"
+          echo "PID=$PID"
+
+          I=0
+          while [ "$I" -lt 45 ]; do
+            if ! kill -0 "$PID" 2>/dev/null; then
+              echo "RESULT=AGENT_EXITED"
+              tail -n 160 "$LOG"
+              exit 41
+            fi
+
+            if grep -q "Verify this device in your browser:" "$LOG" 2>/dev/null; then
+              URL="$(awk '/Verify this device in your browser:/ { if (getline > 0) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); if ($0 ~ /^https:\/\//) print $0 } }' "$LOG" | tail -n 1)"
+              echo "PAIRING_URL=$URL"
+              if [ -n "$URL" ]; then
+                am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1 || true
+              fi
+              echo "RESULT=PAIRING_REQUIRED"
+              tail -n 160 "$LOG"
+              exit 0
+            fi
+
+            if grep -q "Device ready:" "$LOG" 2>/dev/null; then
+              echo "RESULT=DEVICE_READY"
+              tail -n 160 "$LOG"
+              exit 0
+            fi
+
+            sleep 2
+            I=$((I + 1))
+          done
+
+          echo "RESULT=TIMEOUT"
+          tail -n 160 "$LOG"
+          exit 42
+          SH
+          chmod 0755 bundle/run-rdc-agent.sh
+          printf '%s\n' '75048278f4866f0d8bde26f6f9aa3b8d39dca870' > bundle/UPSTREAM-COMMIT.txt
+          printf '%s\n' 'Android ARM64 test bundle; use with verified DJAEGER Node runtime.' > bundle/README.txt
+
+      - name: Package
+        run: |
+          set -euxo pipefail
+          du -sh bundle
+          (cd bundle && zip -qr ../DJAEGER-RDC-Android-Agent-Test.zip .)
+          unzip -t DJAEGER-RDC-Android-Agent-Test.zip
+          sha256sum DJAEGER-RDC-Android-Agent-Test.zip | tee SHA256SUMS.txt
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-RDC-Android-Agent-Test
+          path: |
+            DJAEGER-RDC-Android-Agent-Test.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
