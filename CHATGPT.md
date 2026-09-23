@@ -160,7 +160,7 @@ Hard rule:
 - Do not promote this pair to `VERIFIED_LIVE` until post-install real-device evidence passes.
 
 Historical note:
-- v1.1.7 adaptivefix (module 210 / app 111) is superseded as the canonical artifact pair, but remains historical evidence and may still be the currently installed package until device identity is verified.
+- v1.1.7 adaptivefix (module 210 / app 111) is superseded historical evidence and is **not** the currently installed pair. The current phone is proven on module 211 / app 112 with POSTINSTALL_HOTFIX1.
 
 ## 5. ADAPTIVE ENGINE CONTRACT
 
@@ -262,8 +262,9 @@ LATEST_DEVICE_THOUGHT_LAST_STAGE=PUBLISHED
 LATEST_DEVICE_THOUGHT_LAST_ERROR=NONE
 LATEST_DEVICE_MEMORY_MAX_BYTES=104857600
 LATEST_DEVICE_EXEC_RANGE_SOURCE=LIVE_POLICY_BOUNDS
-LATEST_DEVICE_SHADOW_STATE=WAITING
-LATEST_DEVICE_SHADOW_REASON=candidate_missing
+LATEST_DEVICE_SHADOW_STATE=REJECT
+LATEST_DEVICE_SHADOW_REASON=human_comfort_contract_failed_POWER_EFFICIENCY
+LATEST_DEVICE_CONTROL_GATE=SAFE_REJECT_VERIFIED
 LATEST_DEVICE_EXECUTOR_STATE=IDLE
 LATEST_DEVICE_TELEMETRY_HTTP=200
 LATEST_DEVICE_TELEMETRY_MODULE_VERSION_CODE=211
@@ -289,7 +290,7 @@ Interpretation:
 - The original v1.1.8 module ZIP has a known first-boot lifecycle gap and must not be reused as a clean-install "perfect final" without HOTFIX1.
 - Source HOTFIX1 is audited successfully but has **not** been repackaged into a new release identity. Do not silently rebuild different bytes under the same v1.1.8 / VC211 identity.
 - A future packaged cleanup release must use a new version/versionCode and include both lifecycle + knowledge-init source fixes.
-- Full adaptive control-cycle validation after this install has not yet observed a complete candidate → Shadow approval → executor APPLY → readback → KEEP/ROLLBACK cycle; current safe state is Shadow WAITING / executor IDLE.
+- Post-install adaptive safety path is verified: a real candidate reached Shadow and was rejected with `human_comfort_contract_failed_POWER_EFFICIENCY`; executor correctly remained IDLE. A successful APPLY/readback cycle has not yet been re-exercised after this install and should not be forced artificially.
 - APK signer continuity caveat remains historical for older APKs, but APK VC112 is now installed successfully on the current phone.
 
 ## 12. NEXT ACTION
@@ -298,7 +299,7 @@ On the next DJAEGER GAMING work session:
 - Read this file before answering version/state questions.
 - Start from **v1.1.8 V3.4 FINAL + POSTINSTALL_HOTFIX1 live on device**; do not reinstall the original v1.1.8 pair and do not repeat the completed post-install checks.
 - Use source branch `djaeger-gaming-v3.4-postinstall-hotfix1` as the latest fixed source reference.
-- Continue real gameplay validation until at least one legitimate adaptive candidate reaches Shadow and either safely executes with readback or is rejected for a documented safety reason.
+- The documented safe-reject path is already verified. Continue normal gameplay; if a naturally safe candidate later reaches APPLY, verify readback and KEEP/ROLLBACK without forcing hardware intervention.
 - Preserve the rule: no cloud sysfs authority; only the local AI Agent executor may write hardware bounds.
 - Do not make a new packaged release unless needed. If packaging is later required, bump version/versionCode and include HOTFIX1; never publish changed bytes under the old v1.1.8 / VC211 identity.
 - Do not request another reboot merely to prove the hotfix unless a later symptom makes reboot persistence the active blocker.
@@ -346,6 +347,7 @@ User fallback:
 - Source commits: lifecycle `ff7123ad7318fca34f6ef8ca2b413e33ea2332f5`; first-boot knowledge init `3c6e816e1639766bf082d940f2f73ac24245c800`.
 - Audit head `3165fe4bff0211cf933a54f54fa52df22af88829`; Actions run `35876436725` SUCCESS.
 - Device status promoted to `v1.1.8-v3.4-final+POSTINSTALL_HOTFIX1`.
+- Safe-reject path verified after HOTFIX1: Shadow rejected a real candidate with `human_comfort_contract_failed_POWER_EFFICIENCY`; executor stayed IDLE as required.
 - Original v1.1.8 ZIP remains a historical build artifact with a known lifecycle gap; do not reinstall it as if HOTFIX1 were included.
 
 ### 2026-09-23 — DJAEGER GAMING v1.1.8 V3.4 FINAL pair built
