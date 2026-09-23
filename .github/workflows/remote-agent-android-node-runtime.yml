@@ -1,0 +1,66 @@
+name: remote-agent-android-node-runtime
+
+on:
+  push:
+    branches:
+      - prototype/djaeger-remote-boot-agent
+    paths:
+      - ".github/workflows/remote-agent-android-node-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download pinned Android ARM64 Node runtime
+        run: |
+          set -euxo pipefail
+          URL="https://github.com/Towartz/nodejs-arm/releases/download/node-android-v26.7.0-run165/node-v26.7.0-android-arm64-v8a.zip"
+          EXPECTED="5f815af78861ebbb7850e2e27d393b6f6f6cc55225f6d008ffe955f409f73ed3"
+          curl -fL --retry 3 --retry-delay 2 "$URL" -o node-android.zip
+          ACTUAL="$(sha256sum node-android.zip | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Extract and statically inspect runtime
+        run: |
+          set -euxo pipefail
+          mkdir runtime
+          unzip -q node-android.zip node -d runtime
+          mv runtime/node runtime/djaeger-node-android-arm64-v26.7.0
+          chmod 0755 runtime/djaeger-node-android-arm64-v26.7.0
+          file runtime/djaeger-node-android-arm64-v26.7.0
+          readelf -h runtime/djaeger-node-android-arm64-v26.7.0
+          sha256sum runtime/djaeger-node-android-arm64-v26.7.0 | tee runtime/NODE-SHA256.txt
+
+      - name: Create endpoint probe
+        run: |
+          cat > runtime/djaeger-node-probe.js <<'JS'
+          console.log("DJAEGER_NODE_PROBE=START");
+          console.log("PLATFORM=" + process.platform);
+          console.log("ARCH=" + process.arch);
+          console.log("NODE=" + process.version);
+          console.log("SDK_TEST=FETCH");
+          fetch("https://mcp.desktopcommander.app/api/mcp-info")
+            .then(async (r) => {
+              console.log("MCP_INFO_HTTP=" + r.status);
+              const text = await r.text();
+              console.log("MCP_INFO_BODY_PREFIX=" + text.slice(0, 160).replace(/\s+/g, " "));
+              console.log("DJAEGER_NODE_PROBE=" + (r.ok ? "PASS" : "HTTP_FAIL"));
+              process.exit(r.ok ? 0 : 20);
+            })
+            .catch((e) => {
+              console.log("MCP_INFO_ERROR=" + (e && e.message ? e.message : String(e)));
+              console.log("DJAEGER_NODE_PROBE=NETWORK_FAIL");
+              process.exit(21);
+            });
+          JS
+
+      - name: Upload runtime test
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Android-Node-Runtime-Test-v26.7.0
+          path: runtime/
+          if-no-files-found: error
