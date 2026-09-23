@@ -50,7 +50,11 @@ jobs:
           LEARN=observer-next/module/bin/learner.sh
           grep -Fq 'MAX_BYTES=104857600' "$PUB"
           grep -Fq 'MEMORY_MAX_BYTES=104857600' "$OBS"
-          grep -Fq 'MEMORY_RETAIN_BYTES=94371840' "$OBS"
+          grep -Fq 'MEMORY_RESERVE_BYTES=4194304' "$OBS"
+          grep -Fq 'TOTAL_MEMORY_BYTES=$((SIZE+AUX_BYTES))' "$OBS"
+          grep -Fq 'TELEMETRY_TARGET=$((MEMORY_MAX_BYTES-AUX_BYTES-MEMORY_RESERVE_BYTES))' "$OBS"
+          grep -Fq 'OUTCOMES_MAX_BYTES=8388608' observer-next/module/bin/executor.sh
+          grep -Fq 'OUTCOMES_RETAIN_BYTES=6291456' observer-next/module/bin/executor.sh
           grep -Fq 'sample_counts.tsv' "$OBS"
           grep -Fq 'LEARN_WINDOW_BYTES=8388608' "$LEARN"
           grep -Fq 'ANALYSIS_HISTORY="$TMPBASE.history"' "$LEARN"
