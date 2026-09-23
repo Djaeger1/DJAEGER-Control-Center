@@ -1,6 +1,6 @@
 id=djaeger_ai_observer
 name=DJAEGER AI Adaptive
-version=1.1.7-adaptivefix
-versionCode=210
+version=1.1.8-thoughtmemory
+versionCode=211
 author=DJAEGER
-description=Adaptive v1.1.7 with live neuron rollover, failed-digest quarantine, latch recovery, Gemini primary, ONE HERMES deputy, AI Agent hardware control.
+description=Adaptive v1.1.8 with live neuron rollover, failed-digest quarantine, latch recovery, Gemini primary, ONE HERMES deputy, AI Agent hardware control.
