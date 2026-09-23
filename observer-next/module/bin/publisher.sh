@@ -505,7 +505,7 @@ publish_cc() {
         _thought="Gemini mengusulkan perubahan untuk $_pkg. $_thought_context Shadow sedang menguji kandidat; hardware belum berubah."
         ;;
       HERMES_LOCAL|HERMES_CLOUD|HERMES_H2)
-        _thought="Gemini tidak tersedia. $_thought_context ONE HERMES sudah menyiapkan kandidat. Shadow sedang mengujinya; hardware belum berubah."
+        _thought="Gemini tidak tersedia. $_thought_context ONE HERMES sudah menyiapkan kandidat. Shadow sedang mengujinya. Hardware belum berubah."
         ;;
       *)
         _thought="$_thought_context Shadow sedang menguji kandidat; hardware belum berubah."
