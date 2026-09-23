@@ -110,7 +110,7 @@ write_state(){
     echo "PRIMARY_BRAIN=GEMINI"
     echo "DEPUTY_BRAIN=HERMES_H2"
     echo "ONE_HERMES=LOCAL_PLUS_CLOUD_ONE_IDENTITY"
-    echo "OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
+    echo "OBJECTIVE=HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD"
     echo "UPDATED_AT=$(date +%s)"
   } > "$t"
   chmod 600 "$t"; mv -f "$t" "$STATE"
@@ -422,7 +422,7 @@ write_hermes_plan(){
     echo "BRAIN_SOURCE=$_source"
     echo "BRAIN_ROLE=DEPUTY_TAKEOVER"
     echo "ONE_HERMES=LOCAL_PLUS_CLOUD_ONE_IDENTITY"
-    echo "OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
+    echo "OBJECTIVE=HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD"
     echo "APPLY_AUTHORITY=NONE"
   } > "$_t"
   chmod 600 "$_t"; mv -f "$_t" "$HPLAN"
@@ -484,7 +484,7 @@ thermal_pressure(){
   _c=$(num "$(kv CPU_TEMP_C "$SNAP")")
   _g=$(num "$(kv GPU_TEMP_C "$SNAP")")
   awk -v s="$_s" -v b="$_b" -v c="$_c" -v g="$_g" 'BEGIN{
-    exit !((s>0&&s>=44)||(b>0&&b>=42)||(c>0&&c>=70)||(g>0&&g>=68))
+    exit !((s>0&&s>=42)||(b>0&&b>=42)||(c>0&&c>=70)||(g>0&&g>=68))
   }'
 }
 
@@ -510,7 +510,7 @@ local_synthesize_takeover(){
 
   _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")")
   _cpu=$(num "$(kv CPU_TEMP_C "$SNAP")"); _gpu_t=$(num "$(kv GPU_TEMP_C "$SNAP")")
-  # 44C skin is a pressure signal, not an absolute planning ban. The hard
+  # 42C skin is a user-comfort pressure signal, not an absolute planning ban. The hard
   # local safety ceiling remains below 46C skin / 45C battery / 75C CPU+GPU;
   # executor re-checks this continuously and rolls back if crossed.
   awk -v s="$_skin" -v b="$_bat" -v c="$_cpu" -v g="$_gpu_t" 'BEGIN{
@@ -545,7 +545,7 @@ local_synthesize_takeover(){
     _n=$(opp_prev_in_range "$_gav" "$_g1" "$_g0")
     if [ -n "$_n" ]; then
       _ng1="$_n"; _intent=POWER_EFFICIENCY; _actuators=GPU
-      if thermal_pressure; then _reason=LOCAL_THERMAL_POWER_TRIM_GPU; else _reason=LOCAL_POWER_TRIM_GPU; fi
+      if thermal_pressure; then _reason=LOCAL_HUMAN_COMFORT_THERMAL_TRIM_GPU; else _reason=LOCAL_POWER_TRIM_GPU; fi
     else
       _n=$(opp_prev_in_range "$_bav" "$_b1" "$_b0")
       if [ -n "$_n" ]; then
@@ -624,7 +624,7 @@ cloud_takeover(){
   _orows=$(num "$(kv OUTCOME_ROWS "$LEARN")"); _rrows=$(num "$(kv ROLLBACK_ROWS "$LEARN")"); _krows=$(num "$(kv KEEP_ROWS "$LEARN")")
   [ "$_orows" -ge 3 ] 2>/dev/null && [ "$_rrows" -gt "$_krows" ] 2>/dev/null && _mode=DEEP
   HROUTE=$_mode
-  _msg="You are ONE HERMES Cloud, the strongest cloud cognition of the same Hermes identity that also runs locally. Gemini primary brain is currently unavailable, so ONE HERMES is deputy-in-control. Reason independently from measured Device Truth and return a safe takeover strategy. Optimization is strict: FIRST maximize frame stability; SECOND, among equally stable strategies, minimize power. Never sacrifice meaningful frame stability merely to save power. Do not output commands or paths. Package=$_pkg current_fps=$(kv FPS_EST "$SNAP") current_jank=$(kv JANK_PCT "$SNAP") current_p95=$(kv P95_MS "$SNAP") current_p99=$(kv P99_MS "$SNAP") current_power_mw=$(kv POWER_MW "$SNAP") skin_c=$(kv SKIN_TEMP_C "$SNAP") cpu_c=$(kv CPU_TEMP_C "$SNAP") gpu_c=$(kv GPU_TEMP_C "$SNAP"). Learned envelope little=$(kv LITTLE_MIN_KHZ "$LEARN")-$(kv LITTLE_MAX_KHZ "$LEARN") big=$(kv BIG_MIN_KHZ "$LEARN")-$(kv BIG_MAX_KHZ "$LEARN") gpu=$(kv GPU_MIN_HZ "$LEARN")-$(kv GPU_MAX_HZ "$LEARN"). Kernel OPP little=[$(kv LITTLE_AVAILABLE_KHZ "$SNAP")] big=[$(kv BIG_AVAILABLE_KHZ "$SNAP")] gpu=[$(kv GPU_AVAILABLE_HZ "$SNAP")]. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."
+  _msg="You are ONE HERMES Cloud, the strongest cloud cognition of the same Hermes identity that also runs locally. Gemini primary brain is currently unavailable, so ONE HERMES is deputy-in-control. Reason independently from measured Device Truth and return a safe takeover strategy. Human-comfort optimization is strict: FIRST maximize frame stability because unstable frame pacing is uncomfortable for the user; SECOND, among equally stable strategies, prefer lower thermal load and lower skin temperature because the user is heat-sensitive; THIRD, among equally stable and thermally comfortable strategies, minimize power. Never sacrifice meaningful frame stability merely to reduce temperature or save power. Treat skin temperature at or above 42 C as soft HUMAN_COMFORT_PRESSURE, while hard thermal safety remains local. Do not output commands or paths. Package=$_pkg current_fps=$(kv FPS_EST "$SNAP") current_jank=$(kv JANK_PCT "$SNAP") current_p95=$(kv P95_MS "$SNAP") current_p99=$(kv P99_MS "$SNAP") current_power_mw=$(kv POWER_MW "$SNAP") skin_c=$(kv SKIN_TEMP_C "$SNAP") cpu_c=$(kv CPU_TEMP_C "$SNAP") gpu_c=$(kv GPU_TEMP_C "$SNAP"). Learned envelope little=$(kv LITTLE_MIN_KHZ "$LEARN")-$(kv LITTLE_MAX_KHZ "$LEARN") big=$(kv BIG_MIN_KHZ "$LEARN")-$(kv BIG_MAX_KHZ "$LEARN") gpu=$(kv GPU_MIN_HZ "$LEARN")-$(kv GPU_MAX_HZ "$LEARN"). Kernel OPP little=[$(kv LITTLE_AVAILABLE_KHZ "$SNAP")] big=[$(kv BIG_AVAILABLE_KHZ "$SNAP")] gpu=[$(kv GPU_AVAILABLE_HZ "$SNAP")]. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."
   _sys="You are ONE HERMES Cloud. You are not a third brain; you are cloud cognition of the same ONE HERMES deputy identity. No root/sysfs authority."
   _req="$ROOT/runtime/.hermes_takeover_request.$$"; _resp="$ROOT/runtime/.hermes_takeover_response.$$"
   printf '{"mode":"%s","task":"djaeger_takeover_strategy","message":"%s","prompt":"%s","system":"%s","fallback":false,"max_tokens":256,"temperature":0.1}' "$_mode" "$(json_escape "$_msg")" "$(json_escape "$_msg")" "$(json_escape "$_sys")" > "$_req"
