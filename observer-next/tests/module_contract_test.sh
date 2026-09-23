@@ -878,6 +878,12 @@ grep -Fq 'EXECUTION="$ROOT/runtime/execution.env"' "$MODULE/bin/hermes_adapter.s
 grep -Fq 'ONE HERMES Cloud is the preferred deputy cognition' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'if cloud_takeover; then' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'HERMES_CLOUD_CONNECTION_STATUS=$_hermes_cloud_connection' "$MODULE/bin/publisher.sh"
+grep -Fq 'CLOUD_LAST="$ROOT/runtime/hermes_cloud_last_success.env"' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'HERMES_CLOUD_LAST_SUCCESS_AGE_SEC=' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'HERMES_CLOUD_LAST_VERDICT=' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'HERMES_CLOUD_ACTIVE=' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'HERMES_CLOUD_ACTIVE=$_hcloud_active' "$MODULE/bin/publisher.sh"
+grep -Fq 'HERMES_CLOUD_LAST_VERDICT=$_hcloud_last_verdict' "$MODULE/bin/publisher.sh"
 python3 - "$MODULE/bin/hermes_adapter.sh" <<'PY'
 import sys
 s=open(sys.argv[1],encoding='utf-8').read()
