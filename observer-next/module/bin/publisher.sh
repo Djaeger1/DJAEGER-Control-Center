@@ -27,7 +27,15 @@ pub_clean() {
 }
 
 pub_clean_long() {
-  printf '%s' "$1" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/%=,@ -' | cut -c1-420
+  printf '%s' "$1" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/%=,@ -' | cut -c1-900
+}
+
+pub_khz_mhz() {
+  case "$1" in ''|NA|*[!0-9]*) echo NA ;; *) awk -v x="$1" 'BEGIN{printf "%.0f",x/1000}' ;; esac
+}
+
+pub_hz_mhz() {
+  case "$1" in ''|NA|*[!0-9]*) echo NA ;; *) awk -v x="$1" 'BEGIN{printf "%.0f",x/1000000}' ;; esac
 }
 
 pub_registry_has() {
@@ -157,6 +165,30 @@ publish_cc() {
   _jank="$(pub_kv JANK_PCT "$_frame_src")"; [ -n "$_jank" ] && [ "$_jank" != NA ] || _jank=-1
   _p95="$(pub_kv P95_MS "$_frame_src")"; [ -n "$_p95" ] && [ "$_p95" != NA ] || _p95=0
   _p99="$(pub_kv P99_MS "$_frame_src")"; [ -n "$_p99" ] && [ "$_p99" != NA ] || _p99=0
+  _little_mhz="$(pub_khz_mhz "$_little")"
+  _big_mhz="$(pub_khz_mhz "$_big")"
+  _gpu_mhz="$(pub_hz_mhz "$_gpu")"
+
+  if [ "$_frame_evidence" = VALID ] && [ "$_fps" != 0 ]; then
+    _human_frame="Device Truth saat ini membaca sekitar $_fps FPS, jank $_jank persen, p95 $_p95 ms dan p99 $_p99 ms."
+  else
+    _human_frame="Data frame belum cukup kuat untuk saya jadikan dasar perubahan agresif."
+  fi
+
+  _human_thermal=""
+  if [ "$_skin_t" -ge 0 ] 2>/dev/null || [ "$_cpu_t" -ge 0 ] 2>/dev/null || [ "$_gpu_t" -ge 0 ] 2>/dev/null; then
+    _human_thermal="Suhu yang terbaca: skin ${_skin_t}C, CPU ${_cpu_t}C, GPU ${_gpu_t}C."
+  fi
+
+  _human_power=""
+  [ "$_power" -gt 0 ] 2>/dev/null && _human_power="Daya pelepasan baterai sekitar ${_power} mW."
+
+  _human_clock=""
+  if [ "$_little_mhz" != NA ] || [ "$_big_mhz" != NA ] || [ "$_gpu_mhz" != NA ]; then
+    _human_clock="Clock aktif kira-kira Little ${_little_mhz} MHz, Big ${_big_mhz} MHz, GPU ${_gpu_mhz} MHz."
+  fi
+
+  _human_metrics="$_human_frame $_human_thermal $_human_power $_human_clock"
 
   if [ "$_learn_pkg" = "$_pkg" ]; then
     _lmin="$(pub_kv LITTLE_MIN_KHZ "$_learn")"; [ -n "$_lmin" ] || _lmin=NA
@@ -375,6 +407,24 @@ publish_cc() {
     _bug_action="Continue observing before any new approval"
   fi
 
+  case "$_plan_intent" in
+    FRAME_RECOVERY)
+      _intent_human="Fokus saya sekarang memulihkan konsistensi frame terlebih dahulu; penghematan daya hanya boleh mengikuti jika frame tidak memburuk."
+      ;;
+    POWER_EFFICIENCY)
+      _intent_human="Frame terlihat cukup aman, jadi saya mencoba mencari titik daya yang lebih rendah tanpa mengorbankan kelancaran."
+      ;;
+    PROVEN_REUSE)
+      _intent_human="Saya memilih pola yang sudah pernah terbukti pada perangkat ini daripada menebak batas baru."
+      ;;
+    FRAME_FIRST_BALANCED)
+      _intent_human="Saya menyeimbangkan clock seperlunya dengan prioritas utama kestabilan frame, bukan mengejar frekuensi setinggi mungkin."
+      ;;
+    *)
+      _intent_human="Saya belum mengunci diri ke profil tetap; keputusan tetap mengikuti telemetry dan hasil belajar perangkat."
+      ;;
+  esac
+
   # Dynamic THOUGHT follows the actual brain hierarchy and Agent outcome.
   _thought_source=OBSERVER_LOCAL
   _thought_status=OBSERVING
@@ -392,11 +442,11 @@ publish_cc() {
       if [ -r "$_gem_prop" ]; then
         _thought_status=PRIMARY_CANDIDATE
         _thought_evidence="brain=GEMINI role=PRIMARY proposal=CANDIDATE frame=$_frame_evidence hermes=$_hmode"
-        _thought="Gemini adalah otak utama dan telah menghasilkan kandidat untuk $_pkg. ONE HERMES bertindak sebagai deputy continuity/reviewer; AI Agent belum mengubah hardware sebelum consensus, shadow, safety gate, dan exact readback lulus."
+        _thought="Gemini melihat alasan cukup kuat untuk mengusulkan perubahan pada $_pkg. $_human_metrics $_intent_human ONE HERMES menahan keputusan ini sebagai reviewer; saya belum menganggapnya aman sebelum shadow, safety gate dan exact readback lulus."
       else
         _thought_status=PRIMARY_OBSERVE
         _thought_evidence="brain=GEMINI role=PRIMARY proposal=NONE frame=$_frame_evidence hermes=$_hmode shadow=$_shadow_state executor=$_exec_state"
-        _thought="Gemini tetap menjadi otak utama untuk $_pkg, tetapi saat ini tidak mengeluarkan kandidat perubahan ($_gem_reason). ONE HERMES berada pada deputy continuity, sehingga tidak ada strategi yang masuk shadow dan AI Agent tetap mengamati tanpa mengubah hardware."
+        _thought="Gemini masih menjadi otak utama, tetapi dari evidence saat ini ia belum melihat alasan aman untuk mengubah hardware. $_human_metrics Alasannya tercatat sebagai $_gem_reason. Karena itu saya memilih mengamati dulu, bukan memaksakan perubahan."
       fi
       ;;
     HERMES_LOCAL)
@@ -406,15 +456,15 @@ publish_cc() {
       if [ "$_hlocal" = TAKEOVER_LOCAL_SYNTH ]; then
         _thought_status=DEPUTY_LOCAL_SYNTH
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=KNOWLEDGE_DRIVEN intent=$_plan_intent gemini=$_gem frame=$_frame_evidence"
-        _thought="Gemini tidak tersedia. ONE HERMES Local merumuskan kandidat baru dari knowledge perangkat, frame, daya, thermal, dan OPP kernel tanpa memakai Hermes Cloud. Kandidat tetap wajib lolos shadow, safety, exact readback, dan outcome."
+        _thought="Gemini sedang tidak tersedia, jadi ONE HERMES Local mengambil alih dan menyusun kandidat dari perilaku perangkat yang benar-benar terukur. $_human_metrics $_intent_human Ini bukan profil tetap; batas yang dipilih tetap harus lolos shadow, safety, exact readback dan outcome."
       elif [ "$_hlocal" = TAKEOVER_LOCAL ]; then
         _thought_status=DEPUTY_LOCAL_TAKEOVER
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=PROVEN_REUSE intent=$_plan_intent gemini=$_gem"
-        _thought="Gemini tidak tersedia. ONE HERMES Local mengambil alih dengan strategi yang sebelumnya sudah terbukti pada perangkat ini, tanpa memakai neuron Cloud."
+        _thought="Gemini sedang cooldown, jadi saya melanjutkan lewat ONE HERMES Local. $_human_metrics $_intent_human Saya memakai kembali strategi yang pernah terbukti karena itu lebih masuk akal daripada membuat batas baru hanya demi terlihat aktif."
       else
         _thought_status=DEPUTY_LOCAL_OBSERVE
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=NONE reason=$_hreason gemini=$_gem frame=$_frame_evidence"
-        _thought="Gemini tidak tersedia dan ONE HERMES Local sedang memimpin continuity, tetapi belum menemukan kandidat aman pada evidence saat ini. AI Agent tetap observe tanpa mengubah hardware."
+        _thought="Gemini belum tersedia dan ONE HERMES Local sedang menjaga continuity. $_human_metrics Dari kondisi ini saya belum melihat manfaat yang cukup untuk menyentuh CPU atau GPU, jadi pilihan saya saat ini adalah diam dan terus membaca perubahan perangkat."
       fi
       ;;
     HERMES_CLOUD)
@@ -423,24 +473,24 @@ publish_cc() {
       _thought_conf="$_cloud_plan_score"
       _thought_reason="$_hreason"
       _thought_evidence="brain=ONE_HERMES source=CLOUD route=$_hroute model=$_hmodel cloud_used=$_hcloud_used"
-      _thought="Gemini tidak tersedia dan Hermes Local tidak memiliki strategi proven yang cukup. ONE HERMES menyalakan Hermes Cloud secara selektif untuk reasoning takeover; penggunaan Cloud tetap neuron-guarded."
+      _thought="Gemini tidak tersedia dan pengetahuan lokal belum cukup meyakinkan, jadi ONE HERMES meminta bantuan cognition Cloud. $_human_metrics Cloud dipakai untuk menilai strategi, bukan untuk menulis SYSFS; keputusan akhirnya tetap harus melewati gate lokal."
       ;;
     HERMES_H2)
       _thought_source=HERMES_H2
       _thought_status=DEPUTY_OBSERVE
       _thought_reason="$_hreason"
       _thought_evidence="brain=ONE_HERMES mode=$_hmode"
-      _thought="Gemini tidak tersedia. ONE HERMES aktif sebagai deputy tetapi memilih tidak mengubah hardware karena evidence belum membutuhkan perubahan."
+      _thought="Gemini tidak tersedia, sehingga ONE HERMES bertugas sebagai deputy. $_human_metrics Saat ini saya belum menemukan alasan terukur untuk mengubah hardware, jadi saya memilih mempertahankan kondisi yang ada."
       ;;
   esac
 
   if [ "$_cons_state" = PENDING_SHADOW ]; then
     _thought_status=PENDING_SHADOW
-    _thought="Strategi dari $_active_brain_source sedang diuji shadow dengan intent $_plan_intent. Frame stability adalah syarat pertama; daya minimum hanya diterima jika kestabilan frame tetap terpenuhi."
+    _thought="$_thought Kandidat ini sekarang masuk shadow test. Saya sedang memeriksa apakah perubahan benar-benar menjaga frame dan hanya menurunkan daya bila kestabilannya tetap aman."
   fi
   if [ "$_shadow_state" = PASS ]; then
     _thought_status=SHADOW_PASS
-    _thought="Shadow lulus kontrak frame-first/minimum-power. AI Agent boleh menjalankan transaksi hardware lokal yang terikat digest dan tetap wajib exact readback."
+    _thought="$_thought Shadow baru saja lulus. Itu belum saya anggap sukses akhir; AI Agent baru boleh mencoba transaksi lokal yang terikat digest, lalu saya masih menunggu exact readback dan hasil frame sesudah penerapan."
   fi
   if [ "$_exec_state" = APPLIED ] && [ "$_readback" = VERIFIED ]; then
     _thought_source=AI_AGENT
@@ -448,14 +498,14 @@ publish_cc() {
     _thought_age="$_exec_age"
     _thought_reason="$_exec_reason"
     _thought_evidence="little=$_exec_little big=$_exec_big gpu=$_exec_gpu readback=$_readback"
-    _thought="AI Agent menerapkan strategi $_active_brain_source dan readback VERIFIED: Little $_exec_little, Big $_exec_big, GPU $_exec_gpu. Outcome frame dan daya terus dipantau untuk KEEP atau ROLLBACK."
+    _thought="Keputusan dari $_active_brain_source sudah diterapkan oleh AI Agent dan readback cocok: Little $_exec_little, Big $_exec_big, GPU $_exec_gpu. $_human_frame $_human_thermal Sekarang saya belum menyebutnya berhasil; saya masih membandingkan frame dan daya untuk menentukan KEEP atau ROLLBACK."
   elif [ "$_exec_state" = ROLLED_BACK ]; then
     _thought_source=AI_AGENT
     _thought_status=ROLLED_BACK
     _thought_age="$_exec_age"
     _thought_reason="$_exec_reason"
     _thought_evidence="rollback=$_rollback readback=$_readback"
-    _thought="AI Agent membatalkan strategi karena $_exec_reason dan mengembalikan hardware ke state sebelumnya."
+    _thought="Saya membatalkan strategi tadi karena $_exec_reason. $_human_metrics Hardware sudah dikembalikan ke state sebelumnya, jadi kegagalan ini menjadi evidence baru agar keputusan berikutnya tidak mengulangi pola yang sama."
   elif [ "$_exec_state" = ROLLBACK_FAILED ]; then
     _thought_source=AI_AGENT
     _thought_status=ROLLBACK_FAILED
@@ -463,7 +513,7 @@ publish_cc() {
     _thought_conf=0
     _thought_reason="$_exec_reason"
     _thought_evidence="rollback=$_rollback readback=$_readback"
-    _thought="AI Agent fail-closed karena recovery SYSFS belum terverifikasi."
+    _thought="Saya menghentikan eksekusi karena recovery SYSFS belum bisa dibuktikan aman. Saya tidak akan memaksakan write baru selama readback belum jelas; keselamatan state perangkat lebih penting daripada terus mencoba kandidat."
   fi
   _thought_fresh=0; [ "$_thought_age" -le 180 ] 2>/dev/null && _thought_fresh=1
 
