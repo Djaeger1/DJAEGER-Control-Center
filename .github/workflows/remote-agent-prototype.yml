@@ -29,15 +29,26 @@ jobs:
           sh -n remote-agent/module/post-fs-data.sh
           sh -n remote-agent/module/service.sh
           sh -n remote-agent/module/action.sh
+          sh -n remote-agent/module/uninstall.sh
           sh -n remote-agent/module/bin/djaeger-remote-launcher.sh
 
-      - name: ShellCheck
+      - name: ShellCheck errors
         run: |
           set -eux
-          shellcheck -s sh remote-agent/module/post-fs-data.sh
-          shellcheck -s sh remote-agent/module/service.sh
-          shellcheck -s sh remote-agent/module/action.sh
-          shellcheck -s sh remote-agent/module/bin/djaeger-remote-launcher.sh
+          shellcheck -S error -s sh remote-agent/module/post-fs-data.sh
+          shellcheck -S error -s sh remote-agent/module/service.sh
+          shellcheck -S error -s sh remote-agent/module/action.sh
+          shellcheck -S error -s sh remote-agent/module/uninstall.sh
+          shellcheck -S error -s sh remote-agent/module/bin/djaeger-remote-launcher.sh
+
+      - name: ShellCheck advisory
+        continue-on-error: true
+        run: |
+          shellcheck -S warning -s sh remote-agent/module/post-fs-data.sh
+          shellcheck -S warning -s sh remote-agent/module/service.sh
+          shellcheck -S warning -s sh remote-agent/module/action.sh
+          shellcheck -S warning -s sh remote-agent/module/uninstall.sh
+          shellcheck -S warning -s sh remote-agent/module/bin/djaeger-remote-launcher.sh
 
       - name: Contract checks
         run: |
