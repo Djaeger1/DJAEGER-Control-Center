@@ -74,8 +74,8 @@ jobs:
           grep -Fq 'CLOUD_MIN_INTERVAL=900' observer-next/module/bin/hermes_adapter.sh
           grep -Fq 'GEMINI_PRIMARY_ASSIMILATED_BY_ONE_HERMES' observer-next/module/bin/hermes_adapter.sh
           grep -Fq 'HERMES_DEPUTY_READY' observer-next/module/bin/consensus.sh
-          grep -Fq 'FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND' observer-next/module/bin/gemini_reasoner.sh
-          grep -Fq 'frame_priority_then_minimum_power' observer-next/module/bin/shadow.sh
+          grep -Fq 'HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD' observer-next/module/bin/gemini_reasoner.sh
+          grep -Fq 'human_comfort_frame_first_minimum_power' observer-next/module/bin/shadow.sh
           grep -Fq 'AGENT_EXECUTION_BACKEND=INTERNAL_EXECUTOR_WORKER' observer-next/module/bin/publisher.sh
           grep -Fq 'migration_ready' observer-next/module/service.sh
           grep -Fq 'timeout 20 sh "$MODDIR/bin/migrate.sh"' observer-next/module/service.sh
