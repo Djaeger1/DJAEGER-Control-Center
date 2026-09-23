@@ -920,6 +920,17 @@ grep -Fq 'suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE 900' "$MODU
 grep -Fq 'recover_latched_identity()' "$MODULE/bin/executor.sh"
 grep -Fq 'TARGET_LITTLE=${LMIN}-${LMAX}' "$MODULE/bin/executor.sh"
 grep -Fq 'NR>1&&NF==13&&$4=="ROLLBACK_FAILED"' "$MODULE/bin/executor.sh"
+grep -Fq 'AUTO_LATCHED_RECHECK' "$MODULE/bin/executor.sh"
+grep -Fq 'resolve_restore_failure AUTO_LATCHED_RECHECK' "$MODULE/bin/executor.sh"
+python3 - "$MODULE/bin/executor.sh" <<'PY'
+import sys
+s=open(sys.argv[1],encoding='utf-8').read()
+r=s.index('resolve_restore_failure AUTO_LATCHED_RECHECK')
+p=s.index('publish ROLLBACK_FAILED RESTORE_FAILURE_LATCHED', r)
+assert r < p, "read-only resolver must run before re-latching"
+block=s[s.rfind('if [ "$PREV_EXECUTOR_STATE" = ROLLBACK_FAILED',0,r):p]
+assert 'restore_all' not in block, "automatic latch resolver must never write sysfs"
+PY
 grep -Fq 'tail -c 1 "$OUTCOMES"' "$MODULE/bin/executor.sh"
 grep -Fq 'Preserve CSV row boundaries' "$MODULE/bin/executor.sh"
 grep -Fq 'METHOD=DAILY_ROLLOVER_PUBLISHER' "$MODULE/bin/publisher.sh"
