@@ -26,8 +26,29 @@ publisher_still_owns_lock(){
 [ -r "$BIN_DIR/publisher.sh" ] || exit 1
 . "$BIN_DIR/publisher.sh"
 
+# Lifecycle supervisor for ONE HERMES THOUGHT.
+# service.sh already guarantees publisher_worker startup; this keeps the
+# reasoning worker independent from publisher rendering while avoiding
+# another privileged startup hook.
+THOUGHT_BIN="$BIN_DIR/hermes_thought_worker.sh"
+THOUGHT_LOCK="$ROOT/runtime/locks/hermes_thought_worker.lock/pid"
+ensure_thought_worker(){
+  [ -r "$THOUGHT_BIN" ] || return 0
+  _tp="$(cat "$THOUGHT_LOCK" 2>/dev/null)"
+  case "$_tp" in
+    ""|*[!0-9]*) _tp=0 ;;
+  esac
+  if [ "$_tp" -gt 1 ] 2>/dev/null && kill -0 "$_tp" 2>/dev/null; then
+    return 0
+  fi
+  nohup sh "$THOUGHT_BIN" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
+}
+
+ensure_thought_worker
+
 while true; do
   publisher_still_owns_lock || exit 0
+  ensure_thought_worker
   if [ -r "$ROOT/runtime/snapshot.env" ]; then
     publish_cc "$ROOT"
   fi
