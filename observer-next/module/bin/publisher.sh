@@ -182,7 +182,7 @@ publish_cc() {
   fi
   if awk -v s="$_skin_t" 'BEGIN{exit !(s>=42)}' 2>/dev/null; then
     _comfort_pressure=YES
-    _human_thermal="$_human_thermal Skin sudah masuk comfort pressure untuk preferensi panas pengguna; saya akan mencari opsi lebih dingin hanya jika kestabilan frame tetap terjaga."
+    _human_thermal="$_human_thermal Skin sudah masuk comfort pressure untuk preferensi panas pengguna. Saya akan mencari opsi lebih dingin hanya jika kestabilan frame tetap terjaga."
   fi
 
   _human_power=""
@@ -437,7 +437,7 @@ publish_cc() {
   _thought_conf="$_confidence"
   _thought_reason=MEASURED_DEVICE
   _thought_evidence="telemetry=$_seq frame=$_frame_evidence learning=$_learning samples=$_samples"
-  _thought="AI Agent mengumpulkan Device Truth untuk $_pkg. Tujuan tetap: kestabilan frame terlebih dahulu, lalu daya serendah mungkin tanpa mengorbankan kestabilan."
+  _thought="AI Agent mengumpulkan Device Truth untuk $_pkg. Tujuan tetap: kestabilan frame sebagai kenyamanan visual, suhu serendah mungkin sebagai kenyamanan fisik, lalu daya minimum tanpa merusak keduanya."
 
   case "$_active_brain_source" in
     GEMINI)
