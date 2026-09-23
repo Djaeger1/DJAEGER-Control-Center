@@ -808,6 +808,20 @@ while true; do
     continue
   fi
 
+  # Human comfort beats blind reuse when frame is already healthy but the
+  # device is physically hot for this user. Try a measured lower-load strategy
+  # first; if no safe trim exists, proven history remains the fallback.
+  if ! frame_degraded && thermal_pressure; then
+    if local_synthesize_takeover; then
+      HLOCAL_STATE=TAKEOVER_LOCAL_SYNTH
+      HACTIVE_SOURCE=HERMES_LOCAL
+      HCLOUD_USED=NO
+      write_state HERMES_TAKEOVER
+      sleep 10
+      continue
+    fi
+  fi
+
   if local_history_takeover; then
     HLOCAL_STATE=TAKEOVER_LOCAL
     HACTIVE_SOURCE=HERMES_LOCAL
