@@ -1092,6 +1092,14 @@ grep -Fq 'restart_guard_no_cloud' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'BASELINE_SKIN_C=$(kv SKIN_TEMP_C "$SNAP")' "$MODULE/bin/executor.sh"
 grep -Fq 'skin>skin0+1.0' "$MODULE/bin/executor.sh"
 grep -Fq 'POST_APPLY_HUMAN_COMFORT_STABLE_' "$MODULE/bin/executor.sh"
+grep -Fq 'if ! frame_degraded && thermal_pressure; then' "$MODULE/bin/hermes_adapter.sh"
+python3 - "$MODULE/bin/hermes_adapter.sh" <<'PY'
+import sys
+s=open(sys.argv[1],encoding='utf-8').read()
+comfort=s.index('if ! frame_degraded && thermal_pressure; then')
+reuse=s.index('if local_history_takeover; then', comfort)
+assert comfort < reuse, "comfort trim must precede proven-history reuse under heat pressure"
+PY
 grep -Fqx 'CREDENTIAL_SCAN_SCOPE=LEGACY_BACKUPS_TERMUX_DOWNLOAD' "$TEST_ROOT/recovery/migration.env"
 
 echo 'module-contract-tests=PASS'
