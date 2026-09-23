@@ -72,7 +72,23 @@ write_state(){
     echo "HERMES_CLOUD_AUTH=${HAUTH:-UNKNOWN}"
     echo "HERMES_MODE=${HMODE:-DEPUTY_STANDBY}"
     echo "HERMES_ACTIVE_SOURCE=${HACTIVE_SOURCE:-NONE}"
-    echo "HERMES_CLOUD_USED=${HCLOUD_USED:-NO}"
+    _cl_at="$(kv AT "$CLOUD_LAST")"; case "$_cl_at" in ''|*[!0-9]*) _cl_at=0;; esac
+    _cl_age=$(( $(date +%s) - _cl_at )); [ "$_cl_age" -ge 0 ] 2>/dev/null || _cl_age=999999
+    _cl_route="$(kv ROUTE "$CLOUD_LAST")"; [ -n "$_cl_route" ] || _cl_route=NA
+    _cl_model="$(kv MODEL "$CLOUD_LAST")"; [ -n "$_cl_model" ] || _cl_model=NA
+    _cl_verdict="$(kv VERDICT "$CLOUD_LAST")"; [ -n "$_cl_verdict" ] || _cl_verdict=NA
+    _cl_http="$(kv HTTP "$CLOUD_LAST")"; [ -n "$_cl_http" ] || _cl_http=NA
+    _cl_delta="$(kv NEURON_DELTA "$CLOUD_LAST")"; [ -n "$_cl_delta" ] || _cl_delta=0
+    _cl_used=NO; [ "$_cl_at" -gt 0 ] 2>/dev/null && _cl_used=YES
+    echo "HERMES_CLOUD_USED=$_cl_used"
+    echo "HERMES_CLOUD_ACTIVE=$([ "${HACTIVE_SOURCE:-NONE}" = HERMES_CLOUD ] && echo YES || echo NO)"
+    echo "HERMES_CLOUD_LAST_SUCCESS_AT=$_cl_at"
+    echo "HERMES_CLOUD_LAST_SUCCESS_AGE_SEC=$_cl_age"
+    echo "HERMES_CLOUD_LAST_ROUTE=$_cl_route"
+    echo "HERMES_CLOUD_LAST_MODEL=$_cl_model"
+    echo "HERMES_CLOUD_LAST_VERDICT=$_cl_verdict"
+    echo "HERMES_CLOUD_LAST_HTTP=$_cl_http"
+    echo "HERMES_CLOUD_LAST_NEURON_DELTA=$_cl_delta"
     echo "HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED"
     echo "PRIMARY_BRAIN=GEMINI"
     echo "DEPUTY_BRAIN=HERMES_H2"
@@ -611,6 +627,18 @@ cloud_takeover(){
   rm -f "$_resp"
   _gv(){ printf '%s\n' "$_text" | sed -n "s/^$1=//p" | head -n1; }
   _verdict=$(_gv VERDICT); _conf=$(_gv CONFIDENCE)
+  _ndelta="$(kv LAST_DELTA "$ROOT/config/hermes_neuron_live.env")"; [ -n "$_ndelta" ] || _ndelta=0
+  _cltmp="$CLOUD_LAST.tmp.$"
+  {
+    echo "AT=$(date +%s)"
+    echo "HTTP=$HTTP"
+    echo "ROUTE=$_mode"
+    echo "MODEL=$HMODEL"
+    echo "VERDICT=${_verdict:-UNKNOWN}"
+    echo "CONFIDENCE=${_conf:-0}"
+    echo "NEURON_DELTA=$_ndelta"
+  } > "$_cltmp"
+  chmod 600 "$_cltmp" 2>/dev/null; mv -f "$_cltmp" "$CLOUD_LAST"
   [ "$_verdict" = CANDIDATE ] || { HCLOUD_STATE=OBSERVE; HDETAIL=cloud_requests_observe; return 1; }
   case "$_conf" in ''|*[!0-9]*) HCLOUD_STATE=INVALID; HDETAIL=cloud_confidence_invalid; return 1;; esac
   _tmp="$ROOT/runtime/.hermes_cloud_candidate.$$"
