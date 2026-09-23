@@ -1,6 +1,6 @@
 id=djaeger_remote_boot
 name=DJAEGER Remote Boot Agent
-version=0.1.0-prototype
-versionCode=1
+version=0.1.1-prototype
+versionCode=2
 author=DJAEGER
-description=Boot-time Remote Desktop Commander agent wrapper with persisted OAuth pairing and auto-reconnect.
+description=Boot-time Remote Desktop Commander agent wrapper with persisted OAuth pairing, auto-reconnect, and visible Android status.
