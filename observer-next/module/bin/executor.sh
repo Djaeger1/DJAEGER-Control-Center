@@ -12,8 +12,8 @@ SYSROOT="${DJAEGER_SYSFS_ROOT:-}"
 SNAP="$ROOT/runtime/snapshot.env"
 WORKLOAD="$ROOT/runtime/workload.env"
 POLICY="$ROOT/policy/candidate.env"
-SHADOW="$ROOT/runtime/shadow.env"
-APPROVAL="$ROOT/policy/approved.env"
+SHADOW="$ROOT/runtime/shadow_contextual_v4.env"
+APPROVAL="$ROOT/policy/approved_contextual_v4.env"
 STATE="$ROOT/runtime/execution.env"
 BACKUP="$ROOT/runtime/execution_backup.env"
 MONITOR="$ROOT/runtime/execution_monitor.env"
@@ -23,6 +23,7 @@ RESTORE_DIAG="$ROOT/runtime/execution_restore.env"
 SUPPRESS="$ROOT/runtime/execution_suppress.env"
 LEARN="$ROOT/history/learned_envelope.env"
 MODEFILE="$ROOT/config/execution_mode"
+STARTUP="$ROOT/runtime/startup.env"
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 num(){ case "$1" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
@@ -249,6 +250,13 @@ gate(){
 
   [ "$(kv EXECUTOR_ALLOWED "$_APPROVAL")" = YES ] || { GATE_REASON=APPROVAL_DENIED; return 1; }
   [ "$(kv SHADOW_STATE "$_SHADOW")" = PASS ] || { GATE_REASON=SHADOW_NOT_PASS; return 1; }
+  [ "$(kv SHADOW_SCHEMA "$_SHADOW")" = DJAEGER_CONTEXTUAL_SHADOW_V4 ] || { GATE_REASON=SHADOW_SCHEMA_MISMATCH; return 1; }
+  [ "$(kv WORKER_VERSION "$_SHADOW")" = CONTEXTUAL_SHADOW_V4 ] || { GATE_REASON=SHADOW_WORKER_MISMATCH; return 1; }
+  [ "$(kv SCHEMA "$_APPROVAL")" = DJAEGER_EXEC_APPROVAL_CONTEXTUAL_V4 ] || { GATE_REASON=APPROVAL_SCHEMA_MISMATCH; return 1; }
+  [ "$(kv SHADOW_SOURCE "$_APPROVAL")" = CONTEXTUAL_V4 ] || { GATE_REASON=APPROVAL_SOURCE_MISMATCH; return 1; }
+  _sat="$(kv STARTUP_AT "$STARTUP")"; _shat="$(kv UPDATED_AT "$_SHADOW")"; _apat="$(kv AT "$_APPROVAL")"
+  num "$_sat" && num "$_shat" && num "$_apat" || { GATE_REASON=SHADOW_GENERATION_UNKNOWN; return 1; }
+  [ "$_shat" -ge "$_sat" ] 2>/dev/null && [ "$_apat" -ge "$_sat" ] 2>/dev/null || { GATE_REASON=SHADOW_GENERATION_STALE; return 1; }
 
   _d="$(kv CANDIDATE_DIGEST "$_APPROVAL")"
   [ -n "$_d" ] &&
