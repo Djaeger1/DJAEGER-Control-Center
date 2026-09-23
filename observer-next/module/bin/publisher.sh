@@ -27,7 +27,7 @@ pub_clean() {
 }
 
 pub_clean_long() {
-  printf '%s' "$1" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/%=,@ -' | cut -c1-900
+  printf '%s' "$1" | tr '\r\n\t' '   ' | tr -cd 'A-Za-z0-9._:+/%=,@ -' | cut -c1-1200
 }
 
 pub_khz_mhz() {
@@ -460,7 +460,7 @@ publish_cc() {
       elif [ "$_hlocal" = TAKEOVER_LOCAL ]; then
         _thought_status=DEPUTY_LOCAL_TAKEOVER
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=PROVEN_REUSE intent=$_plan_intent gemini=$_gem"
-        _thought="Gemini sedang cooldown, jadi saya melanjutkan lewat ONE HERMES Local. $_human_metrics $_intent_human Saya memakai kembali strategi yang pernah terbukti karena itu lebih masuk akal daripada membuat batas baru hanya demi terlihat aktif."
+        _thought="Gemini sedang cooldown, jadi saya melanjutkan lewat ONE HERMES Local. $_human_metrics $_intent_human Saya tidak membuat batas baru hanya demi terlihat aktif."
       else
         _thought_status=DEPUTY_LOCAL_OBSERVE
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=NONE reason=$_hreason gemini=$_gem frame=$_frame_evidence"
@@ -490,7 +490,7 @@ publish_cc() {
   fi
   if [ "$_shadow_state" = PASS ]; then
     _thought_status=SHADOW_PASS
-    _thought="$_thought Shadow baru saja lulus. Itu belum saya anggap sukses akhir; AI Agent baru boleh mencoba transaksi lokal yang terikat digest, lalu saya masih menunggu exact readback dan hasil frame sesudah penerapan."
+    _thought="$_thought Shadow baru saja lulus, tetapi ini belum sukses akhir. AI Agent baru boleh mencoba transaksi lokal yang terikat digest; saya masih menunggu exact readback serta hasil frame dan daya sesudah penerapan."
   fi
   if [ "$_exec_state" = APPLIED ] && [ "$_readback" = VERIFIED ]; then
     _thought_source=AI_AGENT
