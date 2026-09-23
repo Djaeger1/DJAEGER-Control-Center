@@ -8,7 +8,7 @@ on:
       - '.github/workflows/djaeger-remote-build.yml'
   workflow_dispatch:
 
-# signing fix retry 7
+# signed APK verification retry 8
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -69,6 +69,12 @@ jobs:
           find djaeger-remote-build/app/build/outputs/apk -type f -name '*.apk' -print -exec sha256sum {} \;
           test -n "$(find djaeger-remote-build/app/build/outputs/apk/controller/release -type f -name '*.apk' -print -quit)"
           test -n "$(find djaeger-remote-build/app/build/outputs/apk/agent/release -type f -name '*.apk' -print -quit)"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          for apk in $(find djaeger-remote-build/app/build/outputs/apk -type f -name '*.apk' | sort); do
+            "$APKSIGNER" verify --verbose --print-certs "$apk"
+            "$AAPT" dump badging "$apk" | head -n 8
+          done
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
