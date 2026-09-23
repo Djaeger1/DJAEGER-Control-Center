@@ -1,0 +1,76 @@
+name: DJAEGER AI Final Source Audit
+
+on:
+  push:
+    branches: [final/djaeger-ai-adaptive-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-ai-final-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Source isolation
+        run: |
+          set -euo pipefail
+          node isolation-check.js
+          A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
+          for q in "${A}-${B}" "${A}_${B}" "${A} ${B}" "${C}-${B}" "${C}_${B}" "${C} ${B}" "${D}-${E}" "${F}_${G}" "${H}_${I}"; do
+            if grep -R -I -i -F --exclude-dir=.git --exclude=isolation-check.js "$q" observer-next; then
+              echo "FOREIGN_SOURCE_RESIDUE=$q" >&2
+              exit 1
+            fi
+          done
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Final adaptive contract
+        run: |
+          set -euo pipefail
+          test -f observer-next/module/bin/shadow_contextual_v4.sh
+          grep -Fq 'DJAEGER_CONTEXTUAL_SHADOW_V4' observer-next/module/bin/shadow_contextual_v4.sh
+          grep -Fq 'CONTEXTUAL_SHADOW_V4_RANGEFIX' observer-next/module/bin/shadow_contextual_v4.sh
+          grep -Fq 'CONTEXTUAL_SHADOW_V3_PARSEFIX' observer-next/module/bin/shadow_contextual_v4.sh
+          grep -Fq 'PERSIST_REJECT_STRATEGY_MULTI' observer-next/module/bin/shadow_contextual_v4.sh
+
+          grep -Fq 'SHADOW="$ROOT/runtime/shadow_contextual_v4.env"' observer-next/module/bin/executor.sh
+          grep -Fq 'APPROVAL="$ROOT/policy/approved_contextual_v4.env"' observer-next/module/bin/executor.sh
+          grep -Fq 'SHADOW_GENERATION_STALE' observer-next/module/bin/executor.sh
+          grep -Fq 'DJAEGER_EXEC_APPROVAL_CONTEXTUAL_V4' observer-next/module/bin/executor.sh
+
+          grep -Fq 'ensure_contextual_shadow' observer-next/module/bin/publisher_worker.sh
+          grep -Fq 'ensure_thought_worker' observer-next/module/bin/publisher_worker.sh
+          grep -Fq 'ONE_HERMES_THOUGHT_V3_4' observer-next/module/bin/hermes_thought_worker.sh
+          grep -Fq 'thought_still_owns_lock' observer-next/module/bin/hermes_thought_worker.sh
+
+          grep -Fq 'FRAME_RECOVERY_LOCAL_BEFORE_CLOUD' observer-next/module/bin/hermes_adapter.sh
+          grep -Fq 'FRAME_RECOVERY_CAUSAL_GATE_V1' observer-next/module/bin/hermes_adapter.sh
+          grep -Fq 'CONTEXTUAL_HEALTHY_FRAME_OVERRIDE_V1' observer-next/module/bin/hermes_adapter.sh
+          grep -Fq 'MULTI_REJECT_ALTERNATIVE_SYNTH' observer-next/module/bin/hermes_adapter.sh
+
+          grep -Fq 'MAX_BYTES=104857600' observer-next/module/bin/publisher.sh
+          grep -Fq 'LIVE_POLICY_BOUNDS' observer-next/module/bin/publisher.sh
+          grep -Fq 'shadow_contextual_v4.env' observer-next/module/bin/publisher.sh
+          grep -Fq 'LITTLE_ACTIVE_MIN_KHZ' observer-next/module/bin/observer.sh
+          grep -Fq 'GPU_ACTIVE_MAX_HZ' observer-next/module/bin/observer.sh
+
+          ! grep -R -n -E 'tmp\.\$("|$)' observer-next/module/bin --include='*.sh' | grep -v '/shadow.sh:' || {
+            echo 'LITERAL_TMP_DOLLAR_FOUND' >&2
+            exit 1
+          }
+
+      - name: Module contract tests
+        run: bash observer-next/tests/module_contract_test.sh
