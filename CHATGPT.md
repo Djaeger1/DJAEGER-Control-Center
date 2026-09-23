@@ -91,26 +91,27 @@ LEARN / CORRECT
 REPEAT
 ```
 
-## 4. HISTORICAL VERIFIED CHECKPOINT — v1.1.7 ADAPTIVEFIX
+## 4. CURRENT CANONICAL ARTIFACT PAIR — v1.1.7 ADAPTIVEFIX
 
-This is a **historical checkpoint from an important prior chat**, not an assertion that it is the latest installed release today.
+This is the **current canonical artifact pair recorded by project memory** as of 2026-09-23. It is an artifact-level identity, **not** proof that this exact pair is currently installed and live-verified on the phone.
 
-Artifacts discussed:
+Canonical pair:
 - APK: `DJAEGER-AI-Adaptive-v1.1.7-adaptivefix-FINAL.apk`
+- APK SHA-256: `d4792eeb3fa04e9ca9a9cf35a423ee0a8f22e1bdfad39e219dbcc3c08ae92be0`
 - Module: `DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip`
+- Module SHA-256: `be21b78431e92909ff7bc78a9ffd9d07ab6c78bd6d83f38fe7a4fe22392ca6e2`
 
-Important state at that checkpoint:
-- The final pair had been built/audited as artifacts.
+Important state:
+- This pair exists as built project artifacts and has a matching checksum manifest in the ChatGPT Library.
 - The final APK was signed with an **ephemeral build key**.
-- Therefore direct update compatibility over the previously installed APK was **not guaranteed** unless the signer matched.
-- The pair was **not allowed to be called live-verified merely because the build passed**.
-- Post-install validation on the actual phone was still required.
-- The previously observed runtime on the phone remained the only live state that had been demonstrated at that point.
+- Therefore direct update compatibility over a previously installed APK is **not guaranteed** unless the signer matches.
+- The pair must **not** be called live-verified merely because the artifacts exist or the build passed.
+- Post-install validation on the actual phone is still required before `LATEST_DEVICE_VERIFIED_PAIR` can be populated.
 
-Rule derived from this checkpoint:
+Hard rule:
 - **BUILD SUCCESS ≠ DEVICE SUCCESS**
 - **ARTIFACT VALID ≠ INSTALLED RUNTIME VALID**
-- Require post-install evidence before promoting a new pair to "verified live".
+- Require post-install evidence before promoting a pair to `VERIFIED_LIVE`.
 
 ## 5. ADAPTIVE ENGINE CONTRACT
 
@@ -177,25 +178,46 @@ At the start of a new session:
 
 ## 10. CURRENT VERIFIED STATE
 
-This section must only contain facts verified from the current project/repository/device evidence.
+This section must only contain facts verified from current project/repository/device evidence.
 
-- Project memory file initialized on **2026-09-23**.
-- Repository: `Djaeger1/DJAEGER-Control-Center`.
-- The v1.1.7 adaptivefix state above is retained as a historical handover checkpoint.
-- The latest installed device state / latest release must be re-verified from live project evidence before being written here.
+```text
+PROJECT=DJAEGER GAMING
+MEMORY_FILE=CHATGPT.md
+MEMORY_REPOSITORY=Djaeger1/DJAEGER-Control-Center
+MEMORY_BRANCH=main
+
+LATEST_CANONICAL_ARTIFACT_PAIR=v1.1.7-adaptivefix-FINAL
+LATEST_CANONICAL_APK=DJAEGER-AI-Adaptive-v1.1.7-adaptivefix-FINAL.apk
+LATEST_CANONICAL_APK_SHA256=d4792eeb3fa04e9ca9a9cf35a423ee0a8f22e1bdfad39e219dbcc3c08ae92be0
+LATEST_CANONICAL_MODULE=DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip
+LATEST_CANONICAL_MODULE_SHA256=be21b78431e92909ff7bc78a9ffd9d07ab6c78bd6d83f38fe7a4fe22392ca6e2
+CANONICAL_ARTIFACT_STATUS=VERIFIED_ARTIFACT_IDENTITY
+
+LATEST_DEVICE_VERIFIED_PAIR=UNKNOWN
+LATEST_DEVICE_VERIFIED_AT=UNKNOWN
+LATEST_DEVICE_RUNTIME_STATUS=NOT_RECONCILED
+```
+
+Interpretation:
+- The canonical artifact pair is now explicitly recorded and must not be guessed from memory.
+- `LATEST_DEVICE_VERIFIED_PAIR=UNKNOWN` means there is currently **no project-memory proof** that v1.1.7, or any later pair, is the pair presently installed and verified live on the phone.
+- Do not silently copy `LATEST_CANONICAL_ARTIFACT_PAIR` into `LATEST_DEVICE_VERIFIED_PAIR`.
+- Real-device evidence is required before those fields may be changed.
 
 ## 11. ACTIVE BLOCKERS
 
-- Latest real-device state is not yet recorded in this file.
-- Latest canonical APK/module pair is not yet recorded in this file.
-- Latest commit/deployment/runtime evidence must be reconciled before this file can represent the full current state.
+- Latest real-device installed pair is not yet recorded with live evidence.
+- Latest real-device runtime state is not yet reconciled into this file.
+- The canonical artifact pair **is now recorded**; do not list it as unknown again unless newer artifact evidence supersedes it.
+- Any newer repository/device evidence must be reconciled before promoting a new pair or runtime state.
 
 ## 12. NEXT ACTION
 
 On the next DJAEGER GAMING work session:
-- Read this file first.
-- Audit the repository and the latest real-device/runtime evidence.
-- Replace the placeholders in **CURRENT VERIFIED STATE** and **ACTIVE BLOCKERS** with the latest proven state.
+- Read this file **before answering version/state questions**.
+- Treat v1.1.7 adaptivefix FINAL as the current canonical artifact pair unless newer artifact evidence is found.
+- Verify the actually installed APK/module pair from real-device evidence.
+- Reconcile runtime evidence and populate `LATEST_DEVICE_VERIFIED_PAIR`, `LATEST_DEVICE_VERIFIED_AT`, and `LATEST_DEVICE_RUNTIME_STATUS` only when proven.
 - Then continue only from the remaining unresolved issue.
 
 
@@ -213,11 +235,13 @@ then ChatGPT should NOT ask the user to reconstruct the project from memory.
 Bootstrap procedure:
 1. Identify that the requested project is DJAEGER GAMING.
 2. Read this `CHATGPT.md` first.
-3. Read the latest relevant repository state / commit / runtime evidence needed for the unresolved task.
-4. Continue from **CURRENT VERIFIED STATE**, **ACTIVE BLOCKERS**, and **NEXT ACTION**.
-5. Do not repeat work already marked completed.
-6. If this file is stale compared with newer verified repository/device evidence, reconcile it and update this file before continuing.
-7. If the user names another DJAEGER project, use that project's own memory file instead; never cross-contaminate projects.
+3. **Do not answer "latest version", "latest pair", "what is installed", or equivalent from model memory.**
+4. Read the latest relevant repository/artifact/device evidence needed for the unresolved task.
+5. Continue from **CURRENT VERIFIED STATE**, **ACTIVE BLOCKERS**, and **NEXT ACTION**.
+6. Do not repeat work already marked completed.
+7. If this file is stale compared with newer verified repository/device evidence, reconcile it and update this file before continuing.
+8. If the user names another DJAEGER project, use that project's own memory file instead; never cross-contaminate projects.
+9. If this file cannot be fetched, explicitly report that the SSOT could not be read and do not guess the current pair/state.
 
 User fallback:
 - The user does not need to remember a special command.
@@ -226,6 +250,14 @@ User fallback:
 
 
 ## 13. CHANGELOG
+### 2026-09-23 — SSOT hardening / canonical pair repair
+- Recorded the canonical v1.1.7 adaptivefix FINAL APK/module pair and exact SHA-256 values.
+- Separated `LATEST_CANONICAL_ARTIFACT_PAIR` from `LATEST_DEVICE_VERIFIED_PAIR`.
+- Marked real-device installed/live state as unknown until proven by device evidence.
+- Added a hard bootstrap rule forbidding answers about latest/current versions from model memory.
+- Added explicit fail-closed behavior: if `CHATGPT.md` cannot be read, report that and do not guess.
+- Corrected the stale blocker that previously claimed the canonical pair had not been recorded.
+
 ### 2026-09-23 — Alias clarification
 - Accepted both `DJAEGER GAMING` and `DJAEGER AI GAMING` as names for the current project.
 - Plain `DJAEGER AI` remains legacy/ambiguous and should not be assumed to mean the current project without context.
