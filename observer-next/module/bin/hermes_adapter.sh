@@ -490,6 +490,16 @@ thermal_pressure(){
   }'
 }
 
+hard_thermal_guard_active(){
+  _s=$(num "$(kv SKIN_TEMP_C "$SNAP")")
+  _b=$(num "$(kv BATTERY_TEMP_C "$SNAP")")
+  _c=$(num "$(kv CPU_TEMP_C "$SNAP")")
+  _g=$(num "$(kv GPU_TEMP_C "$SNAP")")
+  awk -v s="$_s" -v b="$_b" -v c="$_c" -v g="$_g" 'BEGIN{
+    exit !((s>0&&s>=46)||(b>0&&b>=45)||(c>0&&c>=75)||(g>0&&g>=75))
+  }'
+}
+
 frame_critical(){
   _fps=$(num "$(kv FPS_EST "$SNAP")"); _j=$(num "$(kv JANK_PCT "$SNAP")")
   _p95=$(num "$(kv P95_MS "$SNAP")"); _p99=$(num "$(kv P99_MS "$SNAP")")
@@ -795,22 +805,25 @@ while true; do
   HMODE=TAKEOVER
   HACTIVE_SOURCE=HERMES_H2
 
-  # Gemini unavailable: ONE HERMES Cloud is the preferred deputy cognition.
-  # Attempt cloud first (neuron-guarded by cloud_takeover itself); local memory
-  # remains the immediate fallback when cloud is unavailable, guarded, invalid,
-  # or asks to observe.
-  if cloud_takeover; then
-    HLOCAL_STATE=TAKEOVER_CLOUD
-    HACTIVE_SOURCE=HERMES_CLOUD
-    HMODE=TAKEOVER_CLOUD_ESCALATED
+  # Above the hard thermal ceiling, do not start a new DJAEGER sysfs
+  # transaction. Native/vendor thermal control is allowed to cool the device
+  # first. This is a deliberate comfort/safety hold, not "no action needed".
+  if hard_thermal_guard_active; then
+    rm -f "$HPLAN" "$LOCAL_OUT" "$CLOUD_OUT"
+    HLOCAL_STATE=TAKEOVER_THERMAL_HOLD
+    HACTIVE_SOURCE=HERMES_LOCAL
+    HCLOUD_STATE=HOLD
+    HCLOUD_USED=NO
+    HDETAIL=human_comfort_hard_thermal_guard_wait_native_cooling
     write_state HERMES_TAKEOVER
-    sleep 45
+    sleep 10
     continue
   fi
 
-  # Human comfort beats blind reuse when frame is already healthy but the
-  # device is physically hot for this user. Try a measured lower-load strategy
-  # first; if no safe trim exists, proven history remains the fallback.
+  # With healthy frame pacing but user discomfort from heat, prefer a local
+  # measured trim before any Cloud cognition. This preserves neurons and makes
+  # thermal comfort actionable as soon as the device is back inside hard-safe
+  # limits.
   if ! frame_degraded && thermal_pressure; then
     if local_synthesize_takeover; then
       HLOCAL_STATE=TAKEOVER_LOCAL_SYNTH
@@ -820,6 +833,17 @@ while true; do
       sleep 10
       continue
     fi
+  fi
+
+  # Gemini unavailable outside the local comfort path: ONE HERMES Cloud remains
+  # preferred deputy cognition, neuron-guarded by cloud_takeover itself.
+  if cloud_takeover; then
+    HLOCAL_STATE=TAKEOVER_CLOUD
+    HACTIVE_SOURCE=HERMES_CLOUD
+    HMODE=TAKEOVER_CLOUD_ESCALATED
+    write_state HERMES_TAKEOVER
+    sleep 45
+    continue
   fi
 
   if local_history_takeover; then
