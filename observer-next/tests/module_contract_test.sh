@@ -887,7 +887,7 @@ grep -Fq 'HERMES_CLOUD_LAST_VERDICT=$_hcloud_last_verdict' "$MODULE/bin/publishe
 grep -Fq '_thought_context="Game masih stabil di sekitar $_fps FPS, tetapi skin ${_skin_t}C mulai menekan kenyamanan."' "$MODULE/bin/publisher.sh"
 grep -Fq '_intent_human="Belum ada alasan untuk mengunci profil atau memaksakan perubahan."' "$MODULE/bin/publisher.sh"
 grep -Fq '_thought="$_thought Shadow lulus; AI Agent masih menunggu transaksi lokal dan readback."' "$MODULE/bin/publisher.sh"
-grep -Fq 'ONE HERMES sudah menyiapkan kandidat. Shadow sedang mengujinya; hardware belum berubah.' "$MODULE/bin/publisher.sh"
+grep -Fq 'ONE HERMES sudah menyiapkan kandidat. Shadow sedang mengujinya. Hardware belum berubah.' "$MODULE/bin/publisher.sh"
 ! grep -Fq 'Kandidat sedang diuji shadow; belum ada perubahan hardware.' "$MODULE/bin/publisher.sh"
 ! grep -Fq 'Device Truth saat ini membaca sekitar' "$MODULE/bin/publisher.sh"
 ! grep -Fq 'Suhu yang terbaca: skin' "$MODULE/bin/publisher.sh"
