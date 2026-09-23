@@ -34,7 +34,8 @@ jobs:
           cd tmp_rdc_build
           npm init -y
           npm install --no-audit --no-fund @supabase/supabase-js@2.89.0 esbuild@0.27.2
-          npx esbuild ../prototype/android-rdc-mvp/agent.mjs \
+          cp ../prototype/android-rdc-mvp/agent.mjs ./agent.mjs
+          npx esbuild ./agent.mjs \
             --bundle \
             --platform=node \
             --format=esm \
