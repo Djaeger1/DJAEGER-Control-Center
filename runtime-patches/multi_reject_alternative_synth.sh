@@ -124,7 +124,7 @@ cat > "$MP" <<'EOF'
       _mt="$_mf.tmp.$$"
       {
         head -n 1 "$_mf"
-        tail -n 64 "$_mf"
+        tail -n +2 "$_mf" | tail -n 64
       } > "$_mt"
       chmod 600 "$_mt"
       mv -f "$_mt" "$_mf"
