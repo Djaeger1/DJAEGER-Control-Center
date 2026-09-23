@@ -9,6 +9,10 @@ CFG="$STATE/home/.desktop-commander-device/device.json"
 [ -f "$MODDIR/config.env" ] && . "$MODDIR/config.env"
 DC_VERSION="${DC_VERSION:-0.2.51}"
 RESTART_DELAY_SEC="${RESTART_DELAY_SEC:-15}"
+NETWORK_RETRY_SEC="${NETWORK_RETRY_SEC:-30}"
+HTTP_RETRY_SEC="${HTTP_RETRY_SEC:-120}"
+FORBIDDEN_RETRY_SEC="${FORBIDDEN_RETRY_SEC:-900}"
+REMOTE_BASE="${REMOTE_BASE:-https://mcp.desktopcommander.app}"
 DEBUG_MODE="${DEBUG_MODE:-0}"
 
 mkdir -p "$STATE/home" "$STATE/tmp" "$STATE/npm-cache"
@@ -28,7 +32,6 @@ find_npx() {
     [ -x "$p" ] && { echo "$p"; return 0; }
   done
 
-  # Narrow fallback search; never scan the whole device.
   for root in /data/user/0/com.termoneplus /data/data/com.termoneplus /data/user/0/com.termux /data/data/com.termux; do
     [ -d "$root" ] || continue
     p="$(find "$root" -type f -name npx -path '*/bin/npx' 2>/dev/null | head -n 1)"
@@ -39,12 +42,19 @@ find_npx() {
 
 NPX="$(find_npx)"
 if [ -z "$NPX" ]; then
-  echo "$(date '+%F %T') ERROR: npx runtime not found; agent not started." >> "$LOG"
+  echo "$(date '+%F %T') ERROR runtime=npx_not_found" >> "$LOG"
   exit 20
 fi
 
 BIN_DIR="$(dirname "$NPX")"
 PREFIX="$(dirname "$BIN_DIR")"
+NODE="$BIN_DIR/node"
+[ -x "$NODE" ] || NODE="$(command -v node 2>/dev/null)"
+
+if [ -z "$NODE" ] || [ ! -x "$NODE" ]; then
+  echo "$(date '+%F %T') ERROR runtime=node_not_found npx=$NPX" >> "$LOG"
+  exit 21
+fi
 
 export HOME="$STATE/home"
 export TMPDIR="$STATE/tmp"
@@ -52,25 +62,63 @@ export NPM_CONFIG_CACHE="$STATE/npm-cache"
 export PREFIX="$PREFIX"
 export PATH="$BIN_DIR:$PREFIX/bin:/system/bin:/system/xbin:/vendor/bin:/product/bin"
 export DEBUG_MODE="$([ "$DEBUG_MODE" = "1" ] && echo true || echo false)"
+export MCP_SERVER_URL="$REMOTE_BASE"
+
+preflight_remote() {
+  PREFLIGHT_URL="$REMOTE_BASE/api/mcp-info"
+  STATUS="$("$NODE" -e '
+const u=process.argv[1];
+fetch(u,{redirect:"manual"})
+  .then(r=>{console.log(r.status); process.exit(r.ok ? 0 : 10)})
+  .catch(()=>{console.log("NETWORK_ERROR"); process.exit(20)})
+' "$PREFLIGHT_URL" 2>>"$LOG")"
+  RC=$?
+
+  case "$RC:$STATUS" in
+    0:2??)
+      echo "$(date '+%F %T') PREFLIGHT=PASS http=$STATUS" >> "$LOG"
+      return 0
+      ;;
+    10:403)
+      echo "$(date '+%F %T') PREFLIGHT=BLOCKED http=403 backoff=${FORBIDDEN_RETRY_SEC}s" >> "$LOG"
+      sleep "$FORBIDDEN_RETRY_SEC"
+      return 1
+      ;;
+    10:*)
+      echo "$(date '+%F %T') PREFLIGHT=HTTP_FAIL http=$STATUS backoff=${HTTP_RETRY_SEC}s" >> "$LOG"
+      sleep "$HTTP_RETRY_SEC"
+      return 1
+      ;;
+    *)
+      echo "$(date '+%F %T') PREFLIGHT=NETWORK_FAIL status=$STATUS backoff=${NETWORK_RETRY_SEC}s" >> "$LOG"
+      sleep "$NETWORK_RETRY_SEC"
+      return 1
+      ;;
+  esac
+}
 
 open_pairing_if_needed() {
   [ -f "$CFG" ] && return 0
   [ -f "$PAIR_MARK" ] && return 0
 
-  # The official agent prints verification_uri_complete. Open it once; the user
-  # only approves the browser page and never copies a token/API key/device ID.
   URL="$(grep -Eo 'https://[^[:space:]]+' "$LOG" 2>/dev/null | grep 'desktopcommander\.app' | tail -n 1)"
   [ -n "$URL" ] || return 0
 
   am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1 && {
     touch "$PAIR_MARK"
     chmod 600 "$PAIR_MARK"
-    echo "$(date '+%F %T') Pairing page opened automatically." >> "$LOG"
+    echo "$(date '+%F %T') PAIRING_BROWSER=OPENED" >> "$LOG"
   }
 }
 
 while [ ! -f "$STATE/DISABLED" ]; do
-  echo "$(date '+%F %T') Starting Desktop Commander remote agent v$DC_VERSION" >> "$LOG"
+  preflight_remote || continue
+
+  if [ ! -f "$CFG" ]; then
+    rm -f "$PAIR_MARK"
+  fi
+
+  echo "$(date '+%F %T') AGENT=START version=$DC_VERSION" >> "$LOG"
 
   "$NPX" --yes "@wonderwhy-er/desktop-commander@$DC_VERSION" remote >> "$LOG" 2>&1 &
   AGENT_PID=$!
@@ -91,6 +139,6 @@ while [ ! -f "$STATE/DISABLED" ]; do
   rm -f "$STATE/agent.pid"
 
   [ -f "$STATE/DISABLED" ] && break
-  echo "$(date '+%F %T') Agent exited rc=$RC; retrying in ${RESTART_DELAY_SEC}s." >> "$LOG"
+  echo "$(date '+%F %T') AGENT=EXIT rc=$RC retry=${RESTART_DELAY_SEC}s" >> "$LOG"
   sleep "$RESTART_DELAY_SEC"
 done
