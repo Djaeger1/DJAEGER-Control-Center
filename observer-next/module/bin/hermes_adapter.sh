@@ -316,17 +316,6 @@ gemini_failed(){
   case "$_gs" in ALL_KEYS_COOLDOWN|AUTH_ERROR|HTTP_ERROR|NO_KEY|UNAVAILABLE) return 0;; *) return 1;; esac
 }
 
-frame_degraded(){
-  _fps=$(num "$(kv FPS_EST "$SNAP")"); _jank=$(num "$(kv JANK_PCT "$SNAP")"); _p95=$(num "$(kv P95_MS "$SNAP")")
-  _bfps=$(num "$(kv FPS_P50 "$LEARN")"); _bjank=$(num "$(kv JANK_P95 "$LEARN")"); _bp95=$(num "$(kv FRAME_P95_P95_MS "$LEARN")")
-  awk -v f="$_fps" -v j="$_jank" -v p="$_p95" -v bf="$_bfps" -v bj="$_bjank" -v bp="$_bp95" 'BEGIN{
-    if(bf<=0 || bp<=0) exit 1;
-    bad=(f>0 && f<bf*0.98) || (p>0 && p>bp*1.08);
-    if(j>=0 && bj>0 && j>bj*1.20+1) bad=1;
-    exit bad?0:1
-  }'
-}
-
 validate_candidate_file(){
   _src="$1"
   [ -r "$_src" ] || { HDETAIL=candidate_missing; return 1; }
@@ -531,18 +520,6 @@ hard_thermal_guard_active(){
   _g=$(num "$(kv GPU_TEMP_C "$SNAP")")
   awk -v s="$_s" -v b="$_b" -v c="$_c" -v g="$_g" 'BEGIN{
     exit !((s>0&&s>=46)||(b>0&&b>=45)||(c>0&&c>=75)||(g>0&&g>=75))
-  }'
-}
-
-frame_critical(){
-  _fps=$(num "$(kv FPS_EST "$SNAP")"); _j=$(num "$(kv JANK_PCT "$SNAP")")
-  _p95=$(num "$(kv P95_MS "$SNAP")"); _p99=$(num "$(kv P99_MS "$SNAP")")
-  _bfps=$(num "$(kv FPS_P50 "$LEARN")"); _bj=$(num "$(kv JANK_P95 "$LEARN")")
-  _bp95=$(num "$(kv FRAME_P95_P95_MS "$LEARN")"); _bp99=$(num "$(kv FRAME_P99_P95_MS "$LEARN")")
-  awk -v f="$_fps" -v bf="$_bfps" -v j="$_j" -v bj="$_bj" -v p="$_p95" -v bp="$_bp95" -v q="$_p99" -v bq="$_bp99" 'BEGIN{
-    bad=(bf>0&&f>0&&f<bf*0.80)||(bp>0&&p>bp*1.25)||(bq>0&&q>bq*1.25);
-    if(bj>0&&j>bj*1.50+2)bad=1;
-    exit bad?0:1
   }'
 }
 
