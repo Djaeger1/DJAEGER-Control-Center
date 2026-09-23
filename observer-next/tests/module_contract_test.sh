@@ -875,9 +875,8 @@ grep -Fq 'LOCAL_FRAME_CRITICAL_RECOVERY' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'LOCAL_POWER_TRIM_GPU' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'cloud_takeover_deferred_hard_thermal_guard' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'EXECUTION="$ROOT/runtime/execution.env"' "$MODULE/bin/hermes_adapter.sh"
-grep -Fq '_force_cloud=0' "$MODULE/bin/hermes_adapter.sh"
-grep -Fq 'ROLLBACK_FAILED:*|*:RESTORE_FAILED:*|*:*:ROLLBACK_FAILED' "$MODULE/bin/hermes_adapter.sh"
-grep -Fq '[ "$_force_cloud" -eq 1 ] 2>/dev/null && cloud_takeover' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'ONE HERMES Cloud is the preferred deputy cognition' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'if cloud_takeover; then' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'HERMES_CLOUD_CONNECTION_STATUS=$_hermes_cloud_connection' "$MODULE/bin/publisher.sh"
 python3 - "$MODULE/bin/hermes_adapter.sh" <<'PY'
 import sys
@@ -885,9 +884,9 @@ s=open(sys.argv[1],encoding='utf-8').read()
 http=s.index('[ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"')
 guard=s.index('{ echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$"', http)
 assert http < guard, "failed Hermes Cloud request must not arm 900s success guard"
-force=s.index('if [ "$_force_cloud" -eq 1 ] 2>/dev/null && cloud_takeover; then')
-local=s.index('if local_history_takeover; then', force)
-assert force < local, "forced cloud escalation must precede local-history fallback"
+cloud=s.index('if cloud_takeover; then', s.index('ONE HERMES Cloud is the preferred deputy cognition'))
+local=s.index('if local_history_takeover; then', cloud)
+assert cloud < local, "Hermes Cloud must precede local-history fallback when Gemini is unavailable"
 PY
 grep -Fq '$4=="KEPT"' "$MODULE/bin/hermes_adapter.sh"
 ! grep -Fq '$4=="KEPT"||$4=="APPLIED_VERIFIED"' "$MODULE/bin/hermes_adapter.sh"
