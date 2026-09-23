@@ -1,23 +1,33 @@
-# CHATGPT.md — DJAEGER AI Project Memory
+# CHATGPT.md — DJAEGER GAMING Project Memory
 
-> **Purpose:** This file is the persistent handover / single source of truth for ChatGPT sessions working on **DJAEGER AI Gaming**.
+> **Purpose:** This file is the persistent handover / single source of truth for ChatGPT sessions working on **DJAEGER GAMING**.
 > Read this file before making changes. Update it whenever a chat produces an important final decision, architecture change, verified state, active blocker, or next action.
 > Do **not** store raw API keys, tokens, passwords, private signing keys, or other secrets here.
 
 ## 1. PROJECT IDENTITY
 
-Project: **DJAEGER AI Gaming**
+Project: **DJAEGER GAMING**
 
 Primary goal:
 - Build an adaptive Android gaming engine that observes real device behavior and lets the local/cloud agents derive and apply the best operating decisions from telemetry rather than relying only on rigid static presets.
 
 Project isolation:
-- **DJAEGER AI Gaming is NOT DJAEGER Work / Hermes Work.**
-- Never import DJAEGER Work video automation, worker logic, runtime state, contracts, or files into DJAEGER AI unless explicitly requested.
+- **DJAEGER GAMING is NOT DJAEGER Work / Hermes Work.**
+- Never import DJAEGER Work video automation, worker logic, runtime state, contracts, or files into DJAEGER GAMING unless explicitly requested.
 - Other DJAEGER projects must keep their own project memory.
 
 Repository currently hosting this handover:
 - `Djaeger1/DJAEGER-Control-Center`
+
+
+## LEGACY NAME / RENAMING RULE
+
+- **Current canonical project name: DJAEGER GAMING**
+- Previous name: **DJAEGER AI / DJAEGER AI Gaming**
+- The old name is retained only as a historical alias for older commits, artifacts, screenshots, and chat references.
+- New documentation, handovers, releases, UI labels, and session commands should use **DJAEGER GAMING**.
+- This rename exists specifically to distinguish the current project from the older DJAEGER AI lineage.
+- Do not silently mix legacy DJAEGER AI states into DJAEGER GAMING unless they are explicitly reconciled and verified as still applicable.
 
 ## 2. ABSOLUTE OPERATING RULES
 
@@ -135,7 +145,7 @@ Static named profiles may still exist as bounded execution targets / safety enve
 
 ## 8. VERIFICATION STANDARD
 
-Before declaring a DJAEGER AI change complete, prefer evidence in this order:
+Before declaring a DJAEGER GAMING change complete, prefer evidence in this order:
 
 1. Real device runtime evidence.
 2. Real device telemetry reaching the intended component.
@@ -147,7 +157,7 @@ Items 4–5 support the conclusion but do not replace items 1–3 when the featu
 
 ## 9. CHATGPT HANDOVER WORKFLOW
 
-At the end of any important DJAEGER AI session:
+At the end of any important DJAEGER GAMING session:
 
 1. Update **CURRENT VERIFIED STATE**.
 2. Add newly finalized decisions.
@@ -180,7 +190,7 @@ This section must only contain facts verified from the current project/repositor
 
 ## 12. NEXT ACTION
 
-On the next DJAEGER AI work session:
+On the next DJAEGER GAMING work session:
 - Read this file first.
 - Audit the repository and the latest real-device/runtime evidence.
 - Replace the placeholders in **CURRENT VERIFIED STATE** and **ACTIVE BLOCKERS** with the latest proven state.
@@ -190,7 +200,7 @@ On the next DJAEGER AI work session:
 ## 14. NEW CHAT / CHAT-LIMIT BOOTSTRAP
 
 If a DJAEGER AI chat reaches the conversation limit, or the user starts a new chat and only says something short such as:
-- "Lanjutkan DJAEGER AI"
+- "Lanjutkan DJAEGER GAMING"
 - "Lanjutkan dari terakhir"
 - "Teruskan proyek DJAEGER"
 - "Lanjutkan"
@@ -198,7 +208,7 @@ If a DJAEGER AI chat reaches the conversation limit, or the user starts a new ch
 then ChatGPT should NOT ask the user to reconstruct the project from memory.
 
 Bootstrap procedure:
-1. Identify that the requested project is DJAEGER AI.
+1. Identify that the requested project is DJAEGER GAMING.
 2. Read this `CHATGPT.md` first.
 3. Read the latest relevant repository state / commit / runtime evidence needed for the unresolved task.
 4. Continue from **CURRENT VERIFIED STATE**, **ACTIVE BLOCKERS**, and **NEXT ACTION**.
@@ -208,14 +218,20 @@ Bootstrap procedure:
 
 User fallback:
 - The user does not need to remember a special command.
-- A short instruction such as **"Lanjutkan DJAEGER AI"** is sufficient when repository access is available.
+- A short instruction such as **"Lanjutkan DJAEGER GAMING"** is sufficient when repository access is available.
 - If repository access is unavailable in a future session, explicitly say that the project memory could not be fetched rather than guessing.
 
 
 ## 13. CHANGELOG
 
+### 2026-09-23 — Rename
+- Canonical project name changed from **DJAEGER AI / DJAEGER AI Gaming** to **DJAEGER GAMING**.
+- Legacy names remain only for historical references.
+- New sessions should use **"Lanjutkan DJAEGER GAMING"**.
+
+
 ### 2026-09-23
-- Created `CHATGPT.md` as persistent project memory for DJAEGER AI.
+- Created `CHATGPT.md` as persistent project memory for DJAEGER GAMING.
 - Added project isolation rules.
 - Added real-device verification rules.
 - Added the historical v1.1.7 adaptivefix signing/live-validation checkpoint.
