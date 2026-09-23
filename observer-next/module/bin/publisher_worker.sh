@@ -55,6 +55,8 @@ ensure_contextual_shadow(){
   if [ "$_sp" -gt 1 ] 2>/dev/null && kill -0 "$_sp" 2>/dev/null; then
     return 0
   fi
+  rm -f "$ROOT/runtime/shadow_contextual_v4.env" "$ROOT/policy/approved_contextual_v4.env"
+  rm -rf "$ROOT/runtime/locks/shadow_contextual_v4.lock" 2>/dev/null
   nohup sh "$CONTEXTUAL_SHADOW_BIN" "$ROOT" "$MODDIR" >/dev/null 2>&1 &
 }
 
