@@ -30,7 +30,7 @@ recover_legacy_railway(){
   done
   [ -n "$_token" ] || return 1
   [ -n "$_url" ] || _url="$DEFAULT_URL"
-  _tmp="$CFG.tmp.$"
+  _tmp="$CFG.tmp.$$"
   {
     printf 'DJAEGER_ACCESS_TOKEN=%s\n' "$_token"
     printf 'DJAEGER_RAILWAY_URL=%s\n' "$_url"
