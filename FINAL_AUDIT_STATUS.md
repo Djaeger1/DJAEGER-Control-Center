@@ -37,7 +37,7 @@ Branch: final/djaeger-ai-adaptive-v1
   - objective: frame stability -> thermal comfort -> minimum power
 - migration
   - Gemini 4-key + Hermes access/endpoint/id restore retained
-  - DJAEGER Work/Hermes Work paths explicitly excluded
+  - foreign content-worker project paths explicitly excluded
 
 ## Pending blockers — DO NOT BUILD FINAL PAIR YET
 1. observer-next/module/bin/shadow.sh active path is still the pre-contextual source.
@@ -58,4 +58,4 @@ Reason: active shadow source and thought-worker startup lifecycle are not yet co
 ## Safety
 - No build/flash/install performed by this audit.
 - Live installed runtime on the phone was not changed by source-branch consolidation.
-- No DJAEGER Work code/state was merged into DJAEGER AI.
+- No foreign content-worker project code/state was merged into DJAEGER AI.
