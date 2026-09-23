@@ -1,0 +1,6 @@
+id=djaeger_remote_boot
+name=DJAEGER Remote Root Bridge
+version=1.0.0
+versionCode=100
+author=DJAEGER
+description=Persistent Android ARM64 Remote Desktop Commander root bridge with bundled Node runtime, persisted OAuth session, watchdog, and auto-reconnect.
