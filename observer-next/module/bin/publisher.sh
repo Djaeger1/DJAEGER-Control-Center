@@ -531,10 +531,13 @@ publish_cc() {
   fi
   _thought_fresh=0; [ "$_thought_age" -le 180 ] 2>/dev/null && _thought_fresh=1
 
-  if [ -r "$_root/history/telemetry.csv" ]; then _history_bytes="$(wc -c < "$_root/history/telemetry.csv" 2>/dev/null)"
-  else _history_bytes=0
-  fi
-  case "$_history_bytes" in ''|*[!0-9]*) _history_bytes=0;; esac
+  _history_bytes=0
+  for _mem_file in "$_root/history/telemetry.csv" "$_root/history/outcomes.csv" "$_root/history/learned_envelope.env" "$_root/history/sample_counts.tsv"; do
+    [ -r "$_mem_file" ] || continue
+    _mem_size="$(wc -c < "$_mem_file" 2>/dev/null)"
+    case "$_mem_size" in ''|*[!0-9]*) _mem_size=0;; esac
+    _history_bytes=$((_history_bytes+_mem_size))
+  done
   _outcome_rows=0; _outcome_keep=0; _outcome_rollback=0; _outcome_rollback_failed=0
   _recent_outcome_rows=0; _recent_keep=0; _recent_rollback=0; _recent_rollback_failed=0
   _validation_outcome_rows=0; _validation_keep=0; _validation_rollback=0; _validation_rollback_failed=0; _validation_superseded_drift=0
