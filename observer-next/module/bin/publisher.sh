@@ -176,8 +176,13 @@ publish_cc() {
   fi
 
   _human_thermal=""
+  _comfort_pressure=NO
   if [ "$_skin_t" -ge 0 ] 2>/dev/null || [ "$_cpu_t" -ge 0 ] 2>/dev/null || [ "$_gpu_t" -ge 0 ] 2>/dev/null; then
     _human_thermal="Suhu yang terbaca: skin ${_skin_t}C, CPU ${_cpu_t}C, GPU ${_gpu_t}C."
+  fi
+  if awk -v s="$_skin_t" 'BEGIN{exit !(s>=42)}' 2>/dev/null; then
+    _comfort_pressure=YES
+    _human_thermal="$_human_thermal Skin sudah masuk comfort pressure untuk preferensi panas pengguna; saya akan mencari opsi lebih dingin hanya jika kestabilan frame tetap terjaga."
   fi
 
   _human_power=""
@@ -665,7 +670,7 @@ publish_cc() {
     echo "HERMES_CLOUD_LAST_MODEL=$_hcloud_last_model"
     echo "HERMES_CLOUD_LAST_VERDICT=$_hcloud_last_verdict"
     echo "HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED"
-    echo "OPTIMIZATION_OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
+    echo "OPTIMIZATION_OBJECTIVE=HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD"
     echo "FINAL_SOURCE=$([ "$_exec_state" = APPLIED ] && echo AI_AGENT_LOCAL_CONTROLLER || echo MEASURED_DEVICE)"
     echo "BRAIN_MODE=ADAPTIVE"
     echo "BRAIN_PROFILE=LEARNED"
@@ -695,7 +700,7 @@ publish_cc() {
     echo "AGENT_HARDWARE_AUTHORITY=FULL_LOCAL_GATED"; echo "AGENT_HARDWARE_TRUTH_SOURCE=AI_AGENT_SYSFS_READBACK"
     echo "AGENT_HARDWARE_TRUTH_AUTHORITY=MEASURED"; echo "AGENT_MUST_OBEY_ACTIVE_BRAIN=YES_WITH_SAFETY_GATES"
     echo "AGENT_CAN_CHOOSE_BRAIN=FAILOVER_CONTRACT_ONLY"; echo "AGENT_CAN_OVERRIDE_BRAIN=SAFETY_ONLY"; echo "AGENT_EXECUTION_BACKEND=INTERNAL_EXECUTOR_WORKER"
-    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "AGENT_ACTIVE_INTENT=$_exec_intent"; echo "AGENT_ACTIVE_ACTUATORS=$_exec_actuators"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>MINIMUM_POWER"
+    echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "AGENT_ACTIVE_INTENT=$_exec_intent"; echo "AGENT_ACTIVE_ACTUATORS=$_exec_actuators"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>THERMAL_COMFORT>MINIMUM_POWER"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
     echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "RECENT_OUTCOME_ROWS=$_recent_outcome_rows"; echo "RECENT_KEEP_ROWS=$_recent_keep"; echo "RECENT_ROLLBACK_ROWS=$_recent_rollback"; echo "RECENT_ROLLBACK_FAILED_ROWS=$_recent_rollback_failed"; echo "VALIDATION_OUTCOME_ROWS=$_validation_outcome_rows"; echo "VALIDATION_KEEP_ROWS=$_validation_keep"; echo "VALIDATION_ROLLBACK_ROWS=$_validation_rollback"; echo "VALIDATION_ROLLBACK_FAILED_ROWS=$_validation_rollback_failed"; echo "VALIDATION_SUPERSEDED_DRIFT_ROWS=$_validation_superseded_drift"; echo "MATURITY_PACKAGE=$_maturity_pkg"; echo "MATURITY_MODEL_STATE=$_maturity_learning"; echo "MATURITY_MODEL_SAMPLES=$_maturity_samples"; echo "MATURITY_MODEL_CONFIDENCE=$_maturity_confidence"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
@@ -722,7 +727,7 @@ publish_cc() {
     echo "__HERMES_SKILLS_VNEXT__"; echo "STATE=$([ "$_hermes_age" -le 180 ] 2>/dev/null && echo AVAILABLE || echo STALE)"; echo "SKILLS=VALIDATE_OPP,THERMAL_GUARD,FRAME_GUARD,POWER_GUARD"
     echo "__HERMES_LEARNING_V2__"; echo "STATE=$_learning"; echo "PACKAGE=$_pkg"; echo "SAMPLES=$_samples"
     echo "__HERMES_RESEARCH_V2__"; echo "STATE=$_shadow_state"; echo "SHADOW_WINDOWS=$_shadow_n"
-    echo "__HERMES_HUMAN_COMFORT__"; echo "COMFORT_PRESET=LEARNED"; echo "STATE=FEEDBACK_RECORDED_AS_EVIDENCE"; echo "DIRECT_CLOCK_EFFECT=NONE"; echo "FIXED_PRESET=DISABLED"
+    echo "__HERMES_HUMAN_COMFORT__"; echo "COMFORT_MODEL=FRAME_STABILITY_PLUS_THERMAL_COMFORT"; echo "HEAT_SENSITIVITY=HIGH_USER_PREFERENCE"; echo "SOFT_SKIN_PRESSURE_C=42"; echo "COMFORT_PRESSURE=$_comfort_pressure"; echo "STATE=ACTIVE_REASONING_CONSTRAINT"; echo "DIRECT_CLOCK_EFFECT=GATED_BY_SHADOW_AND_EXECUTOR"; echo "FIXED_PRESET=DISABLED"
     echo "__HERMES_LANGUAGE__"; echo "STATE=STRUCTURED_ONLY"
     echo "__HERMES_MATH__"; echo "STATE=$_learning"; echo "VERIFY=$_shadow_state"; echo "INPUT_SANITY=MEASURED"; echo "TARGET_FRAME_MS=UNSPECIFIED_DEVICE_LEARNED"
     echo "__HERMES_KERNEL1__"; echo "STATE=GATED"; echo "STRATEGY=MEASURED_ADAPTIVE"; echo "BOTTLENECK=$_exec_reason"; echo "CAPABILITIES_TOTAL=$_cap_count"; echo "ACTUATORS_TOTAL=$_actuator_truth"; echo "ACTION_COUNT=$_action_count"; echo "ROOT_AUTHORITY_OWNER=LOCAL_EXECUTOR"; echo "SYSFS_OWNER=LOCAL_EXECUTOR"
@@ -733,7 +738,7 @@ publish_cc() {
     echo "PAIR_VERIFIED=$_pair"; echo "HANDSHAKE_SCHEMA=${_hand_schema:-UNVERIFIED}"; echo "HANDSHAKE_ACK_ID=${_ack_id:-NONE}"; echo "HANDSHAKE_AGE_SEC=$_hand_age"
     echo "SNAPSHOT_GENERATION=$_generation"; echo "SNAPSHOT_FRESH=YES"
     echo "SHARED_INTELLIGENCE=GEMINI_PRIMARY_PLUS_ONE_HERMES_DEPUTY"; echo "GEMINI_INTELLIGENCE_SCOPE=PRIMARY_HIGHEST_FULL_REASONING_STRATEGY"; echo "HERMES_INTELLIGENCE_SCOPE=ONE_HERMES_FULL_DEPUTY_LOCAL_PLUS_CLOUD"
-    echo "GEMINI_REASONING_LIMIT=NO_DIRECT_SYSFS"; echo "HERMES_TEACHER_LOOP=CONTINUITY_MEMORY_OUTCOME_FEEDBACK"; echo "HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED"; echo "OPTIMIZATION_OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
+    echo "GEMINI_REASONING_LIMIT=NO_DIRECT_SYSFS"; echo "HERMES_TEACHER_LOOP=CONTINUITY_MEMORY_OUTCOME_FEEDBACK"; echo "HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED"; echo "OPTIMIZATION_OBJECTIVE=HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD"
     echo "GEMINI_CONNECTION=$_gem_connection"; echo "HERMES_CONNECTION=$_hermes_connection"
     echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"; echo "HERMES_AUTH=$_hauth"
     echo "HERMES_CLOUD=ONE_HERMES_CLOUD_COGNITION"; echo "HERMES_CLOUD_ROLE=STRONGEST_HERMES_CLOUD_BRAIN_ON_DEMAND"; echo "HERMES_BACKEND_PRIORITY=LOCAL_CONTINUITY_THEN_CLOUD_ESCALATION_WHEN_NEEDED"; echo "WORKLOAD_FINAL=ADAPTIVE_CLASSIFIER_V2"; echo "DUAL_REGISTRY=SEPARATE"; echo "PREEXEC_WORKLOAD_GUARD=ACTIVE_LOCAL_GATED"
