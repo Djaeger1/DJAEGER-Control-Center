@@ -21,7 +21,7 @@ HL="$ROOT/policy/hermes_local_vote.env"
 HSTATE="$ROOT/runtime/hermes_adapter.env"
 OUT="$ROOT/policy/candidate.env"
 STATE="$ROOT/runtime/consensus.env"
-SHADOW="$ROOT/runtime/shadow.env"
+SHADOW="$ROOT/runtime/shadow_contextual_v4.env"
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 
