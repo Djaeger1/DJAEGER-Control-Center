@@ -1,0 +1,6 @@
+id=djaeger_remote_boot
+name=DJAEGER Remote Boot Agent
+version=0.1.0-prototype
+versionCode=1
+author=DJAEGER
+description=Boot-time Remote Desktop Commander agent wrapper. No Railway/Cloudflare. Uses persisted OAuth device pairing and auto-reconnect.
