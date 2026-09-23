@@ -185,6 +185,11 @@ publish_cc() {
   _hmode="$(pub_kv HERMES_MODE "$_hermes_state")"; [ -n "$_hmode" ] || _hmode=DEPUTY_STANDBY
   _hactive="$(pub_kv HERMES_ACTIVE_SOURCE "$_hermes_state")"; [ -n "$_hactive" ] || _hactive=NONE
   _hcloud_used="$(pub_kv HERMES_CLOUD_USED "$_hermes_state")"; [ -n "$_hcloud_used" ] || _hcloud_used=NO
+  _hcloud_active="$(pub_kv HERMES_CLOUD_ACTIVE "$_hermes_state")"; [ -n "$_hcloud_active" ] || _hcloud_active=NO
+  _hcloud_last_age="$(pub_kv HERMES_CLOUD_LAST_SUCCESS_AGE_SEC "$_hermes_state")"; [ -n "$_hcloud_last_age" ] || _hcloud_last_age=NA
+  _hcloud_last_route="$(pub_kv HERMES_CLOUD_LAST_ROUTE "$_hermes_state")"; [ -n "$_hcloud_last_route" ] || _hcloud_last_route=NA
+  _hcloud_last_model="$(pub_kv HERMES_CLOUD_LAST_MODEL "$_hermes_state")"; [ -n "$_hcloud_last_model" ] || _hcloud_last_model=NA
+  _hcloud_last_verdict="$(pub_kv HERMES_CLOUD_LAST_VERDICT "$_hermes_state")"; [ -n "$_hcloud_last_verdict" ] || _hcloud_last_verdict=NA
   _hconf="$(pub_kv CONFIDENCE "$_local_vote")"; case "$_hconf" in ''|*[!0-9]*) _hconf=0;; esac
   _cons_state="$(pub_kv CONSENSUS_STATE "$_cons")"; [ -n "$_cons_state" ] || _cons_state=OBSERVING
   _active_brain_source="$(pub_kv ACTIVE_BRAIN_SOURCE "$_cons")"; [ -n "$_active_brain_source" ] || _active_brain_source=NONE
@@ -604,6 +609,11 @@ publish_cc() {
     echo "HERMES_MODE=$_hmode"
     echo "HERMES_ACTIVE_SOURCE=$_hactive"
     echo "HERMES_CLOUD_USED=$_hcloud_used"
+    echo "HERMES_CLOUD_ACTIVE=$_hcloud_active"
+    echo "HERMES_CLOUD_LAST_SUCCESS_AGE_SEC=$_hcloud_last_age"
+    echo "HERMES_CLOUD_LAST_ROUTE=$_hcloud_last_route"
+    echo "HERMES_CLOUD_LAST_MODEL=$_hcloud_last_model"
+    echo "HERMES_CLOUD_LAST_VERDICT=$_hcloud_last_verdict"
     echo "HERMES_CLOUD_POLICY=ON_DEMAND_NEURON_GUARDED"
     echo "OPTIMIZATION_OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
     echo "FINAL_SOURCE=$([ "$_exec_state" = APPLIED ] && echo AI_AGENT_LOCAL_CONTROLLER || echo MEASURED_DEVICE)"
