@@ -694,6 +694,11 @@ grep -Fq 'legacypartial123,RELEASED,LATCHED_RECHECK_EXTERNAL_OVERRIDE' "$TEST_RO
 grep -Fqx 'DIGEST=legacypartial123' "$TEST_ROOT/runtime/execution_suppress.env"
 rm -f "$TEST_ROOT/runtime/execution_suppress.env"
 
+# Restore the base fixture before the independent mixed-latch test.
+printf '600000\n' > "$LP/scaling_min_freq"; printf '1800000\n' > "$LP/scaling_max_freq"
+printf '900000\n' > "$BP/scaling_min_freq"; printf '2400000\n' > "$BP/scaling_max_freq"
+printf '300000000\n' > "$GP/min_freq"; printf '900000000\n' > "$GP/max_freq"
+
 # A multi-axis latch must NOT be cleared if even one owned axis still equals
 # DJAEGER-applied state. This prevents blind ownership loss after partial drift.
 printf '1400000\n' > "$LP/scaling_max_freq"
