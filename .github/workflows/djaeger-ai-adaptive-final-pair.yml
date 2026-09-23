@@ -1,8 +1,6 @@
 name: DJAEGER AI Adaptive Final Pair
 
 on:
-  push:
-    branches: [final/djaeger-ai-adaptive-v1]
   workflow_dispatch:
 
 permissions:
