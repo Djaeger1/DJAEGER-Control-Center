@@ -1,0 +1,74 @@
+name: remote-agent-prototype
+
+on:
+  push:
+    branches:
+      - prototype/djaeger-remote-boot-agent
+    paths:
+      - "remote-agent/**"
+      - ".github/workflows/remote-agent-prototype.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck and zip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck zip
+
+      - name: Validate shell syntax
+        run: |
+          set -eux
+          sh -n remote-agent/module/post-fs-data.sh
+          sh -n remote-agent/module/service.sh
+          sh -n remote-agent/module/action.sh
+          sh -n remote-agent/module/bin/djaeger-remote-launcher.sh
+
+      - name: ShellCheck
+        run: |
+          set -eux
+          shellcheck -s sh remote-agent/module/post-fs-data.sh
+          shellcheck -s sh remote-agent/module/service.sh
+          shellcheck -s sh remote-agent/module/action.sh
+          shellcheck -s sh remote-agent/module/bin/djaeger-remote-launcher.sh
+
+      - name: Contract checks
+        run: |
+          set -eux
+          test -f remote-agent/module/module.prop
+          test -f remote-agent/module/service.sh
+          test -f remote-agent/module/bin/djaeger-remote-launcher.sh
+          grep -q '^id=djaeger_remote_boot$' remote-agent/module/module.prop
+          grep -q '^DC_VERSION=0.2.51$' remote-agent/module/config.env
+          grep -q '^REMOTE_BASE=https://mcp.desktopcommander.app$' remote-agent/module/config.env
+          ! grep -RniE 'railway|cloudflare' remote-agent/module
+          ! grep -RniE '(@latest|--no-auth|0\.0\.0\.0:|chmod 777)' remote-agent/module
+
+      - name: Build installable prototype ZIP
+        run: |
+          set -eux
+          mkdir -p dist/stage
+          cp -a remote-agent/module/. dist/stage/
+          find dist/stage -type f -name '*.sh' -exec chmod 0755 {} +
+          (
+            cd dist/stage
+            zip -r ../DJAEGER-Remote-Boot-Agent-v0.1.0-prototype.zip .
+          )
+          unzip -l dist/DJAEGER-Remote-Boot-Agent-v0.1.0-prototype.zip
+          sha256sum dist/DJAEGER-Remote-Boot-Agent-v0.1.0-prototype.zip | tee dist/SHA256SUMS.txt
+
+      - name: Upload prototype artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Remote-Boot-Agent-v0.1.0-prototype
+          path: |
+            dist/DJAEGER-Remote-Boot-Agent-v0.1.0-prototype.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
