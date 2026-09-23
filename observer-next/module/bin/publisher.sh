@@ -510,6 +510,30 @@ publish_cc() {
       ;;
   esac
 
+  # ONE_HERMES_THOUGHT_PUBLISHER_V1
+  # Publisher is display-only. The ONE HERMES THOUGHT process owns reasoning text.
+  case "$_hactive" in
+    HERMES_LOCAL|HERMES_H2|HERMES_CLOUD)
+      _ht="$_root/runtime/hermes_thought.env"
+      if [ -r "$_ht" ]; then
+        _ht_ver="$(pub_kv WORKER_VERSION "$_ht")"
+        _ht_at="$(pub_kv AT "$_ht")"; case "$_ht_at" in ''|*[!0-9]*) _ht_at=0;; esac
+        _ht_age=$((_now-_ht_at)); [ "$_ht_age" -ge 0 ] 2>/dev/null || _ht_age=999999
+        _ht_pkg="$(pub_kv PACKAGE "$_ht")"
+        _ht_text="$(pub_kv TEXT "$_ht")"
+        if [ "$_ht_ver" = ONE_HERMES_THOUGHT_V3_4 ] && [ "$_ht_pkg" = "$_pkg" ] && [ "$_ht_age" -le 180 ] 2>/dev/null && [ -n "$_ht_text" ]; then
+          _thought_source=HERMES_H2
+          _thought_status="$(pub_kv STATUS "$_ht")"; [ -n "$_thought_status" ] || _thought_status=DEPUTY_LOCAL_OBSERVE
+          _thought_conf="$(pub_kv CONFIDENCE "$_ht")"; case "$_thought_conf" in ''|*[!0-9]*) _thought_conf=0;; esac
+          _thought_reason="$(pub_kv REASON "$_ht")"; [ -n "$_thought_reason" ] || _thought_reason=ONE_HERMES_LOCAL_REASONING
+          _thought_evidence="$(pub_kv EVIDENCE "$_ht")"
+          _thought="$_ht_text"
+          _thought_age="$_ht_age"
+        fi
+      fi
+      ;;
+  esac
+
   if [ "$_cons_state" = PENDING_SHADOW ]; then
     _thought_status=PENDING_SHADOW
     _thought="$_thought Kandidat ini sekarang masuk shadow test. Saya sedang memeriksa apakah perubahan benar-benar menjaga frame dan hanya menurunkan daya bila kestabilannya tetap aman."
@@ -541,29 +565,6 @@ publish_cc() {
     _thought_evidence="rollback=$_rollback readback=$_readback"
     _thought="Saya menghentikan eksekusi karena recovery SYSFS belum bisa dibuktikan aman. Saya tidak akan memaksakan write baru selama readback belum jelas; keselamatan state perangkat lebih penting daripada terus mencoba kandidat."
   fi
-  # ONE_HERMES_THOUGHT_PUBLISHER_V1
-  # Publisher is display-only. The ONE HERMES THOUGHT process owns reasoning text.
-  case "$_hactive" in
-    HERMES_LOCAL|HERMES_H2|HERMES_CLOUD)
-      _ht="$_root/runtime/hermes_thought.env"
-      if [ -r "$_ht" ]; then
-        _ht_ver="$(pub_kv WORKER_VERSION "$_ht")"
-        _ht_at="$(pub_kv AT "$_ht")"; case "$_ht_at" in ''|*[!0-9]*) _ht_at=0;; esac
-        _ht_age=$((_now-_ht_at)); [ "$_ht_age" -ge 0 ] 2>/dev/null || _ht_age=999999
-        _ht_pkg="$(pub_kv PACKAGE "$_ht")"
-        _ht_text="$(pub_kv TEXT "$_ht")"
-        if [ "$_ht_ver" = ONE_HERMES_THOUGHT_V3_4 ] && [ "$_ht_pkg" = "$_pkg" ] && [ "$_ht_age" -le 180 ] 2>/dev/null && [ -n "$_ht_text" ]; then
-          _thought_source=HERMES_H2
-          _thought_status="$(pub_kv STATUS "$_ht")"; [ -n "$_thought_status" ] || _thought_status=DEPUTY_LOCAL_OBSERVE
-          _thought_conf="$(pub_kv CONFIDENCE "$_ht")"; case "$_thought_conf" in ''|*[!0-9]*) _thought_conf=0;; esac
-          _thought_reason="$(pub_kv REASON "$_ht")"; [ -n "$_thought_reason" ] || _thought_reason=ONE_HERMES_LOCAL_REASONING
-          _thought_evidence="$(pub_kv EVIDENCE "$_ht")"
-          _thought="$_ht_text"
-          _thought_age="$_ht_age"
-        fi
-      fi
-      ;;
-  esac
   _thought_fresh=0; [ "$_thought_age" -le 180 ] 2>/dev/null && _thought_fresh=1
 
   if [ -r "$_root/history/telemetry.csv" ]; then _history_bytes="$(wc -c < "$_root/history/telemetry.csv" 2>/dev/null)"
