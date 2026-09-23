@@ -1,0 +1,197 @@
+name: DJAEGER AI Adaptive Final Pair
+
+on:
+  push:
+    branches: [final/djaeger-ai-adaptive-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-ai-adaptive-final-pair-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  final-pair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Final source gate
+        run: |
+          set -euo pipefail
+          node isolation-check.js
+          bash observer-next/tests/module_contract_test.sh
+
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+
+          APP=observer-next/android/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          PUB=observer-next/module/bin/publisher.sh
+          REPO=observer-next/android/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          PROP=observer-next/module/module.prop
+
+          grep -Fq 'syncModule=="210"&&syncCc=="111"' "$APP"
+          grep -Fq 'VERIFIED • MODULE 210 / APP 111' "$APP"
+          grep -Fq 'DJAEGER AI Adaptive v1.1.7 • VERIFIED SYNC' "$APP"
+          grep -Fq '_expected_apk=111' "$PUB"
+          grep -Fq 'private val apkVersionCode=111' "$REPO"
+          grep -Fqx 'versionCode=210' "$PROP"
+
+          grep -Fq 'DJAEGER_CONTEXTUAL_SHADOW_V4' observer-next/module/bin/shadow_contextual_v4.sh
+          grep -Fq 'CONTEXTUAL_SHADOW_V4_RANGEFIX' observer-next/module/bin/shadow_contextual_v4.sh
+          grep -Fq 'CONTEXTUAL_SHADOW_V3_PARSEFIX' observer-next/module/bin/shadow_contextual_v4.sh
+          grep -Fq 'PERSIST_REJECT_STRATEGY_MULTI' observer-next/module/bin/shadow_contextual_v4.sh
+
+          grep -Fq 'shadow_contextual_v4.env' observer-next/module/bin/executor.sh
+          grep -Fq 'approved_contextual_v4.env' observer-next/module/bin/executor.sh
+          grep -Fq 'SHADOW_GENERATION_STALE' observer-next/module/bin/executor.sh
+          grep -Fq 'ensure_contextual_shadow' observer-next/module/bin/publisher_worker.sh
+          grep -Fq 'ensure_thought_worker' observer-next/module/bin/publisher_worker.sh
+
+          grep -Fq 'ONE_HERMES_THOUGHT_V3_4' observer-next/module/bin/hermes_thought_worker.sh
+          grep -Fq 'FRAME_RECOVERY_LOCAL_BEFORE_CLOUD' observer-next/module/bin/hermes_adapter.sh
+          grep -Fq 'FRAME_RECOVERY_CAUSAL_GATE_V1' observer-next/module/bin/hermes_adapter.sh
+          grep -Fq 'CONTEXTUAL_HEALTHY_FRAME_OVERRIDE_V1' observer-next/module/bin/hermes_adapter.sh
+          grep -Fq 'MULTI_REJECT_ALTERNATIVE_SYNTH' observer-next/module/bin/hermes_adapter.sh
+          grep -Fq 'MAX_BYTES=104857600' "$PUB"
+          grep -Fq 'LIVE_POLICY_BOUNDS' "$PUB"
+          grep -Fq 'LITTLE_ACTIVE_MIN_KHZ' observer-next/module/bin/observer.sh
+          grep -Fq 'GPU_ACTIVE_MAX_HZ' observer-next/module/bin/observer.sh
+
+          grep -Fq 'MIGRATION_POLICY=EXPLICIT_KEY_ALLOWLIST_ONLY' observer-next/module/bin/migrate.sh
+          grep -Fq 'RAW_LEGACY_FILES_IMPORTED=0' observer-next/module/bin/migrate.sh
+
+          A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
+          for q in "${A}-${B}" "${A}_${B}" "${A} ${B}" "${C}-${B}" "${C}_${B}" "${C} ${B}" "${D}-${E}" "${F}_${G}" "${H}_${I}"; do
+            if grep -R -I -i -F --exclude-dir=.git --exclude=isolation-check.js "$q" observer-next; then
+              echo "FOREIGN_SOURCE_RESIDUE=$q" >&2
+              exit 1
+            fi
+          done
+
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            [ "$f" = observer-next/module/bin/executor.sh ] && continue
+            ! grep -Eq 'tee[[:space:]]+/sys/|>[[:space:]]*/sys/' "$f"
+          done
+
+      - name: Android unit tests and release build
+        working-directory: observer-next/android
+        run: gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
+
+      - name: Package and verify final pair
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cd observer-next/module
+          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip .
+          cd ../..
+
+          UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
+          test -n "$UNSIGNED"
+
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | sort -V | tail -n1)"
+
+          SIGN_DIR="$RUNNER_TEMP/djaeger-ai-final-signing"
+          mkdir -p "$SIGN_DIR"
+          PASS="$(openssl rand -hex 24)"
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$SIGN_DIR/djaeger-ai.p12" \
+            -storepass "$PASS" -keypass "$PASS" \
+            -alias djaegerai -keyalg RSA -keysize 4096 -validity 3650 \
+            -dname 'CN=DJAEGER AI, O=DJAEGER, C=ID'
+
+          ALIGNED="$RUNNER_TEMP/djaeger-ai-final-aligned.apk"
+          APK="out/DJAEGER-AI-Adaptive-v1.1.7-adaptivefix-FINAL.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$SIGN_DIR/djaeger-ai.p12" --ks-type PKCS12 \
+            --ks-key-alias djaegerai \
+            --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$APK" "$ALIGNED"
+
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee out/APKSIGNER_VERIFY.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
+          "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
+
+          unzip -t "$APK" > out/APK_ZIP_TEST.txt
+          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip > out/MODULE_ZIP_TEST.txt
+          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip > out/MODULE_CONTENTS.txt
+
+          grep -q "package: name='com.djaeger.observer' versionCode='111' versionName='1.1.7-adaptivefix'" out/AAPT_BADGING.txt
+          grep -qx 'false' out/APK_DEBUGGABLE.txt
+
+          grep -Eq 'bin/executor\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/shadow_contextual_v4\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/hermes_thought_worker\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/publisher_worker\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/migrate\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/railway_bridge\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'uninstall\.sh' out/MODULE_CONTENTS.txt
+          ! grep -Eq 'agent_bus\.sh' out/MODULE_CONTENTS.txt
+
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip bin/executor.sh | grep -Fq 'approved_contextual_v4.env'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip bin/shadow_contextual_v4.sh | grep -Fq 'DJAEGER_CONTEXTUAL_SHADOW_V4'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip bin/hermes_thought_worker.sh | grep -Fq 'ONE_HERMES_THOUGHT_V3_4'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip bin/publisher.sh | grep -Fq 'MAX_BYTES=104857600'
+          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip bin/migrate.sh | grep -Fq 'MIGRATION_SCHEMA=9'
+
+          mkdir -p "$RUNNER_TEMP/module-audit" "$RUNNER_TEMP/apk-audit"
+          unzip -q out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip -d "$RUNNER_TEMP/module-audit"
+          unzip -q "$APK" -d "$RUNNER_TEMP/apk-audit"
+
+          A=DJAEGER; B=WORK; C=HERMES; D=railway; E=relay; F=AUTO; G=STUDIO; H=YOUTUBE; I=SCHEDULER
+          for q in "${A}-${B}" "${A}_${B}" "${A} ${B}" "${C}-${B}" "${C}_${B}" "${C} ${B}" "${D}-${E}" "${F}_${G}" "${H}_${I}"; do
+            ! grep -R -a -i -F "$q" "$RUNNER_TEMP/module-audit"
+            ! grep -R -a -i -F "$q" "$RUNNER_TEMP/apk-audit"
+          done
+
+          cd out
+          sha256sum \
+            DJAEGER-AI-Adaptive-v1.1.7-adaptivefix-FINAL.apk \
+            DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip > SHA256SUMS.txt
+
+          printf '%s\n' \
+            'STATUS=FINAL_PAIR_BUILD_VERIFIED_OFFLINE' \
+            'PAIR=MODULE_210_APK_111' \
+            'VERSION=1.1.7-adaptivefix' \
+            'SHADOW_AUTHORITY=CONTEXTUAL_V4' \
+            'THOUGHT=ONE_HERMES_V3_4' \
+            'MEMORY_CAPACITY_BYTES=104857600' \
+            'CREDENTIAL_RECOVERY=GEMINI_4KEY_PLUS_HERMES_ACCESS_ENDPOINT_ID' \
+            'CLOUD_HARDWARE_AUTHORITY=NONE' \
+            'SYSFS_AUTHORITY=LOCAL_GATED_EXECUTOR_ONLY' \
+            'APK_SIGNING=EPHEMERAL_BUILD_KEY' \
+            'APK_UPDATE_SIGNATURE_COMPATIBILITY=NOT_GUARANTEED' \
+            'LIVE_DEVICE_VALIDATION=REQUIRED_AFTER_INSTALL' \
+            > BUILD_REPORT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-AI-Adaptive-v1.1.7-FINAL
+          path: |
+            out/DJAEGER-AI-Adaptive-v1.1.7-adaptivefix-FINAL.apk
+            out/DJAEGER-AI-Adaptive-Module-v1.1.7-adaptivefix-FINAL.zip
+            out/SHA256SUMS.txt
+            out/BUILD_REPORT.txt
+            out/APKSIGNER_VERIFY.txt
+            out/AAPT_BADGING.txt
+            out/APK_DEBUGGABLE.txt
+            out/APK_ZIP_TEST.txt
+            out/MODULE_ZIP_TEST.txt
+            out/MODULE_CONTENTS.txt
+          if-no-files-found: error
