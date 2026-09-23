@@ -213,7 +213,11 @@ publish_cc() {
   fi
 
   _gem="$(pub_kv GEMINI_STATE "$_gem_state")"; [ -n "$_gem" ] || _gem=WAITING
-  _gem_conf="$(pub_kv CONFIDENCE "$_gem_prop")"; case "$_gem_conf" in ''|*[!0-9]*) _gem_conf=0;; esac
+  _gem_conf="$(pub_kv CONFIDENCE "$_gem_prop")"
+  case "$_gem_conf" in
+    ""|*[!0-9]*) _gem_conf="$(pub_kv GEMINI_CONFIDENCE "$_gem_state")";;
+  esac
+  case "$_gem_conf" in ""|*[!0-9]*) _gem_conf=0;; esac
   _gem_reason="$(pub_kv REASON "$_gem_prop")"; [ -n "$_gem_reason" ] || _gem_reason="$(pub_kv GEMINI_DETAIL "$_gem_state")"
   _gem_thought="$(pub_kv GEMINI_THOUGHT "$_gem_state")"
   _gem_thought_at="$(pub_kv GEMINI_THOUGHT_AT "$_gem_state")"; case "$_gem_thought_at" in ''|*[!0-9]*) _gem_thought_at=0;; esac
