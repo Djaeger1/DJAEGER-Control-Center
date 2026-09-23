@@ -100,7 +100,7 @@ jobs:
           APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | sort -V | tail -n1)"
           test -x "$BUILD_TOOLS/zipalign"
           test -x "$BUILD_TOOLS/apksigner"
-          test -x "$APK ANALYZER" 2>/dev/null || true
+          test -x "$APKANALYZER"
 
           SIGN_DIR="$RUNNER_TEMP/djaeger-gaming-v118-signing"
           mkdir -p "$SIGN_DIR"
@@ -151,7 +151,7 @@ jobs:
 
           sha256sum "$APK" "$MODULE" > out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL-SHA256SUMS.txt
 
-          CERT_SHA="$(grep -m1 'Signer #1 certificate SHA-256 digest:' out/APKSIGNER_VERIFY.txt | sed 's/.*: //')"
+          CERT_SHA="$(grep -m1 'certificate SHA-256 digest:' out/APKSIGNER_VERIFY.txt | sed 's/.*: //')"
           {
             echo 'STATUS=FINAL_PAIR_BUILD_VERIFIED_OFFLINE'
             echo 'PROJECT=DJAEGER_GAMING'
