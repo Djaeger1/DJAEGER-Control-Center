@@ -12,7 +12,7 @@ RUNTIME="$ROOT/runtime"
 HISTORY="$ROOT/history/telemetry.csv"
 COUNT_INDEX="$ROOT/history/sample_counts.tsv"
 MEMORY_MAX_BYTES=104857600
-MEMORY_RETAIN_BYTES=94371840
+MEMORY_RESERVE_BYTES=4194304
 SNAP="$RUNTIME/snapshot.env"
 FRAMEFILE="$RUNTIME/frame.env"
 SEQ=0
@@ -316,10 +316,21 @@ while true; do
 
   SIZE=$(wc -c < "$HISTORY" 2>/dev/null)
   case "$SIZE" in ''|*[!0-9]*) SIZE=0;; esac
-  if [ "$SIZE" -gt "$MEMORY_MAX_BYTES" ]; then
-    # Keep a 90 MiB raw-history window. Learned envelopes and the persistent
-    # sample index preserve long-term knowledge without scanning 100 MiB live.
-    { head -n1 "$HISTORY"; tail -c "$MEMORY_RETAIN_BYTES" "$HISTORY" | sed '1d'; } > "$HISTORY.trim"
+
+  # Enforce the 100 MiB budget across persistent agent memory, not only the
+  # telemetry file. Keep a small reserve for learned metadata and future writes.
+  AUX_BYTES=0
+  for _mem_file in "$ROOT/history/outcomes.csv" "$ROOT/history/learned_envelope.env" "$COUNT_INDEX"; do
+    [ -r "$_mem_file" ] || continue
+    _mem_size=$(wc -c < "$_mem_file" 2>/dev/null)
+    case "$_mem_size" in ''|*[!0-9]*) _mem_size=0;; esac
+    AUX_BYTES=$((AUX_BYTES+_mem_size))
+  done
+  TOTAL_MEMORY_BYTES=$((SIZE+AUX_BYTES))
+  if [ "$TOTAL_MEMORY_BYTES" -gt "$MEMORY_MAX_BYTES" ]; then
+    TELEMETRY_TARGET=$((MEMORY_MAX_BYTES-AUX_BYTES-MEMORY_RESERVE_BYTES))
+    [ "$TELEMETRY_TARGET" -gt 8388608 ] 2>/dev/null || TELEMETRY_TARGET=8388608
+    { head -n1 "$HISTORY"; tail -c "$TELEMETRY_TARGET" "$HISTORY" | sed '1d'; } > "$HISTORY.trim"
     mv -f "$HISTORY.trim" "$HISTORY"
   fi
   WORKLOAD_CLASS=$(sed -n 's/^WORKLOAD_CLASS=//p' "$ROOT/runtime/workload.env" 2>/dev/null | head -n1)
