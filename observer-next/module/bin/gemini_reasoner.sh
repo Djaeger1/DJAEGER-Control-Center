@@ -325,6 +325,7 @@ EOF
   GGMIN=$(numv GPU_MIN_HZ) || GGMIN=""
   GGMAX=$(numv GPU_MAX_HZ) || GGMAX=""
   REASON=$(trim "$(gv REASON)" | tr -cd 'A-Za-z0-9_.:-' | cut -c1-96)
+  THOUGHT=$(clean_thought "$(trim "$(gv THOUGHT)")")
   echo "$(date +%s)" > "$LAST_SUCCESS"; chmod 600 "$LAST_SUCCESS"
 
   case "$VERDICT" in
