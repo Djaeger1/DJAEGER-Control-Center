@@ -216,8 +216,8 @@ Interpretation:
 
 - V3.4 GAME live runtime is verified PASS, but the exact currently installed APK/module package identity is not yet reconciled.
 - The V3.4 runtime patches proven via terminal/live testing are not yet fully consolidated into the canonical source tree.
-- Final combined audit is still required, especially service/shadow lifecycle consistency; do not assume lifecycle is complete merely because V3_4_GAME_VERIFY passed.
-- Do **not** build/publish another final APK/module pair until the combined runtime/source audit and consolidation are complete.
+- The final combined source/lifecycle audit is now PASS (run 35871582592) and V3.4 real-device runtime verification was already PASS.
+- The next artifact may now be built as exactly one matched module + APK pair, but it must not be called live-verified until post-install device evidence passes.
 - The canonical artifact pair **is recorded**; do not list it as unknown unless newer artifact evidence supersedes it.
 
 ## 12. NEXT ACTION
@@ -225,11 +225,12 @@ Interpretation:
 On the next DJAEGER GAMING work session:
 - Read this file **before answering version/state questions**.
 - Start from the recovered V3.4 live checkpoint; do **not** restart from v1.1.7 packaging work.
-- Run the **final combined audit** of all V3/V3.4 patches that were proven live.
-- Consolidate those proven patches into the canonical source tree while preserving executor, Shadow, Hermes adapter, and sysfs authority contracts unless evidence requires a change.
-- Resolve/verify service + Shadow lifecycle consistency.
-- Only after the combined audit/consolidation is clean, build **one final matched module + APK pair**.
-- Separately reconcile the exact currently installed APK/module package identity from real-device evidence when available.
+- Use branch `djaeger-gaming-v3.4-final-consolidation` at or after audit commit `2d6dc1d1183dbab5ed47451425f73f1f1249b5f4`.
+- Determine the exact source version identity from module/APK metadata; do not invent a version number.
+- Build **exactly one final matched module + APK pair** from the audited source.
+- Verify package identity, hashes, signer, and CI before presenting the pair.
+- Do not call the new pair live-verified until post-install real-device evidence passes.
+- Separately reconcile the exact currently installed APK/module package identity when evidence is available.
 
 
 ## 14. NEW CHAT / CHAT-LIMIT BOOTSTRAP
@@ -261,6 +262,18 @@ User fallback:
 
 
 ## 13. CHANGELOG
+### 2026-09-23 — V3.4 final consolidation audit PASS
+- Preserved detached final source commit `8183a91c088721a14e28bcf82e2009a2f67b737f` on branch `djaeger-gaming-v3.4-final-consolidation`.
+- Added audit-only CI gate; no APK/module packaging was performed by the audit workflow.
+- Initial audit run `35871357452` failed only because isolation scanner matched the comment substring `ONE HERMES worker` as `hermes work`; no DJAEGER Work source contamination was found.
+- Reworded that comment only; runtime logic was unchanged.
+- Final audit commit: `2d6dc1d1183dbab5ed47451425f73f1f1249b5f4`.
+- GitHub Actions run `35871582592`: SUCCESS.
+- PASS gates: source isolation, shell syntax, V3.4 lifecycle + Shadow contract, full module contract/fake-sysfs regressions, Android release unit tests.
+- Together with the prior real-device `V3_4_GAME_VERIFY=PASS`, the source/runtime consolidation gate is now clean.
+- NEXT: determine exact final source version identity, then build exactly one matched module + APK pair. Do not install/promote it as live until post-install device evidence passes.
+
+
 ### 2026-09-23 — Recovered final chat-limit checkpoint
 - Recovered the last DJAEGER GAMING runtime state from the chat that hit its limit.
 - Real-device checkpoint: `V3_4_GAME_VERIFY=PASS`.
