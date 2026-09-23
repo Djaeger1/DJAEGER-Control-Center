@@ -458,7 +458,11 @@ publish_cc() {
       _thought_source=HERMES_H2
       _thought_conf="$_hconf"
       _thought_reason="$_hreason"
-      if [ "$_hlocal" = TAKEOVER_LOCAL_SYNTH ]; then
+      if [ "$_hlocal" = TAKEOVER_THERMAL_HOLD ]; then
+        _thought_status=DEPUTY_THERMAL_HOLD
+        _thought_evidence="brain=ONE_HERMES source=LOCAL comfort=HARD_THERMAL_HOLD gemini=$_gem frame=$_frame_evidence"
+        _thought="Gemini sedang tidak tersedia dan suhu perangkat sudah melewati batas hard thermal untuk transaksi baru. $_human_metrics Saya memang ingin menurunkan panas, tetapi saya sengaja tidak menulis SYSFS saat ini agar tidak melawan kontrol thermal native. Begitu suhu kembali di bawah hard gate dan frame tetap stabil, ONE HERMES akan mencoba trim lokal yang lebih dingin sebelum memakai Cloud."
+      elif [ "$_hlocal" = TAKEOVER_LOCAL_SYNTH ]; then
         _thought_status=DEPUTY_LOCAL_SYNTH
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=KNOWLEDGE_DRIVEN intent=$_plan_intent gemini=$_gem frame=$_frame_evidence"
         _thought="Gemini sedang tidak tersedia, jadi ONE HERMES Local mengambil alih dan menyusun kandidat dari perilaku perangkat yang benar-benar terukur. $_human_metrics $_intent_human Ini bukan profil tetap; batas yang dipilih tetap harus lolos shadow, safety, exact readback dan outcome."
