@@ -181,7 +181,7 @@ local_text(){
     local_memory_reuses_proven_strategy)
       echo "Saya mengenali pola yang pernah menghasilkan outcome aman dan memakai kembali pengetahuan itu daripada menebak strategi baru. Outcome berikutnya tetap dipakai untuk memperkuat atau membatalkan memory lama." ;;
     local_synth_LOCAL_FRAME_CRITICAL_RECOVERY|local_synth_LOCAL_FRAME_CRITICAL_RECOVERY_STAGE1_BIG_GPU|local_synth_LOCAL_FRAME_DEGRADED_RECOVERY)
-      echo "Frame pacing memburuk dan saya membentuk kandidat dari envelope perangkat yang terukur, bukan preset. Kandidat hanya boleh lanjut bila causal guard, shadow, safety gate, dan readback mendukungnya." ;;
+      echo "Frame pacing memburuk dan saya membentuk kandidat recovery dari envelope perangkat yang terukur, bukan preset. Tahap awal hanya memakai actuator yang didukung evidence; kandidat tetap wajib lolos causal guard, shadow, safety gate, dan readback." ;;
     local_synth_LOCAL_HUMAN_COMFORT_THERMAL_TRIM_GPU|local_synth_LOCAL_HUMAN_COMFORT_THERMAL_TRIM_BIG|local_synth_LOCAL_HUMAN_COMFORT_THERMAL_TRIM_LITTLE|local_synth_LOCAL_POWER_TRIM_GPU|local_synth_LOCAL_POWER_TRIM_BIG|local_synth_LOCAL_POWER_TRIM_LITTLE|local_synth_LOCAL_MATURE_MODEL_EFFICIENCY_PROBE)
       echo "Frame belum memberi alasan untuk mengejar performa lebih tinggi, jadi saya mencari pengurangan beban sekecil mungkin dari envelope yang sudah dipelajari. Penghematan hanya boleh dipertahankan jika frame tetap mulus." ;;
     cloud_requests_observe)
@@ -196,6 +196,10 @@ local_text(){
       fi ;;
     no_safe_takeover_strategy)
       echo "Tidak ada strategi takeover yang saat ini lolos evidence dan safety gate. Saya memilih tidak melakukan write baru; tidak menemukan kandidat aman adalah alasan untuk mengamati, bukan menebak." ;;
+    healthy_local_observe_no_cloud_needed)
+      echo "Frame, thermal comfort, dan beban saat ini belum memberi alasan terukur untuk mengubah hardware. Saya mempertahankan kondisi yang sudah sehat secara lokal dan tidak memakai Cloud hanya untuk mengonfirmasi keputusan diam." ;;
+    shadow_rejected_strategy_quarantine)
+      echo "Shadow sudah menolak strategi yang setara, jadi saya mengarantinanya agar tidak langsung dicoba ulang. Saya tidak memanggil Cloud untuk menghidupkan kembali kandidat yang baru saja gagal." ;;
     neuron_guard_min_interval|restart_guard_no_cloud)
       echo "Cloud sengaja tidak dipanggil karena guard penggunaan neuron masih aktif. ONE HERMES Local tetap melanjutkan reasoning dari memory dan Device Truth, sehingga continuity tidak bergantung pada Cloud." ;;
     *)
