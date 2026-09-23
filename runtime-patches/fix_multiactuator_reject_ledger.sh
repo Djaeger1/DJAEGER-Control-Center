@@ -14,13 +14,14 @@ BAD="$R/history/shadow_reject_strategies.bad.csv"
 mkdir -p "$W" || exit 1
 
 # Hermes matcher: normalize candidate ACTUATORS before CSV comparison.
-if grep -Fq 'tr "," "+"' "$H"; then
+if grep -Fq "MULTIACTUATOR_MATCHER_NORMALIZE" "$H"; then
   cp "$H" "$HN"
 else
   awk '
     {
       print
       if ($0 == "  _qa=$(kv ACTUATORS \"$_qs\")" && !done) {
+        print "  # MULTIACTUATOR_MATCHER_NORMALIZE"
         print "  _qa=$(printf \"%s\" \"$_qa\" | tr \047,\047 \047+\047)"
         done=1
       }
@@ -30,13 +31,14 @@ else
 fi
 
 # Shadow persistence: normalize ACTUATORS in the multi-reject CSV.
-if grep -Fq '_ma=$(printf "%s" "$_ma" | tr' "$S"; then
+if grep -Fq "MULTIACTUATOR_PERSIST_NORMALIZE" "$S"; then
   cp "$S" "$SN"
 else
   awk '
     {
       print
       if ($0 == "      _ma=$(kv ACTUATORS \"$POLICY\")" && !done) {
+        print "      # MULTIACTUATOR_PERSIST_NORMALIZE"
         print "      _ma=$(printf \"%s\" \"$_ma\" | tr \047,\047 \047+\047)"
         done=1
       }
@@ -48,9 +50,10 @@ fi
 sh -n "$HN" || exit 51
 sh -n "$SN" || exit 52
 
-grep -Fq 'tr ''' ,''' '''+'''' "$HN" >/dev/null 2>&1 || true
-grep -Fq "MULTI_REJECT_ALTERNATIVE_SYNTH" "$HN" || exit 53
-grep -Fq "PERSIST_REJECT_STRATEGY_MULTI" "$SN" || exit 54
+grep -Fq "MULTIACTUATOR_MATCHER_NORMALIZE" "$HN" || exit 53
+grep -Fq "MULTIACTUATOR_PERSIST_NORMALIZE" "$SN" || exit 54
+grep -Fq "MULTI_REJECT_ALTERNATIVE_SYNTH" "$HN" || exit 55
+grep -Fq "PERSIST_REJECT_STRATEGY_MULTI" "$SN" || exit 56
 
 # Repair only the known comma-split BIG,GPU rows. Keep unknown malformed rows
 # out of the active ledger and preserve them separately for forensics.
