@@ -276,16 +276,21 @@ publish_cc() {
     _hauth=NOT_CONFIGURED
   fi
   unset _h_access
-  _hermes_connection=WAITING
+  _hermes_cloud_connection=WAITING
   case "$_hcloud" in
-    ONLINE|APPROVED|REJECTED|TAKEOVER_READY|OBSERVE) _hermes_connection=ONLINE ;;
-    REACHABLE_IDLE) _hermes_connection=REACHABLE ;;
-    NO_KEY) _hermes_connection=NOT_CONFIGURED ;;
-    AUTH_ERROR) _hermes_connection=AUTH_ERROR ;;
-    HTTP_ERROR|UNAVAILABLE|OFFLINE) _hermes_connection=OFFLINE ;;
-    *) [ "$_hauth" = NOT_CONFIGURED ] && _hermes_connection=NOT_CONFIGURED ;;
+    ONLINE|APPROVED|REJECTED|TAKEOVER_READY|OBSERVE) _hermes_cloud_connection=ONLINE ;;
+    REACHABLE_IDLE) _hermes_cloud_connection=REACHABLE ;;
+    NO_KEY) _hermes_cloud_connection=NOT_CONFIGURED ;;
+    AUTH_ERROR) _hermes_cloud_connection=AUTH_ERROR ;;
+    HTTP_ERROR|UNAVAILABLE|OFFLINE) _hermes_cloud_connection=OFFLINE ;;
+    *) [ "$_hauth" = NOT_CONFIGURED ] && _hermes_cloud_connection=NOT_CONFIGURED ;;
   esac
-  [ "$_hermes_age" -le 180 ] 2>/dev/null || _hermes_connection=STALE
+  _hermes_connection="$_hermes_cloud_connection"
+  case "$_hlocal" in
+    TAKEOVER_LOCAL|TAKEOVER_LOCAL_SYNTH|TAKEOVER_CLOUD|ASSIMILATED_GEMINI|VALIDATED_CANDIDATE|OBSERVE|DEPUTY_STANDBY)
+      _hermes_connection=ONLINE ;;
+  esac
+  [ "$_hermes_age" -le 180 ] 2>/dev/null || { _hermes_connection=STALE; _hermes_cloud_connection=STALE; }
 
   _module_code=$(sed -n 's/^versionCode=//p' "${MODDIR:-/data/adb/modules/djaeger_ai_observer}/module.prop" 2>/dev/null | head -n1)
   case "$_module_code" in ''|*[!0-9]*) _module_code=0;; esac
@@ -613,7 +618,7 @@ publish_cc() {
     echo "CLOUD_CONNECTION_STATUS=$_cloud_connection"; echo "CLOUD_PROVIDER=MULTI"
     echo "GEMINI_CONNECTION_STATUS=$_gem_connection"; echo "GEMINI_HTTP_CODE=$_gem_http"; echo "GEMINI_KEY_COUNT=$_gem_count"; echo "GEMINI_READY_COUNT=$_gem_ready"; echo "GEMINI_COOLDOWN_COUNT=$_gem_cd"
     echo "GEMINI_REASONING_GUARD_SEC=$_gem_guard_sec"; echo "GEMINI_REASONING_GUARD_REASON=$_gem_guard_reason"; echo "GEMINI_LAST_SUCCESS_AGE_SEC=$_gem_last_success_age"
-    echo "HERMES_CONNECTION_STATUS=$_hermes_connection"
+    echo "HERMES_CONNECTION_STATUS=$_hermes_connection"; echo "HERMES_CLOUD_CONNECTION_STATUS=$_hermes_cloud_connection"
     _cloud_control=NO; _cloud_controller=NONE
     case "$_active_brain_source" in GEMINI) _cloud_control=YES; _cloud_controller=GEMINI;; HERMES_CLOUD) _cloud_control=YES; _cloud_controller=HERMES_CLOUD;; esac
     echo "CLOUD_IN_CONTROL=$_cloud_control"; echo "CLOUD_CONTROL_PROVIDER=$_cloud_controller"; echo "CLOUD_PLAN_PROVIDER=$_plan_provider"
