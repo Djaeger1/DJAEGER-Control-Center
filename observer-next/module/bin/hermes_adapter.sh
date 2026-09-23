@@ -837,10 +837,13 @@ local_synthesize_takeover(){
 }
 cloud_takeover(){
   # REJECT_QUARANTINE_NO_CLOUD
-  if [ "$HDETAIL" = shadow_rejected_strategy_quarantine ]; then
-    HCLOUD_STATE=REACHABLE_IDLE
-    return 1
-  fi
+  case "$HDETAIL" in
+    shadow_rejected_strategy_quarantine|all_local_comfort_strategies_quarantined)
+      HCLOUD_STATE=REACHABLE_IDLE
+      HCLOUD_USED=NO
+      return 1
+      ;;
+  esac
   # Restarting/hot-updating ONE HERMES must never itself spend Cloud neurons.
   # During this short boot guard, local continuity remains available.
   _boot_now=$(date +%s)
