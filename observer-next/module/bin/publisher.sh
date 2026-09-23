@@ -215,6 +215,11 @@ publish_cc() {
   _gem="$(pub_kv GEMINI_STATE "$_gem_state")"; [ -n "$_gem" ] || _gem=WAITING
   _gem_conf="$(pub_kv CONFIDENCE "$_gem_prop")"; case "$_gem_conf" in ''|*[!0-9]*) _gem_conf=0;; esac
   _gem_reason="$(pub_kv REASON "$_gem_prop")"; [ -n "$_gem_reason" ] || _gem_reason="$(pub_kv GEMINI_DETAIL "$_gem_state")"
+  _gem_thought="$(pub_kv GEMINI_THOUGHT "$_gem_state")"
+  _gem_thought_at="$(pub_kv GEMINI_THOUGHT_AT "$_gem_state")"; case "$_gem_thought_at" in ''|*[!0-9]*) _gem_thought_at=0;; esac
+  _gem_thought_pkg="$(pub_kv GEMINI_THOUGHT_PACKAGE "$_gem_state")"; [ -n "$_gem_thought_pkg" ] || _gem_thought_pkg=UNKNOWN
+  _gem_verdict="$(pub_kv GEMINI_VERDICT "$_gem_state")"; [ -n "$_gem_verdict" ] || _gem_verdict=UNKNOWN
+  _gem_reason_token="$(pub_kv GEMINI_REASON_TOKEN "$_gem_state")"; [ -n "$_gem_reason_token" ] || _gem_reason_token="$_gem_reason"
   _gem_guard_sec="$(pub_kv GEMINI_GUARD_SEC "$_gem_state")"; [ -n "$_gem_guard_sec" ] || _gem_guard_sec=NA
   _gem_guard_reason="$(pub_kv GEMINI_GUARD_REASON "$_gem_state")"; [ -n "$_gem_guard_reason" ] || _gem_guard_reason=NA
   _gem_last_success_age="$(pub_kv GEMINI_LAST_SUCCESS_AGE_SEC "$_gem_state")"; [ -n "$_gem_last_success_age" ] || _gem_last_success_age=NA
@@ -449,15 +454,21 @@ publish_cc() {
     GEMINI)
       _thought_source=GEMINI
       _thought_conf="$_gem_conf"
-      _thought_reason="$_gem_reason"
-      if [ -r "$_gem_prop" ]; then
+      _thought_reason="${_gem_reason_token:-$_gem_reason}"
+      _gt_age=$((_now-_gem_thought_at)); [ "$_gt_age" -ge 0 ] 2>/dev/null || _gt_age=999999
+      if [ "$_gem_thought_pkg" = "$_pkg" ] && [ "$_gt_age" -le 180 ] 2>/dev/null && [ -n "$_gem_thought" ]; then
+        case "$_gem_verdict" in CANDIDATE) _thought_status=PRIMARY_CANDIDATE;; *) _thought_status=PRIMARY_OBSERVE;; esac
+        _thought_evidence="brain=GEMINI role=PRIMARY verdict=$_gem_verdict reason=$_thought_reason"
+        _thought="$_gem_thought"
+        _thought_age="$_gt_age"
+      elif [ -r "$_gem_prop" ]; then
         _thought_status=PRIMARY_CANDIDATE
-        _thought_evidence="brain=GEMINI role=PRIMARY proposal=CANDIDATE frame=$_frame_evidence hermes=$_hmode"
-        _thought="Gemini melihat alasan cukup kuat untuk mengusulkan perubahan pada $_pkg. $_human_metrics $_intent_human ONE HERMES menahan keputusan ini sebagai reviewer; saya belum menganggapnya aman sebelum shadow, safety gate dan exact readback lulus."
+        _thought_evidence="brain=GEMINI role=PRIMARY proposal=CANDIDATE reason=$_thought_reason"
+        _thought="Gemini melihat kandidat yang layak diuji, tetapi belum menganggapnya sebagai hasil akhir. Kandidat tetap harus melewati ONE HERMES review, shadow, safety gate, dan readback lokal."
       else
         _thought_status=PRIMARY_OBSERVE
-        _thought_evidence="brain=GEMINI role=PRIMARY proposal=NONE frame=$_frame_evidence hermes=$_hmode shadow=$_shadow_state executor=$_exec_state"
-        _thought="Gemini masih menjadi otak utama, tetapi dari evidence saat ini ia belum melihat alasan aman untuk mengubah hardware. $_human_metrics Alasannya tercatat sebagai $_gem_reason. Karena itu saya memilih mengamati dulu, bukan memaksakan perubahan."
+        _thought_evidence="brain=GEMINI role=PRIMARY proposal=NONE reason=$_thought_reason"
+        _thought="Gemini menilai evidence saat ini belum cukup untuk membenarkan perubahan hardware. Saya tetap mengamati sampai ada pola yang cukup kuat untuk keputusan baru."
       fi
       ;;
     HERMES_LOCAL)
@@ -467,19 +478,19 @@ publish_cc() {
       if [ "$_hlocal" = TAKEOVER_THERMAL_HOLD ]; then
         _thought_status=DEPUTY_THERMAL_HOLD
         _thought_evidence="brain=ONE_HERMES source=LOCAL comfort=HARD_THERMAL_HOLD gemini=$_gem frame=$_frame_evidence"
-        _thought="Gemini sedang tidak tersedia dan suhu perangkat sudah melewati batas hard thermal untuk transaksi baru. $_human_metrics Saya memang ingin menurunkan panas, tetapi saya sengaja tidak menulis SYSFS saat ini agar tidak melawan kontrol thermal native. Begitu suhu kembali di bawah hard gate dan frame tetap stabil, ONE HERMES akan mencoba trim lokal yang lebih dingin sebelum memakai Cloud."
+        _thought="Hard thermal gate sedang aktif, jadi ONE HERMES sengaja menahan transaksi hardware baru dan memberi kontrol thermal native ruang bekerja. Setelah gate lepas, frame dinilai lebih dulu sebelum strategi baru dipertimbangkan."
       elif [ "$_hlocal" = TAKEOVER_LOCAL_SYNTH ]; then
         _thought_status=DEPUTY_LOCAL_SYNTH
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=KNOWLEDGE_DRIVEN intent=$_plan_intent gemini=$_gem frame=$_frame_evidence"
-        _thought="Gemini sedang tidak tersedia, jadi ONE HERMES Local mengambil alih dan menyusun kandidat dari perilaku perangkat yang benar-benar terukur. $_human_metrics $_intent_human Ini bukan profil tetap; batas yang dipilih tetap harus lolos shadow, safety, exact readback dan outcome."
+        _thought="Gemini sedang tidak tersedia, jadi ONE HERMES Local menyusun kandidat dari evidence perangkat dan memory yang sudah dipelajari. Ini bukan profil tetap; kandidat tetap harus lolos shadow, safety, readback, dan outcome."
       elif [ "$_hlocal" = TAKEOVER_LOCAL ]; then
         _thought_status=DEPUTY_LOCAL_TAKEOVER
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=PROVEN_REUSE intent=$_plan_intent gemini=$_gem"
-        _thought="Gemini sedang cooldown, jadi saya melanjutkan lewat ONE HERMES Local. $_human_metrics $_intent_human Saya tidak membuat batas baru hanya demi terlihat aktif."
+        _thought="Gemini sedang cooldown, jadi ONE HERMES Local menjaga continuity dengan pengetahuan yang sudah terbukti. Saya tidak membuat batas baru hanya demi terlihat aktif."
       else
         _thought_status=DEPUTY_LOCAL_OBSERVE
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=NONE reason=$_hreason gemini=$_gem frame=$_frame_evidence"
-        _thought="Gemini belum tersedia dan ONE HERMES Local sedang menjaga continuity. $_human_metrics Dari kondisi ini saya belum melihat manfaat yang cukup untuk menyentuh CPU atau GPU, jadi pilihan saya saat ini adalah diam dan terus membaca perubahan perangkat."
+        _thought="Gemini belum tersedia dan ONE HERMES Local sedang menjaga continuity. Belum ada manfaat terukur yang cukup untuk menyentuh hardware, jadi saya mempertahankan kondisi sekarang sambil menunggu evidence baru."
       fi
       ;;
     HERMES_CLOUD)
@@ -488,14 +499,14 @@ publish_cc() {
       _thought_conf="$_cloud_plan_score"
       _thought_reason="$_hreason"
       _thought_evidence="brain=ONE_HERMES source=CLOUD route=$_hroute model=$_hmodel cloud_used=$_hcloud_used"
-      _thought="Gemini tidak tersedia dan pengetahuan lokal belum cukup meyakinkan, jadi ONE HERMES meminta bantuan cognition Cloud. $_human_metrics Cloud dipakai untuk menilai strategi, bukan untuk menulis SYSFS; keputusan akhirnya tetap harus melewati gate lokal."
+      _thought="Pengetahuan lokal belum cukup meyakinkan, jadi ONE HERMES meminta bantuan cognition Cloud untuk menilai strategi. Cloud tetap tidak memiliki otoritas hardware; keputusan akhir harus melewati gate lokal."
       ;;
     HERMES_H2)
       _thought_source=HERMES_H2
       _thought_status=DEPUTY_OBSERVE
       _thought_reason="$_hreason"
       _thought_evidence="brain=ONE_HERMES mode=$_hmode"
-      _thought="Gemini tidak tersedia, sehingga ONE HERMES bertugas sebagai deputy. $_human_metrics Saat ini saya belum menemukan alasan terukur untuk mengubah hardware, jadi saya memilih mempertahankan kondisi yang ada."
+      _thought="Gemini tidak tersedia, sehingga ONE HERMES bertugas sebagai deputy. Belum ada alasan terukur untuk mengubah hardware, jadi kondisi sekarang dipertahankan."
       ;;
   esac
 
@@ -520,7 +531,7 @@ publish_cc() {
     _thought_age="$_exec_age"
     _thought_reason="$_exec_reason"
     _thought_evidence="rollback=$_rollback readback=$_readback"
-    _thought="Saya membatalkan strategi tadi karena $_exec_reason. $_human_metrics Hardware sudah dikembalikan ke state sebelumnya, jadi kegagalan ini menjadi evidence baru agar keputusan berikutnya tidak mengulangi pola yang sama."
+    _thought="Saya membatalkan strategi tadi karena $_exec_reason. Hardware sudah dikembalikan ke state sebelumnya, dan kegagalan ini menjadi evidence baru agar keputusan berikutnya tidak mengulangi pola yang sama."
   elif [ "$_exec_state" = ROLLBACK_FAILED ]; then
     _thought_source=AI_AGENT
     _thought_status=ROLLBACK_FAILED
