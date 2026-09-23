@@ -81,6 +81,7 @@ write_state(){
     echo "GEMINI_THOUGHT_PACKAGE=${GEMINI_THOUGHT_PACKAGE:-UNKNOWN}"
     echo "GEMINI_REASON_TOKEN=${GEMINI_REASON_TOKEN:-}"
     echo "GEMINI_VERDICT=${GEMINI_VERDICT:-UNKNOWN}"
+    echo "GEMINI_CONFIDENCE=${GEMINI_CONFIDENCE:-0}"
     _ctx_pkg=$(kv ACTIVE_PACKAGE "$SNAP"); [ -n "$_ctx_pkg" ] || _ctx_pkg=UNKNOWN
     _ctx_class=$(kv WORKLOAD_CLASS "$WORKLOAD"); [ -n "$_ctx_class" ] || _ctx_class=UNKNOWN
     echo "GEMINI_CONTEXT_PACKAGE=$_ctx_pkg"
@@ -167,6 +168,7 @@ while true; do
   GEMINI_THOUGHT_PACKAGE="$(kv GEMINI_THOUGHT_PACKAGE "$STATE")"; [ -n "$GEMINI_THOUGHT_PACKAGE" ] || GEMINI_THOUGHT_PACKAGE=UNKNOWN
   GEMINI_REASON_TOKEN="$(kv GEMINI_REASON_TOKEN "$STATE")"
   GEMINI_VERDICT="$(kv GEMINI_VERDICT "$STATE")"; [ -n "$GEMINI_VERDICT" ] || GEMINI_VERDICT=UNKNOWN
+  GEMINI_CONFIDENCE="$(kv GEMINI_CONFIDENCE "$STATE")"; case "$GEMINI_CONFIDENCE" in ''|*[!0-9]*) GEMINI_CONFIDENCE=0;; esac
   [ -r "$SNAP" ] && [ -r "$LEARN" ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING observer_or_learning_missing; sleep 30; continue; }
   [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state OBSERVE non_game_workload; sleep 5; continue; }
   [ "$(kv STATE "$LEARN")" = READY_HARDWARE_MODEL ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING baseline_not_mature; sleep 30; continue; }
@@ -326,11 +328,14 @@ EOF
   GGMAX=$(numv GPU_MAX_HZ) || GGMAX=""
   REASON=$(trim "$(gv REASON)" | tr -cd 'A-Za-z0-9_.:-' | cut -c1-96)
   THOUGHT=$(clean_thought "$(trim "$(gv THOUGHT)")")
+  case "$CONF" in ""|*[!0-9]*) rm -f "$OUT"; write_state INVALID confidence_invalid_for_verdict; sleep 60; continue;; esac
+  [ "$CONF" -ge 0 ] && [ "$CONF" -le 100 ] || { rm -f "$OUT"; write_state INVALID confidence_out_of_range; sleep 60; continue; }
   echo "$(date +%s)" > "$LAST_SUCCESS"; chmod 600 "$LAST_SUCCESS"
 
   case "$VERDICT" in
     OBSERVE|CANDIDATE)
       GEMINI_VERDICT="$VERDICT"
+      GEMINI_CONFIDENCE="$CONF"
       GEMINI_REASON_TOKEN="${REASON:-GEMINI_PRIMARY_FRAME_FIRST_ANALYSIS}"
       GEMINI_THOUGHT="$THOUGHT"
       GEMINI_THOUGHT_AT="$(date +%s)"
@@ -343,7 +348,6 @@ EOF
     CANDIDATE) : ;;
   esac
   case "$CONF:$GLMIN:$GLMAX:$GBMIN:$GBMAX:$GGMIN:$GGMAX" in *[!0-9:]*|:*) parse_diag; rm -f "$OUT"; write_state INVALID non_numeric_candidate; sleep 60; continue;; esac
-  [ "$CONF" -ge 0 ] && [ "$CONF" -le 100 ] || { rm -f "$OUT"; write_state INVALID confidence_out_of_range; sleep 60; continue; }
   [ "$GLMIN" -ge "$LMIN" ] && [ "$GLMAX" -le "$LMAX" ] && [ "$GLMIN" -le "$GLMAX" ] || { rm -f "$OUT"; write_state REJECTED little_outside_stock; sleep 60; continue; }
   [ "$GBMIN" -ge "$BMIN" ] && [ "$GBMAX" -le "$BMAX" ] && [ "$GBMIN" -le "$GBMAX" ] || { rm -f "$OUT"; write_state REJECTED big_outside_stock; sleep 60; continue; }
   [ "$GGMIN" -ge "$GMIN" ] && [ "$GGMAX" -le "$GMAX" ] && [ "$GGMIN" -le "$GGMAX" ] || { rm -f "$OUT"; write_state REJECTED gpu_outside_stock; sleep 60; continue; }
