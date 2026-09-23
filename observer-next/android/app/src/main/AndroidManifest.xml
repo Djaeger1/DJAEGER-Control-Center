@@ -14,7 +14,7 @@
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:icon="@drawable/ic_djaeger_observer"
-        android:label="DJAEGER AI"
+        android:label="DJAEGER GAMING"
         android:supportsRtl="true"
         android:theme="@style/Theme.Djaeger"
         android:usesCleartextTraffic="false">
