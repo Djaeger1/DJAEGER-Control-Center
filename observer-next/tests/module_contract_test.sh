@@ -884,6 +884,12 @@ grep -Fq 'HERMES_CLOUD_LAST_VERDICT=' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'HERMES_CLOUD_ACTIVE=' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'HERMES_CLOUD_ACTIVE=$_hcloud_active' "$MODULE/bin/publisher.sh"
 grep -Fq 'HERMES_CLOUD_LAST_VERDICT=$_hcloud_last_verdict' "$MODULE/bin/publisher.sh"
+grep -Fq 'NEURON="$ROOT/config/hermes_neuron_live.env"' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq '_nupdated=$(kv UPDATED_AT "$NEURON")' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'UNRECORDED_PRE_PERSISTENCE' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'VERDICT=PENDING_PARSE' "$MODULE/bin/hermes_adapter.sh"
+! grep -Fq '$LAST.tmp.$"' "$MODULE/bin/hermes_adapter.sh"
+! grep -Fq '$CLOUD_LAST.tmp.$"' "$MODULE/bin/hermes_adapter.sh"
 python3 - "$MODULE/bin/hermes_adapter.sh" <<'PY'
 import sys
 s=open(sys.argv[1],encoding='utf-8').read()
