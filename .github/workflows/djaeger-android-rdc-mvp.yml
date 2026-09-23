@@ -1,0 +1,31 @@
+name: djaeger-android-rdc-mvp
+on:
+  push:
+    branches: [prototype/djaeger-remote-boot-agent]
+    paths:
+      - "prototype/android-rdc-mvp/**"
+      - ".github/workflows/djaeger-android-rdc-mvp.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build single-file Android agent
+        working-directory: prototype/android-rdc-mvp
+        run: |
+          set -euxo pipefail
+          npm init -y
+          npm install --no-audit --no-fund @supabase/supabase-js@2.89.0 esbuild@0.27.2
+          npx esbuild agent.mjs --bundle --platform=node --format=esm --target=node18 --outfile=djaeger-rdc-agent.mjs
+          grep -q "transport_broadcast_v1" djaeger-rdc-agent.mjs
+          sha256sum djaeger-rdc-agent.mjs > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-Android-RDC-MVP
+          path: |
+            prototype/android-rdc-mvp/djaeger-rdc-agent.mjs
+            prototype/android-rdc-mvp/SHA256SUMS.txt
+          if-no-files-found: error
