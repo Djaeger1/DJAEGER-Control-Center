@@ -531,7 +531,7 @@ publish_cc() {
     _thought="Saya menghentikan eksekusi karena recovery SYSFS belum bisa dibuktikan aman. Saya tidak akan memaksakan write baru selama readback belum jelas; keselamatan state perangkat lebih penting daripada terus mencoba kandidat."
   fi
   # ONE_HERMES_THOUGHT_PUBLISHER_V1
-  # Publisher is display-only. ONE HERMES worker owns Hermes reasoning text.
+  # Publisher is display-only. The ONE HERMES THOUGHT process owns reasoning text.
   case "$_hactive" in
     HERMES_LOCAL|HERMES_H2|HERMES_CLOUD)
       _ht="$_root/runtime/hermes_thought.env"
