@@ -66,7 +66,7 @@ publish_cc() {
   _hermes_plan="$_root/policy/hermes_proposal.env"
   _cons="$_root/runtime/consensus.env"
   _candidate="$_root/policy/candidate.env"
-  _shadow="$_root/runtime/shadow.env"
+  _shadow="$_root/runtime/shadow_contextual_v4.env"
   _execution="$_root/runtime/execution.env"
   _outcomes="$_root/history/outcomes.csv"
   _railway="$_root/runtime/railway.env"
