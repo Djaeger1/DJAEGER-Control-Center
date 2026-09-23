@@ -66,7 +66,7 @@ publish(){
           "$_now" "$_mp" "$_mi" "$_ma" "$_ml0" "$_ml1" \
           "$_mb0" "$_mb1" "$_mg0" "$_mg1" "$_reason" >> "$_mf"
       fi
-      _mt="$_mf.tmp.$"
+      _mt="$_mf.tmp.$$"
       {
         head -n 1 "$_mf"
         tail -n +2 "$_mf" | tail -n 64
@@ -78,7 +78,7 @@ publish(){
 
   # PERSIST_REJECT_STRATEGY
   if [ "$_state" = REJECT ] && [ -r "$POLICY" ]; then
-    _rt="$REJECT_LEDGER.tmp.$"
+    _rt="$REJECT_LEDGER.tmp.$$"
     {
       echo "AT=$_now"
       echo "PACKAGE=$(kv PACKAGE "$POLICY")"
