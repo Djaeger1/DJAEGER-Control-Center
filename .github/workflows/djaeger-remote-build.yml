@@ -8,11 +8,14 @@ on:
       - '.github/workflows/djaeger-remote-build.yml'
   workflow_dispatch:
 
-# reconstruction retry 2
+# sdk runner compatibility retry 3
 jobs:
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout isolated branch
         uses: actions/checkout@v4
@@ -28,7 +31,6 @@ jobs:
           test -f djaeger-remote-build/settings.gradle.kts
           test -f djaeger-remote-build/app/build.gradle.kts
           sha256sum /tmp/djaeger-remote-src.zip
-          find djaeger-remote-build -maxdepth 3 -type f | sort
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -36,14 +38,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android platform
+      - name: Install Android platform from runner SDK
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          set -euxo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
