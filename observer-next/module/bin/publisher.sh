@@ -500,7 +500,17 @@ publish_cc() {
 
   if [ "$_cons_state" = PENDING_SHADOW ]; then
     _thought_status=PENDING_SHADOW
-    _thought="$_thought Kandidat sedang diuji shadow; belum ada perubahan hardware."
+    case "$_active_brain_source" in
+      GEMINI)
+        _thought="Gemini mengusulkan perubahan untuk $_pkg. $_thought_context Shadow sedang menguji kandidat; hardware belum berubah."
+        ;;
+      HERMES_LOCAL|HERMES_CLOUD|HERMES_H2)
+        _thought="Gemini tidak tersedia. $_thought_context ONE HERMES sudah menyiapkan kandidat. Shadow sedang mengujinya; hardware belum berubah."
+        ;;
+      *)
+        _thought="$_thought_context Shadow sedang menguji kandidat; hardware belum berubah."
+        ;;
+    esac
   fi
   if [ "$_shadow_state" = PASS ]; then
     _thought_status=SHADOW_PASS
