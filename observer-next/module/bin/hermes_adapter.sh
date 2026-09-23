@@ -31,6 +31,8 @@ OUTCOMES="$ROOT/history/outcomes.csv"
 EXECUTION="$ROOT/runtime/execution.env"
 NEURON="$ROOT/config/hermes_neuron_live.env"
 CLOUD_MIN_INTERVAL=900
+CLOUD_BOOT_GUARD_SEC=120
+HERMES_BOOT_AT=$(date +%s)
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 num(){ case "$1" in ''|*[!0-9.-]*) echo 0;; *) echo "$1";; esac; }
@@ -593,6 +595,15 @@ local_synthesize_takeover(){
   return 0
 }
 cloud_takeover(){
+  # Restarting/hot-updating ONE HERMES must never itself spend Cloud neurons.
+  # During this short boot guard, local continuity remains available.
+  _boot_now=$(date +%s)
+  if [ $((_boot_now-HERMES_BOOT_AT)) -lt "$CLOUD_BOOT_GUARD_SEC" ] 2>/dev/null; then
+    HCLOUD_STATE=COOLDOWN
+    HDETAIL=restart_guard_no_cloud
+    return 1
+  fi
+
   # Do not spend cloud neurons on a plan that the local executor cannot safely
   # apply at the current thermal state.
   _skin=$(num "$(kv SKIN_TEMP_C "$SNAP")"); _bat=$(num "$(kv BATTERY_TEMP_C "$SNAP")")
