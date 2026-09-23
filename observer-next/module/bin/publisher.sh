@@ -204,6 +204,32 @@ publish_cc() {
   _credential_count="$(pub_kv CREDENTIAL_FILE_COUNT "$_migration")"; case "$_credential_count" in ''|*[!0-9]*) _credential_count=0;; esac
   # Neurons is DJAEGER's current-day Hermes Cloud usage ledger, not provider quota.
   # It resets at 00:00 UTC / 07:00 WIB and only successful Cloud inference increments it.
+  # Publisher must never expose yesterday's ledger just because Hermes Cloud has
+  # not been invoked since rollover. Normalize stale UTC-day state here too.
+  _neuron_day="$(pub_kv UTC_DAY "$_neuron")"
+  _neuron_today="$(date -u +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)"
+  if [ -n "$_neuron_day" ] && [ "$_neuron_day" != "$_neuron_today" ]; then
+    _ntmp="$_neuron.tmp.$PPID"
+    {
+      echo "SCHEMA=DJAEGER_NEURON_LIVE_V1"
+      echo "UTC_DAY=$_neuron_today"
+      echo "RESET_AT=00:00_UTC"
+      echo "RESET_AT_WIB=07:00"
+      echo "USED_EST=0"
+      echo "LIMIT=10000"
+      echo "FAST_CALLS=0"
+      echo "SMART_CALLS=0"
+      echo "DEEP_CALLS=0"
+      echo "SUCCESS_CALLS=0"
+      echo "LAST_DELTA=0"
+      echo "METHOD=DAILY_ROLLOVER_PUBLISHER"
+      echo "ESTIMATED=YES"
+      echo "SOURCE=LIVE_SUCCESSFUL_HERMES_CLOUD_ONLY"
+      echo "UPDATED_AT=$(date +%s)"
+    } > "$_ntmp"
+    chmod 600 "$_ntmp" 2>/dev/null
+    mv -f "$_ntmp" "$_neuron"
+  fi
   _neuron_used="$(pub_kv USED_EST "$_neuron")"
   _neuron_limit="$(pub_kv LIMIT "$_neuron")"
   case "$_neuron_used" in ''|*[!0-9]*) _neuron_used=0;; esac
