@@ -1,6 +1,6 @@
 id=djaeger_ai_observer
 name=DJAEGER AI Adaptive
-version=1.1.7-adaptivefix
+version=1.1.7-thoughtmemory-hotfix
 versionCode=210
 author=DJAEGER
-description=Adaptive v1.1.7 with live neuron rollover, failed-digest quarantine, latch recovery, Gemini primary, ONE HERMES deputy, AI Agent hardware control.
+description=Adaptive v1.1.7 thought-memory hotfix: concise selective THOUGHT plus 100 MiB persistent learning memory; pair code remains compatible with APP 111.
