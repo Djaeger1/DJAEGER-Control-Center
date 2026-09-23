@@ -164,6 +164,12 @@ while true; do
   LITTLE=$(read_one "$LOW_POLICY/scaling_cur_freq")
   BIG=$(read_one "$HIGH_POLICY/scaling_cur_freq")
   GPU=$(read_one "$GPU_PATH/cur_freq" /sys/class/kgsl/kgsl-3d0/gpuclk)
+  LITTLE_ACTIVE_MIN_KHZ=$(read_one "$LOW_POLICY/scaling_min_freq")
+  LITTLE_ACTIVE_MAX_KHZ=$(read_one "$LOW_POLICY/scaling_max_freq")
+  BIG_ACTIVE_MIN_KHZ=$(read_one "$HIGH_POLICY/scaling_min_freq")
+  BIG_ACTIVE_MAX_KHZ=$(read_one "$HIGH_POLICY/scaling_max_freq")
+  GPU_ACTIVE_MIN_HZ=$(read_one "$GPU_PATH/min_freq")
+  GPU_ACTIVE_MAX_HZ=$(read_one "$GPU_PATH/max_freq")
   GLOAD=$(read_one /sys/class/kgsl/kgsl-3d0/gpubusy "$GPU_PATH/load")
 
   # RUNTIMEFIX1: thermal_by_type() already returns normalized Celsius.
@@ -250,6 +256,12 @@ while true; do
     echo "CPU_VECTOR_KHZ=$VECTOR"
     echo "LITTLE_CUR_KHZ=$LITTLE"
     echo "BIG_CUR_KHZ=$BIG"
+    echo "LITTLE_ACTIVE_MIN_KHZ=$LITTLE_ACTIVE_MIN_KHZ"
+    echo "LITTLE_ACTIVE_MAX_KHZ=$LITTLE_ACTIVE_MAX_KHZ"
+    echo "BIG_ACTIVE_MIN_KHZ=$BIG_ACTIVE_MIN_KHZ"
+    echo "BIG_ACTIVE_MAX_KHZ=$BIG_ACTIVE_MAX_KHZ"
+    echo "GPU_ACTIVE_MIN_HZ=$GPU_ACTIVE_MIN_HZ"
+    echo "GPU_ACTIVE_MAX_HZ=$GPU_ACTIVE_MAX_HZ"
     echo "LITTLE_POLICY_PATH=$LOW_POLICY"
     echo "BIG_POLICY_PATH=$HIGH_POLICY"
     echo "LITTLE_AVAILABLE_KHZ=$LITTLE_AVAILABLE"
