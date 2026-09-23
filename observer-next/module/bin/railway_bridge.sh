@@ -9,6 +9,8 @@ fi
 CFG="$ROOT/config/railway.env"
 SNAP="$ROOT/runtime/snapshot.env"
 STATE="$ROOT/runtime/railway.env"
+MODULE_PROP="${BIN_DIR%/bin}/module.prop"
+NEURON="$ROOT/config/hermes_neuron_live.env"
 DEFAULT_URL="https://djaeger-ai-core-production-736f.up.railway.app"
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 legacy_exact(){
@@ -45,7 +47,12 @@ send_once(){
   URL="$(kv DJAEGER_RAILWAY_URL "$CFG")"; [ -n "$URL" ] || URL="$DEFAULT_URL"
   case "$URL" in https://*) :;; *) publish INVALID_URL; return 1;; esac
   body="$ROOT/runtime/.railway_payload.$$"
-  printf '{"schema":"DJAEGER_AI_TELEMETRY_V1","device_id":"%s","at":%s,"package":"%s","cpu_little_khz":"%s","cpu_big_khz":"%s","gpu_hz":"%s","skin_temp_c":"%s","battery_temp_c":"%s","cpu_temp_c":"%s","gpu_temp_c":"%s","power_mw":"%s","fps":"%s","jank_pct":"%s","source":"LOCAL_OBSERVER"}'     "$(clean "$(kv DEVICE_ID "$ROOT/config/identity.env")")" "$(date +%s)" "$(clean "$(kv ACTIVE_PACKAGE "$SNAP")")"     "$(clean "$(kv LITTLE_CUR_KHZ "$SNAP")")" "$(clean "$(kv BIG_CUR_KHZ "$SNAP")")" "$(clean "$(kv GPU_CUR_HZ "$SNAP")")"     "$(clean "$(kv SKIN_TEMP_C "$SNAP")")" "$(clean "$(kv BATTERY_TEMP_C "$SNAP")")" "$(clean "$(kv CPU_TEMP_C "$SNAP")")" "$(clean "$(kv GPU_TEMP_C "$SNAP")")"     "$(clean "$(kv POWER_MW "$SNAP")")" "$(clean "$(kv FPS_EST "$SNAP")")" "$(clean "$(kv JANK_PCT "$SNAP")")" > "$body"
+  _ver="$(sed -n 's/^version=//p' "$MODULE_PROP" 2>/dev/null | head -n1)"
+  _vc="$(sed -n 's/^versionCode=//p' "$MODULE_PROP" 2>/dev/null | head -n1)"
+  _nused="$(kv USED_EST "$NEURON")"; [ -n "$_nused" ] || _nused=0
+  _nlimit="$(kv LIMIT "$NEURON")"; [ -n "$_nlimit" ] || _nlimit=10000
+  _nday="$(kv UTC_DAY "$NEURON")"
+  printf '{"schema":"DJAEGER_AI_TELEMETRY_V1","device_id":"%s","at":%s,"module_version":"%s","module_version_code":"%s","package":"%s","cpu_little_khz":"%s","cpu_big_khz":"%s","gpu_hz":"%s","skin_temp_c":"%s","battery_temp_c":"%s","cpu_temp_c":"%s","gpu_temp_c":"%s","power_mw":"%s","fps":"%s","jank_pct":"%s","neuron_local_estimate_present":"YES","neuron_used_est":"%s","neuron_limit":"%s","neuron_epoch_day":"%s","source":"LOCAL_OBSERVER"}'     "$(clean "$(kv DEVICE_ID "$ROOT/config/identity.env")")" "$(date +%s)" "$(clean "$_ver")" "$(clean "$_vc")" "$(clean "$(kv ACTIVE_PACKAGE "$SNAP")")"     "$(clean "$(kv LITTLE_CUR_KHZ "$SNAP")")" "$(clean "$(kv BIG_CUR_KHZ "$SNAP")")" "$(clean "$(kv GPU_CUR_HZ "$SNAP")")"     "$(clean "$(kv SKIN_TEMP_C "$SNAP")")" "$(clean "$(kv BATTERY_TEMP_C "$SNAP")")" "$(clean "$(kv CPU_TEMP_C "$SNAP")")" "$(clean "$(kv GPU_TEMP_C "$SNAP")")"     "$(clean "$(kv POWER_MW "$SNAP")")" "$(clean "$(kv FPS_EST "$SNAP")")" "$(clean "$(kv JANK_PCT "$SNAP")")" "$(clean "$_nused")" "$(clean "$_nlimit")" "$(clean "$_nday")" > "$body"
   curlcfg="$(mktemp "$ROOT/runtime/.railway_curl.XXXXXX" 2>/dev/null)"; [ -n "$curlcfg" ] || { rm -f "$body"; unset TOKEN; publish TEMPFILE_ERROR; return 1; }
   printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$curlcfg"
   chmod 600 "$curlcfg"
