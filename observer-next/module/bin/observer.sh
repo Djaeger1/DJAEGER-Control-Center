@@ -10,6 +10,9 @@ OBSERVER_PID=$(sh -c 'echo $PPID' 2>/dev/null)
 case "$OBSERVER_PID" in ''|*[!0-9]*) OBSERVER_PID=UNKNOWN;; esac
 RUNTIME="$ROOT/runtime"
 HISTORY="$ROOT/history/telemetry.csv"
+COUNT_INDEX="$ROOT/history/sample_counts.tsv"
+MEMORY_MAX_BYTES=104857600
+MEMORY_RETAIN_BYTES=94371840
 SNAP="$RUNTIME/snapshot.env"
 FRAMEFILE="$RUNTIME/frame.env"
 SEQ=0
@@ -130,8 +133,35 @@ detect_workload_package(){
 mkdir -p "$RUNTIME" "$ROOT/history"
 if [ -f "$HISTORY" ] && ! head -n1 "$HISTORY" 2>/dev/null | grep -q 'sample_origin'; then
   mv -f "$HISTORY" "$ROOT/history/telemetry.prebaseline-v3.$(date +%s).csv" 2>/dev/null
+  rm -f "$COUNT_INDEX"
 fi
 [ -f "$HISTORY" ] || echo "epoch,seq,package,cpu_avg_khz,cpu_min_cur_khz,cpu_max_cur_khz,little_cur_khz,big_cur_khz,gpu_cur_hz,skin_c,battery_c,current_ua,voltage_uv,power_mw,battery_pct,fps,jank_pct,p95_ms,p99_ms,frame_n,frame_at,battery_status,sample_origin" > "$HISTORY"
+
+rebuild_sample_index() {
+  _tmp="$COUNT_INDEX.tmp.$"
+  awk -F, 'NR>1 && $3!="" && $23=="STOCK_BASELINE" {c[$3]++} END{for(p in c) printf "%s\t%d\n",p,c[p]}' "$HISTORY" 2>/dev/null > "$_tmp"
+  chmod 600 "$_tmp" 2>/dev/null
+  mv -f "$_tmp" "$COUNT_INDEX"
+}
+
+sample_count_get() {
+  [ -r "$COUNT_INDEX" ] || rebuild_sample_index
+  awk -F '\t' -v p="$1" '$1==p{print $2;found=1;exit} END{if(!found)print 0}' "$COUNT_INDEX" 2>/dev/null
+}
+
+sample_count_inc() {
+  _pkg="$1"
+  _tmp="$COUNT_INDEX.tmp.$"
+  [ -r "$COUNT_INDEX" ] || rebuild_sample_index
+  awk -F '\t' -v OFS='\t' -v p="$_pkg" '
+    $1==p {$2=$2+1; found=1} {print}
+    END{if(!found) print p,1}
+  ' "$COUNT_INDEX" > "$_tmp"
+  chmod 600 "$_tmp" 2>/dev/null
+  mv -f "$_tmp" "$COUNT_INDEX"
+}
+
+[ -r "$COUNT_INDEX" ] || rebuild_sample_index
 
 LOW_POLICY=""
 HIGH_POLICY=""
@@ -221,12 +251,8 @@ while true; do
   [ -n "$MIGRATION_STATE" ] || MIGRATION_STATE=UNKNOWN
   [ -n "$LEGACY_CONFIG_PRESENT" ] || LEGACY_CONFIG_PRESENT=NO
 
-  if [ "$PKG" != "$LAST_COUNT_PKG" ] || [ $((SEQ % 5)) -eq 1 ]; then
-    PKG_SAMPLES=$(awk -F, -v p="$PKG" 'NR>1&&$3==p&&$23=="STOCK_BASELINE"{n++}END{print n+0}' "$HISTORY" 2>/dev/null)
-    LAST_COUNT_PKG="$PKG"
-  else
-    PKG_SAMPLES=$((PKG_SAMPLES+1))
-  fi
+  PKG_SAMPLES=$(sample_count_get "$PKG")
+  case "$PKG_SAMPLES" in ''|*[!0-9]*) PKG_SAMPLES=0;; esac
   if [ "$PKG_SAMPLES" -ge 600 ]; then LEARN=BASELINE_CPU_MATURE
   elif [ "$PKG_SAMPLES" -ge 120 ]; then LEARN=BASELINE_CPU_READY
   else LEARN=LEARNING
@@ -236,7 +262,7 @@ while true; do
   {
     echo "SCHEMA=DJAEGER_OBSERVER_V4"
     echo "ENGINE=OBSERVER_FIRST"
-    echo "MODULE_VERSION=1.1.6-singletonfix"
+    echo "MODULE_VERSION=1.1.7-thoughtmemory-hotfix"
     echo "SAMPLE_SEQ=$SEQ"
     echo "PACKAGE_SAMPLES=$PKG_SAMPLES"
     echo "EPOCH=$EPOCH"
@@ -286,11 +312,14 @@ while true; do
   EXEC_STATE=$(sed -n 's/^EXECUTOR_STATE=//p' "$ROOT/runtime/execution.env" 2>/dev/null | head -n1)
   if [ "$EXEC_STATE" = APPLIED ] || [ -r "$ROOT/runtime/execution_backup.env" ]; then SAMPLE_ORIGIN=ADAPTIVE_EXECUTION; else SAMPLE_ORIGIN=STOCK_BASELINE; fi
   echo "$EPOCH,$SEQ,$PKG,$AVG,$MIN,$MAX,$LITTLE,$BIG,$GPU,$SKIN,$BATC,$CUR,$VOLT,$POWER,$PCT,$FPS,$JANK,$P95,$P99,$FN,$FAT,$BSTAT,$SAMPLE_ORIGIN" >> "$HISTORY"
+  [ "$SAMPLE_ORIGIN" = STOCK_BASELINE ] && sample_count_inc "$PKG"
 
   SIZE=$(wc -c < "$HISTORY" 2>/dev/null)
   case "$SIZE" in ''|*[!0-9]*) SIZE=0;; esac
-  if [ "$SIZE" -gt 3145728 ]; then
-    { head -n1 "$HISTORY"; tail -n 7500 "$HISTORY"; } > "$HISTORY.trim"
+  if [ "$SIZE" -gt "$MEMORY_MAX_BYTES" ]; then
+    # Keep a 90 MiB raw-history window. Learned envelopes and the persistent
+    # sample index preserve long-term knowledge without scanning 100 MiB live.
+    { head -n1 "$HISTORY"; tail -c "$MEMORY_RETAIN_BYTES" "$HISTORY" | sed '1d'; } > "$HISTORY.trim"
     mv -f "$HISTORY.trim" "$HISTORY"
   fi
   WORKLOAD_CLASS=$(sed -n 's/^WORKLOAD_CLASS=//p' "$ROOT/runtime/workload.env" 2>/dev/null | head -n1)
