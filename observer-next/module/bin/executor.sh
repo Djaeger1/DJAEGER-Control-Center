@@ -18,6 +18,8 @@ STATE="$ROOT/runtime/execution.env"
 BACKUP="$ROOT/runtime/execution_backup.env"
 MONITOR="$ROOT/runtime/execution_monitor.env"
 OUTCOMES="$ROOT/history/outcomes.csv"
+OUTCOMES_MAX_BYTES=8388608
+OUTCOMES_RETAIN_BYTES=6291456
 OUTCOME_MARK="$ROOT/runtime/execution_outcome.mark"
 RESTORE_DIAG="$ROOT/runtime/execution_restore.env"
 SUPPRESS="$ROOT/runtime/execution_suppress.env"
@@ -108,6 +110,19 @@ record_outcome(){
     "$(clean_csv "$(kv FPS_EST "$SNAP")")" "$(clean_csv "$(kv JANK_PCT "$SNAP")")" "$(clean_csv "$(kv P95_MS "$SNAP")")" "$(clean_csv "$(kv POWER_MW "$SNAP")")" \
     "$(clean_csv "$READBACK")" "$(clean_csv "$_olittle")" "$(clean_csv "$_obig")" "$(clean_csv "$_ogpu")" >> "$OUTCOMES"
   chmod 600 "$OUTCOMES"
+
+  # Persistent memory uses a bounded outcomes ledger. Older low-value rows can
+  # be compacted because learned_envelope.env preserves the aggregated model,
+  # while the newest outcomes remain available for validation and rollback bias.
+  _outcome_bytes="$(wc -c < "$OUTCOMES" 2>/dev/null)"
+  case "$_outcome_bytes" in ''|*[!0-9]*) _outcome_bytes=0;; esac
+  if [ "$_outcome_bytes" -gt "$OUTCOMES_MAX_BYTES" ]; then
+    _outcome_tmp="$OUTCOMES.trim.$"
+    { head -n1 "$OUTCOMES"; tail -c "$OUTCOMES_RETAIN_BYTES" "$OUTCOMES" | sed '1d'; } > "$_outcome_tmp"
+    chmod 600 "$_outcome_tmp"
+    mv -f "$_outcome_tmp" "$OUTCOMES"
+  fi
+
   printf '%s\n' "$_sig" > "$OUTCOME_MARK"; chmod 600 "$OUTCOME_MARK"
 }
 
