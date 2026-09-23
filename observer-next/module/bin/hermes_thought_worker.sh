@@ -304,7 +304,7 @@ while true; do
   fi
   conf=$(kv CONFIDENCE "$LOCAL"); case "$conf" in ''|*[!0-9]*) conf=$(kv CONFIDENCE "$LEARN");; esac; case "$conf" in ''|*[!0-9]*) conf=0;; esac
   worker_state PUBLISHING NONE
-  tmp="$OUT.tmp.$"
+  tmp="$OUT.tmp.$$"
   { echo "AT=$(date +%s)"; echo "WORKER_VERSION=$WORKER_VERSION"; echo "WORKER_PID=$$"; echo "PACKAGE=$pkg"; echo "FINGERPRINT=$d"; echo "SOURCE=HERMES_H2"; echo "ORIGIN=$origin"; echo "STATUS=$state"; echo "CONFIDENCE=$conf"; echo "REASON=$(clean "$reason")"; echo "PROGRESS=$progress"; echo "FRAME_CLASS=$frame_class"; echo "EVIDENCE=shadow:$shadow,executor:$exec,intent:$intent,progress:$progress"; echo "TEXT=$text"; } > "$tmp"
   chmod 600 "$tmp"
   if mv -f "$tmp" "$OUT"; then worker_state PUBLISHED NONE; else worker_state PUBLISH_FAILED mv_out_failed; rm -f "$tmp"; sleep 15; continue; fi
