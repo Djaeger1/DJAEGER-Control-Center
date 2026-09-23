@@ -169,31 +169,22 @@ publish_cc() {
   _big_mhz="$(pub_khz_mhz "$_big")"
   _gpu_mhz="$(pub_hz_mhz "$_gpu")"
 
-  if [ "$_frame_evidence" = VALID ] && [ "$_fps" != 0 ]; then
-    _human_frame="Device Truth saat ini membaca sekitar $_fps FPS, jank $_jank persen, p95 $_p95 ms dan p99 $_p99 ms."
-  else
-    _human_frame="Data frame belum cukup kuat untuk saya jadikan dasar perubahan agresif."
-  fi
-
-  _human_thermal=""
+  # THOUGHT may use telemetry, but only when it explains the current decision.
+  # Full telemetry already exists in Overview and must not be duplicated here.
   _comfort_pressure=NO
-  if [ "$_skin_t" -ge 0 ] 2>/dev/null || [ "$_cpu_t" -ge 0 ] 2>/dev/null || [ "$_gpu_t" -ge 0 ] 2>/dev/null; then
-    _human_thermal="Suhu yang terbaca: skin ${_skin_t}C, CPU ${_cpu_t}C, GPU ${_gpu_t}C."
-  fi
+  _thought_context=""
   if awk -v s="$_skin_t" 'BEGIN{exit !(s>=42)}' 2>/dev/null; then
     _comfort_pressure=YES
-    _human_thermal="$_human_thermal Skin sudah masuk comfort pressure untuk preferensi panas pengguna. Saya akan mencari opsi lebih dingin hanya jika kestabilan frame tetap terjaga."
+    if [ "$_frame_evidence" = VALID ] && [ "$_fps" != 0 ]; then
+      _thought_context="Game masih stabil di sekitar $_fps FPS, tetapi skin ${_skin_t}C mulai menekan kenyamanan."
+    else
+      _thought_context="Skin ${_skin_t}C mulai menekan kenyamanan; data frame belum cukup kuat untuk perubahan agresif."
+    fi
+  elif [ "$_frame_evidence" = VALID ] && [ "$_fps" != 0 ]; then
+    _thought_context="Game masih stabil di sekitar $_fps FPS."
+  else
+    _thought_context="Data frame belum cukup kuat untuk perubahan agresif."
   fi
-
-  _human_power=""
-  [ "$_power" -gt 0 ] 2>/dev/null && _human_power="Daya pelepasan baterai sekitar ${_power} mW."
-
-  _human_clock=""
-  if [ "$_little_mhz" != NA ] || [ "$_big_mhz" != NA ] || [ "$_gpu_mhz" != NA ]; then
-    _human_clock="Clock aktif kira-kira Little ${_little_mhz} MHz, Big ${_big_mhz} MHz, GPU ${_gpu_mhz} MHz."
-  fi
-
-  _human_metrics="$_human_frame $_human_thermal $_human_power $_human_clock"
 
   if [ "$_learn_pkg" = "$_pkg" ]; then
     _lmin="$(pub_kv LITTLE_MIN_KHZ "$_learn")"; [ -n "$_lmin" ] || _lmin=NA
@@ -337,7 +328,7 @@ publish_cc() {
   _module_code=$(sed -n 's/^versionCode=//p' "${MODDIR:-/data/adb/modules/djaeger_ai_observer}/module.prop" 2>/dev/null | head -n1)
   case "$_module_code" in ''|*[!0-9]*) _module_code=0;; esac
   _apk_ver="$(pub_kv APK_VERSION_CODE "$_handshake")"
-  _expected_apk="$(pub_kv EXPECTED_APK_VERSION_CODE "$_handshake")"; [ -n "$_expected_apk" ] || _expected_apk=111
+  _expected_apk="$(pub_kv EXPECTED_APK_VERSION_CODE "$_handshake")"; [ -n "$_expected_apk" ] || _expected_apk=112
   _hand_schema="$(pub_kv SCHEMA "$_handshake")"
   _ack_id="$(pub_kv ACK_ID "$_handshake")"
   _ack_at="$(pub_kv ACK_AT "$_handshake")"; case "$_ack_at" in ''|*[!0-9]*) _ack_at=0;; esac
@@ -414,30 +405,40 @@ publish_cc() {
 
   case "$_plan_intent" in
     FRAME_RECOVERY)
-      _intent_human="Fokus saya sekarang memulihkan konsistensi frame terlebih dahulu; penghematan daya hanya boleh mengikuti jika frame tidak memburuk."
+      if [ "$_frame_evidence" = VALID ]; then
+        _intent_human="Jank ${_jank}% dan p95 ${_p95} ms relevan untuk keputusan ini; fokusnya memulihkan konsistensi frame."
+      else
+        _intent_human="Fokusnya memulihkan konsistensi frame sebelum mengejar penghematan daya."
+      fi
       ;;
     POWER_EFFICIENCY)
-      _intent_human="Frame terlihat cukup aman, jadi saya mencoba mencari titik daya yang lebih rendah tanpa mengorbankan kelancaran."
+      if [ "$_power" -gt 0 ] 2>/dev/null; then
+        _intent_human="Daya sekitar ${_power} mW relevan untuk keputusan ini; saya mencari titik lebih rendah tanpa mengorbankan kelancaran."
+      else
+        _intent_human="Saya mencari titik daya lebih rendah tanpa mengorbankan kelancaran."
+      fi
       ;;
     PROVEN_REUSE)
-      _intent_human="Saya memilih pola yang sudah pernah terbukti pada perangkat ini daripada menebak batas baru."
+      _intent_human="Saya memakai pola yang sudah terbukti pada perangkat ini daripada menebak batas baru."
       ;;
     FRAME_FIRST_BALANCED)
-      _intent_human="Saya menyeimbangkan clock seperlunya dengan prioritas utama kestabilan frame, bukan mengejar frekuensi setinggi mungkin."
+      _intent_human="Saya menyeimbangkan clock seperlunya dengan prioritas kestabilan frame."
       ;;
     *)
-      _intent_human="Saya belum mengunci diri ke profil tetap; keputusan tetap mengikuti telemetry dan hasil belajar perangkat."
+      _intent_human="Belum ada alasan untuk mengunci profil atau memaksakan perubahan."
       ;;
   esac
 
   # Dynamic THOUGHT follows the actual brain hierarchy and Agent outcome.
+  # Contract: condition -> interpretation -> decision. Telemetry is selective,
+  # never a second copy of the Overview card.
   _thought_source=OBSERVER_LOCAL
   _thought_status=OBSERVING
   _thought_age=$((_now-_epoch)); [ "$_thought_age" -ge 0 ] 2>/dev/null || _thought_age=999999
   _thought_conf="$_confidence"
   _thought_reason=MEASURED_DEVICE
   _thought_evidence="telemetry=$_seq frame=$_frame_evidence learning=$_learning samples=$_samples"
-  _thought="AI Agent mengumpulkan Device Truth untuk $_pkg. Tujuan tetap: kestabilan frame sebagai kenyamanan visual, suhu serendah mungkin sebagai kenyamanan fisik, lalu daya minimum tanpa merusak keduanya."
+  _thought="$_thought_context Belum ada alasan aman untuk mengubah hardware, jadi sistem tetap mengamati."
 
   case "$_active_brain_source" in
     GEMINI)
@@ -447,11 +448,11 @@ publish_cc() {
       if [ -r "$_gem_prop" ]; then
         _thought_status=PRIMARY_CANDIDATE
         _thought_evidence="brain=GEMINI role=PRIMARY proposal=CANDIDATE frame=$_frame_evidence hermes=$_hmode"
-        _thought="Gemini melihat alasan cukup kuat untuk mengusulkan perubahan pada $_pkg. $_human_metrics $_intent_human ONE HERMES menahan keputusan ini sebagai reviewer; saya belum menganggapnya aman sebelum shadow, safety gate dan exact readback lulus."
+        _thought="Gemini mengusulkan perubahan untuk $_pkg. $_thought_context $_intent_human Kandidat belum dijalankan sebelum review ONE HERMES, shadow, safety gate, dan readback lulus."
       else
         _thought_status=PRIMARY_OBSERVE
         _thought_evidence="brain=GEMINI role=PRIMARY proposal=NONE frame=$_frame_evidence hermes=$_hmode shadow=$_shadow_state executor=$_exec_state"
-        _thought="Gemini masih menjadi otak utama, tetapi dari evidence saat ini ia belum melihat alasan aman untuk mengubah hardware. $_human_metrics Alasannya tercatat sebagai $_gem_reason. Karena itu saya memilih mengamati dulu, bukan memaksakan perubahan."
+        _thought="Gemini tetap menjadi otak utama. $_thought_context Belum ada alasan aman untuk mengubah hardware, jadi sistem tetap mengamati."
       fi
       ;;
     HERMES_LOCAL)
@@ -461,19 +462,19 @@ publish_cc() {
       if [ "$_hlocal" = TAKEOVER_THERMAL_HOLD ]; then
         _thought_status=DEPUTY_THERMAL_HOLD
         _thought_evidence="brain=ONE_HERMES source=LOCAL comfort=HARD_THERMAL_HOLD gemini=$_gem frame=$_frame_evidence"
-        _thought="Gemini sedang tidak tersedia dan suhu perangkat sudah melewati batas hard thermal untuk transaksi baru. $_human_metrics Saya memang ingin menurunkan panas, tetapi saya sengaja tidak menulis SYSFS saat ini agar tidak melawan kontrol thermal native. Begitu suhu kembali di bawah hard gate dan frame tetap stabil, ONE HERMES akan mencoba trim lokal yang lebih dingin sebelum memakai Cloud."
+        _thought="Gemini tidak tersedia. $_thought_context ONE HERMES menahan transaksi baru karena hard thermal gate; pendinginan native tetap didahulukan."
       elif [ "$_hlocal" = TAKEOVER_LOCAL_SYNTH ]; then
         _thought_status=DEPUTY_LOCAL_SYNTH
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=KNOWLEDGE_DRIVEN intent=$_plan_intent gemini=$_gem frame=$_frame_evidence"
-        _thought="Gemini sedang tidak tersedia, jadi ONE HERMES Local mengambil alih dan menyusun kandidat dari perilaku perangkat yang benar-benar terukur. $_human_metrics $_intent_human Ini bukan profil tetap; batas yang dipilih tetap harus lolos shadow, safety, exact readback dan outcome."
+        _thought="Gemini tidak tersedia. $_thought_context ONE HERMES menyusun kandidat dari pola perangkat terukur. Kandidat tetap harus lolos shadow dan safety."
       elif [ "$_hlocal" = TAKEOVER_LOCAL ]; then
         _thought_status=DEPUTY_LOCAL_TAKEOVER
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=PROVEN_REUSE intent=$_plan_intent gemini=$_gem"
-        _thought="Gemini sedang cooldown, jadi saya melanjutkan lewat ONE HERMES Local. $_human_metrics $_intent_human Saya tidak membuat batas baru hanya demi terlihat aktif."
+        _thought="Gemini sedang cooldown. $_thought_context ONE HERMES memakai pola yang sudah terbukti dan tidak membuat batas baru tanpa alasan."
       else
         _thought_status=DEPUTY_LOCAL_OBSERVE
         _thought_evidence="brain=ONE_HERMES source=LOCAL synthesis=NONE reason=$_hreason gemini=$_gem frame=$_frame_evidence"
-        _thought="Gemini belum tersedia dan ONE HERMES Local sedang menjaga continuity. $_human_metrics Dari kondisi ini saya belum melihat manfaat yang cukup untuk menyentuh CPU atau GPU, jadi pilihan saya saat ini adalah diam dan terus membaca perubahan perangkat."
+        _thought="Gemini tidak tersedia. $_thought_context ONE HERMES mempertahankan kondisi saat ini karena belum ada manfaat terukur dari perubahan hardware."
       fi
       ;;
     HERMES_CLOUD)
@@ -482,24 +483,28 @@ publish_cc() {
       _thought_conf="$_cloud_plan_score"
       _thought_reason="$_hreason"
       _thought_evidence="brain=ONE_HERMES source=CLOUD route=$_hroute model=$_hmodel cloud_used=$_hcloud_used"
-      _thought="Gemini tidak tersedia dan pengetahuan lokal belum cukup meyakinkan, jadi ONE HERMES meminta bantuan cognition Cloud. $_human_metrics Cloud dipakai untuk menilai strategi, bukan untuk menulis SYSFS; keputusan akhirnya tetap harus melewati gate lokal."
+      _thought="Gemini tidak tersedia dan memory lokal belum cukup. $_thought_context ONE HERMES memakai Cloud hanya untuk menilai strategi; eksekusi tetap melalui gate lokal."
       ;;
     HERMES_H2)
       _thought_source=HERMES_H2
       _thought_status=DEPUTY_OBSERVE
       _thought_reason="$_hreason"
       _thought_evidence="brain=ONE_HERMES mode=$_hmode"
-      _thought="Gemini tidak tersedia, sehingga ONE HERMES bertugas sebagai deputy. $_human_metrics Saat ini saya belum menemukan alasan terukur untuk mengubah hardware, jadi saya memilih mempertahankan kondisi yang ada."
+      if [ "$_comfort_pressure" = YES ]; then
+        _thought="Gemini tidak tersedia. $_thought_context ONE HERMES mempertahankan kondisi saat ini; opsi lebih dingin hanya dipilih jika panas meningkat tanpa merusak kestabilan frame."
+      else
+        _thought="Gemini tidak tersedia. $_thought_context ONE HERMES mempertahankan kondisi saat ini karena belum ada alasan terukur untuk mengubah hardware."
+      fi
       ;;
   esac
 
   if [ "$_cons_state" = PENDING_SHADOW ]; then
     _thought_status=PENDING_SHADOW
-    _thought="$_thought Kandidat ini sekarang masuk shadow test. Saya sedang memeriksa apakah perubahan benar-benar menjaga frame dan hanya menurunkan daya bila kestabilannya tetap aman."
+    _thought="$_thought Kandidat sedang diuji shadow; belum ada perubahan hardware."
   fi
   if [ "$_shadow_state" = PASS ]; then
     _thought_status=SHADOW_PASS
-    _thought="$_thought Shadow baru saja lulus, tetapi ini belum sukses akhir. AI Agent baru boleh mencoba transaksi lokal yang terikat digest; saya masih menunggu exact readback serta hasil frame dan daya sesudah penerapan."
+    _thought="$_thought Shadow lulus; AI Agent masih menunggu transaksi lokal dan readback."
   fi
   if [ "$_exec_state" = APPLIED ] && [ "$_readback" = VERIFIED ]; then
     _thought_source=AI_AGENT
@@ -507,14 +512,14 @@ publish_cc() {
     _thought_age="$_exec_age"
     _thought_reason="$_exec_reason"
     _thought_evidence="little=$_exec_little big=$_exec_big gpu=$_exec_gpu readback=$_readback"
-    _thought="Keputusan dari $_active_brain_source sudah diterapkan oleh AI Agent dan readback cocok: Little $_exec_little, Big $_exec_big, GPU $_exec_gpu. $_human_frame $_human_thermal Sekarang saya belum menyebutnya berhasil; saya masih membandingkan frame dan daya untuk menentukan KEEP atau ROLLBACK."
+    _thought="Perubahan sudah diterapkan dan readback VERIFIED. $_thought_context AI Agent sedang menilai hasil sebelum KEEP atau ROLLBACK."
   elif [ "$_exec_state" = ROLLED_BACK ]; then
     _thought_source=AI_AGENT
     _thought_status=ROLLED_BACK
     _thought_age="$_exec_age"
     _thought_reason="$_exec_reason"
     _thought_evidence="rollback=$_rollback readback=$_readback"
-    _thought="Saya membatalkan strategi tadi karena $_exec_reason. $_human_metrics Hardware sudah dikembalikan ke state sebelumnya, jadi kegagalan ini menjadi evidence baru agar keputusan berikutnya tidak mengulangi pola yang sama."
+    _thought="Strategi dibatalkan karena $_exec_reason. Hardware kembali ke state sebelumnya; hasil ini disimpan agar pola yang sama tidak diulang."
   elif [ "$_exec_state" = ROLLBACK_FAILED ]; then
     _thought_source=AI_AGENT
     _thought_status=ROLLBACK_FAILED
@@ -522,7 +527,7 @@ publish_cc() {
     _thought_conf=0
     _thought_reason="$_exec_reason"
     _thought_evidence="rollback=$_rollback readback=$_readback"
-    _thought="Saya menghentikan eksekusi karena recovery SYSFS belum bisa dibuktikan aman. Saya tidak akan memaksakan write baru selama readback belum jelas; keselamatan state perangkat lebih penting daripada terus mencoba kandidat."
+    _thought="Eksekusi dihentikan karena recovery SYSFS belum terverifikasi. Write baru diblokir sampai readback aman."
   fi
   _thought_fresh=0; [ "$_thought_age" -le 180 ] 2>/dev/null && _thought_fresh=1
 
@@ -645,7 +650,7 @@ publish_cc() {
   _tmp="$_out.tmp.$PPID"
   {
     echo "__INSTALLED__"; echo 1
-    echo "__VERSION__"; echo "1.1.7-adaptivefix"
+    echo "__VERSION__"; echo "1.1.8-thoughtmemory"
     echo "__RUNTIME__"
     # Runtime freshness tracks publication time; telemetry sample time stays in __TEL__.
     # Using observer cycle-start EPOCH here made a newly published snapshot appear
@@ -707,7 +712,7 @@ publish_cc() {
     echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "AGENT_ACTIVE_INTENT=$_exec_intent"; echo "AGENT_ACTIVE_ACTUATORS=$_exec_actuators"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>THERMAL_COMFORT>MINIMUM_POWER"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
-    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "RECENT_OUTCOME_ROWS=$_recent_outcome_rows"; echo "RECENT_KEEP_ROWS=$_recent_keep"; echo "RECENT_ROLLBACK_ROWS=$_recent_rollback"; echo "RECENT_ROLLBACK_FAILED_ROWS=$_recent_rollback_failed"; echo "VALIDATION_OUTCOME_ROWS=$_validation_outcome_rows"; echo "VALIDATION_KEEP_ROWS=$_validation_keep"; echo "VALIDATION_ROLLBACK_ROWS=$_validation_rollback"; echo "VALIDATION_ROLLBACK_FAILED_ROWS=$_validation_rollback_failed"; echo "VALIDATION_SUPERSEDED_DRIFT_ROWS=$_validation_superseded_drift"; echo "MATURITY_PACKAGE=$_maturity_pkg"; echo "MATURITY_MODEL_STATE=$_maturity_learning"; echo "MATURITY_MODEL_SAMPLES=$_maturity_samples"; echo "MATURITY_MODEL_CONFIDENCE=$_maturity_confidence"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
+    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=104857600"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "RECENT_OUTCOME_ROWS=$_recent_outcome_rows"; echo "RECENT_KEEP_ROWS=$_recent_keep"; echo "RECENT_ROLLBACK_ROWS=$_recent_rollback"; echo "RECENT_ROLLBACK_FAILED_ROWS=$_recent_rollback_failed"; echo "VALIDATION_OUTCOME_ROWS=$_validation_outcome_rows"; echo "VALIDATION_KEEP_ROWS=$_validation_keep"; echo "VALIDATION_ROLLBACK_ROWS=$_validation_rollback"; echo "VALIDATION_ROLLBACK_FAILED_ROWS=$_validation_rollback_failed"; echo "VALIDATION_SUPERSEDED_DRIFT_ROWS=$_validation_superseded_drift"; echo "MATURITY_PACKAGE=$_maturity_pkg"; echo "MATURITY_MODEL_STATE=$_maturity_learning"; echo "MATURITY_MODEL_SAMPLES=$_maturity_samples"; echo "MATURITY_MODEL_CONFIDENCE=$_maturity_confidence"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
     echo "__AUTHORITY__"; echo "STATE=AI_AGENT_LOCAL_GATED"; echo "HARDWARE_AUTHORITY=AI_AGENT"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=AI_AGENT_INTERNAL_EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
     echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
     echo "__SUPERVISOR__"
@@ -738,7 +743,7 @@ publish_cc() {
     echo "__AGENT_SYSFS1_CAPABILITY__"; echo "TOTAL=$_cap_count"; echo "ACTUATORS=$_actuator_truth"
     echo "__AGENT_SYSFS1_EXECUTION__"; echo "STATUS=$_exec_state"; echo "ACTION_COUNT=$_action_count"; echo "APPLIED_COUNT=$_action_count"; echo "FAILURE=$([ "$_exec_state" = ROLLED_BACK ] && echo "$_exec_reason" || echo NONE)"
     echo "__CONTROL_CENTER_SYNC__"
-    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V3"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=111"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
+    echo "CONTRACT=DJAEGER_AI_ADAPTIVE_V3"; echo "MODULE_VERSION_CODE=$_module_code"; echo "EXPECTED_CONTROL_CENTER_VERSION_CODE=112"; echo "CONTROL_CENTER_VERSION_CODE=${_apk_ver:-UNVERIFIED}"
     echo "PAIR_VERIFIED=$_pair"; echo "HANDSHAKE_SCHEMA=${_hand_schema:-UNVERIFIED}"; echo "HANDSHAKE_ACK_ID=${_ack_id:-NONE}"; echo "HANDSHAKE_AGE_SEC=$_hand_age"
     echo "SNAPSHOT_GENERATION=$_generation"; echo "SNAPSHOT_FRESH=YES"
     echo "SHARED_INTELLIGENCE=GEMINI_PRIMARY_PLUS_ONE_HERMES_DEPUTY"; echo "GEMINI_INTELLIGENCE_SCOPE=PRIMARY_HIGHEST_FULL_REASONING_STRATEGY"; echo "HERMES_INTELLIGENCE_SCOPE=ONE_HERMES_FULL_DEPUTY_LOCAL_PLUS_CLOUD"
