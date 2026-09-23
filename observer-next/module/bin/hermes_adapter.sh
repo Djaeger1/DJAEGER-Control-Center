@@ -721,22 +721,11 @@ while true; do
   HMODE=TAKEOVER
   HACTIVE_SOURCE=HERMES_H2
 
-  # Gemini unavailable: use cloud cognition when local execution is unresolved,
-  # regressing, or currently under frame/power pressure. Local memory remains
-  # the immediate fallback if cloud is unavailable.
-  _force_cloud=0
-  _exec_now="$(kv EXECUTOR_STATE "$EXECUTION")"
-  _rb_now="$(kv ROLLBACK_STATE "$EXECUTION")"
-  _last_outcome="$(kv LAST_OUTCOME "$LEARN")"
-  _validation_rbf="$(num "$(kv VALIDATION_ROLLBACK_FAILED_ROWS "$LEARN")")"
-  case "$_exec_now:$_rb_now:$_last_outcome" in
-    ROLLBACK_FAILED:*|*:RESTORE_FAILED:*|*:*:ROLLBACK_FAILED) _force_cloud=1 ;;
-  esac
-  [ "$_validation_rbf" -gt 0 ] 2>/dev/null && _force_cloud=1
-  frame_degraded && _force_cloud=1
-  power_pressure && _force_cloud=1
-
-  if [ "$_force_cloud" -eq 1 ] 2>/dev/null && cloud_takeover; then
+  # Gemini unavailable: ONE HERMES Cloud is the preferred deputy cognition.
+  # Attempt cloud first (neuron-guarded by cloud_takeover itself); local memory
+  # remains the immediate fallback when cloud is unavailable, guarded, invalid,
+  # or asks to observe.
+  if cloud_takeover; then
     HLOCAL_STATE=TAKEOVER_CLOUD
     HACTIVE_SOURCE=HERMES_CLOUD
     HMODE=TAKEOVER_CLOUD_ESCALATED
