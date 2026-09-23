@@ -21,6 +21,10 @@ GUARD="$ROOT/config/hermes_thought_teacher_guard.env"
 WORKER_STATE="$ROOT/runtime/hermes_thought_worker_state.env"
 ERRLOG="$ROOT/runtime/hermes_thought_worker.err"
 WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4
+THOUGHT_LOCK="$ROOT/runtime/locks/hermes_thought_worker.lock/pid"
+THOUGHT_SELF="$(cat "$THOUGHT_LOCK" 2>/dev/null)"
+case "$THOUGHT_SELF" in ''|*[!0-9]*) exit 0;; esac
+thought_still_owns_lock(){ [ "$(cat "$THOUGHT_LOCK" 2>/dev/null)" = "$THOUGHT_SELF" ]; }
 exec 2>>"$ERRLOG"
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
@@ -269,6 +273,7 @@ worker_state(){
 }
 
 while true; do
+  thought_still_owns_lock || exit 0
   worker_state LOOP_START NONE
   active=$(kv HERMES_ACTIVE_SOURCE "$HSTATE")
   worker_state ACTIVE_READ NONE
