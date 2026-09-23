@@ -34,6 +34,7 @@ LAST_SUCCESS_AGE=999999
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
 safe_num(){ case "$1" in ''|*[!0-9.-]*) echo 0;; *) echo "$1";; esac; }
 contains_freq(){ _v="$1"; shift; for _x in "$@"; do [ "$_x" = "$_v" ] && return 0; done; return 1; }
+clean_thought(){ printf "%s" "$1" | tr "\r\n\t|" "    " | tr -cd "A-Za-z0-9.,:;/%()_+=@ -" | cut -c1-500; }
 
 key_count(){
   sed -n 's/^KEY_[1-4]=//p' "$VAULT" 2>/dev/null | awk 'NF{n++}END{print n+0}'
@@ -75,6 +76,11 @@ write_state(){
     echo "GEMINI_GUARD_SEC=${GUARD_SEC:-$STABLE_GUARD_SEC}"
     echo "GEMINI_GUARD_REASON=${GUARD_REASON:-STABLE}"
     echo "GEMINI_LAST_SUCCESS_AGE_SEC=${LAST_SUCCESS_AGE:-999999}"
+    echo "GEMINI_THOUGHT=$(clean_thought "${GEMINI_THOUGHT:-}")"
+    echo "GEMINI_THOUGHT_AT=${GEMINI_THOUGHT_AT:-0}"
+    echo "GEMINI_THOUGHT_PACKAGE=${GEMINI_THOUGHT_PACKAGE:-UNKNOWN}"
+    echo "GEMINI_REASON_TOKEN=${GEMINI_REASON_TOKEN:-}"
+    echo "GEMINI_VERDICT=${GEMINI_VERDICT:-UNKNOWN}"
     _ctx_pkg=$(kv ACTIVE_PACKAGE "$SNAP"); [ -n "$_ctx_pkg" ] || _ctx_pkg=UNKNOWN
     _ctx_class=$(kv WORKLOAD_CLASS "$WORKLOAD"); [ -n "$_ctx_class" ] || _ctx_class=UNKNOWN
     echo "GEMINI_CONTEXT_PACKAGE=$_ctx_pkg"
@@ -155,6 +161,12 @@ adaptive_guard(){
 }
 
 while true; do
+  # GEMINI_THOUGHT_STATE_V1
+  GEMINI_THOUGHT="$(kv GEMINI_THOUGHT "$STATE")"
+  GEMINI_THOUGHT_AT="$(kv GEMINI_THOUGHT_AT "$STATE")"; case "$GEMINI_THOUGHT_AT" in ""|*[!0-9]*) GEMINI_THOUGHT_AT=0;; esac
+  GEMINI_THOUGHT_PACKAGE="$(kv GEMINI_THOUGHT_PACKAGE "$STATE")"; [ -n "$GEMINI_THOUGHT_PACKAGE" ] || GEMINI_THOUGHT_PACKAGE=UNKNOWN
+  GEMINI_REASON_TOKEN="$(kv GEMINI_REASON_TOKEN "$STATE")"
+  GEMINI_VERDICT="$(kv GEMINI_VERDICT "$STATE")"; [ -n "$GEMINI_VERDICT" ] || GEMINI_VERDICT=UNKNOWN
   [ -r "$SNAP" ] && [ -r "$LEARN" ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING observer_or_learning_missing; sleep 30; continue; }
   [ "$(kv WORKLOAD_CLASS "$WORKLOAD")" = GAME ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state OBSERVE non_game_workload; sleep 5; continue; }
   [ "$(kv STATE "$LEARN")" = READY_HARDWARE_MODEL ] || { rm -f "$OUT"; SLOT=0; HTTP=NA; write_state WAITING baseline_not_mature; sleep 30; continue; }
@@ -208,7 +220,7 @@ while true; do
   PAY="$ROOT/runtime/.gemini_request.$$"
   RESP="$ROOT/runtime/.gemini_response.$$"
   cat > "$PAY" <<EOF
-{"contents":[{"parts":[{"text":"You are GEMINI, the PRIMARY and HIGHEST reasoning brain of DJAEGER AI while you are online and valid. Analyze only measured device behavior for the active GAME workload. Package=$PKG samples=$SAMPLES independent_frame_windows=$FRAME_WINDOWS. Measured stock envelope: little=$LMIN-$LMAX kHz big=$BMIN-$BMAX kHz gpu=$GMIN-$GMAX Hz. Kernel supported little frequencies=[$LAV], big frequencies=[$BAV], gpu frequencies=[$GAV]. Frame baseline: fps_p50=$FPS50 jank_p95=$JANK95 frame_p95_p95_ms=$FP95 frame_p99_p95_ms=$FP99. Current: little=$LCUR big=$BCUR gpu=$GCUR skin=$SKIN C cpu=$CPU C gpuTemp=$GPUC C power=$POWER mW fps=$CFPS jank=$CJANK p95=$CP95 p99=$CP99. Human-comfort optimization contract is lexicographic: FIRST make frame-time as stable as evidence allows because unstable frame pacing is uncomfortable for the user; SECOND, among strategies with equivalent frame stability, prefer lower thermal load and lower skin temperature because the user is heat-sensitive; THIRD, among equally stable and thermally comfortable strategies, minimize power. Never trade meaningful frame stability merely for lower temperature or lower power. Treat skin temperature at or above 42 C as soft HUMAN_COMFORT_PRESSURE that should bias toward a cooler candidate when frame stability can be preserved; hard thermal safety remains enforced locally and independently. Never output shell commands, paths, legacy profile labels, or unsupported clocks. Choose OBSERVE when evidence does not justify change. A CANDIDATE must remain inside the measured envelope and use exact kernel-supported frequencies. Return exactly nine lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>."}]}],"generationConfig":{"temperature":0.1,"maxOutputTokens":256}}
+{"contents":[{"parts":[{"text":"You are GEMINI, the PRIMARY and HIGHEST reasoning brain of DJAEGER AI while you are online and valid. Analyze only measured device behavior for the active GAME workload. Package=$PKG samples=$SAMPLES independent_frame_windows=$FRAME_WINDOWS. Measured stock envelope: little=$LMIN-$LMAX kHz big=$BMIN-$BMAX kHz gpu=$GMIN-$GMAX Hz. Kernel supported little frequencies=[$LAV], big frequencies=[$BAV], gpu frequencies=[$GAV]. Frame baseline: fps_p50=$FPS50 jank_p95=$JANK95 frame_p95_p95_ms=$FP95 frame_p99_p95_ms=$FP99. Current: little=$LCUR big=$BCUR gpu=$GCUR skin=$SKIN C cpu=$CPU C gpuTemp=$GPUC C power=$POWER mW fps=$CFPS jank=$CJANK p95=$CP95 p99=$CP99. Human-comfort optimization contract is lexicographic: FIRST make frame-time as stable as evidence allows because unstable frame pacing is uncomfortable for the user; SECOND, among strategies with equivalent frame stability, prefer lower thermal load and lower skin temperature because the user is heat-sensitive; THIRD, among equally stable and thermally comfortable strategies, minimize power. Never trade meaningful frame stability merely for lower temperature or lower power. Treat skin temperature at or above 42 C as soft HUMAN_COMFORT_PRESSURE that should bias toward a cooler candidate when frame stability can be preserved; hard thermal safety remains enforced locally and independently. Never output shell commands, paths, legacy profile labels, or unsupported clocks. Choose OBSERVE when evidence does not justify change. A CANDIDATE must remain inside the measured envelope and use exact kernel-supported frequencies. Return exactly ten lines: VERDICT=<OBSERVE|CANDIDATE>, CONFIDENCE=<0..100>, LITTLE_MIN_KHZ=<integer>, LITTLE_MAX_KHZ=<integer>, BIG_MIN_KHZ=<integer>, BIG_MAX_KHZ=<integer>, GPU_MIN_HZ=<integer>, GPU_MAX_HZ=<integer>, REASON=<short_token>, THOUGHT=<one or two short natural Indonesian sentences explaining the interpretation and decision only; do not repeat FPS, frame time, jank, temperatures, power, clocks, or other Overview telemetry unless one value is absolutely essential to explain the decision>."}]}],"generationConfig":{"temperature":0.1,"maxOutputTokens":320}}
 EOF
   chmod 600 "$PAY"
 
@@ -316,9 +328,18 @@ EOF
   echo "$(date +%s)" > "$LAST_SUCCESS"; chmod 600 "$LAST_SUCCESS"
 
   case "$VERDICT" in
+    OBSERVE|CANDIDATE)
+      GEMINI_VERDICT="$VERDICT"
+      GEMINI_REASON_TOKEN="${REASON:-GEMINI_PRIMARY_FRAME_FIRST_ANALYSIS}"
+      GEMINI_THOUGHT="$THOUGHT"
+      GEMINI_THOUGHT_AT="$(date +%s)"
+      GEMINI_THOUGHT_PACKAGE="$PKG"
+      ;;
+    *) rm -f "$OUT"; write_state INVALID unparseable_verdict; sleep 60; continue ;;
+  esac
+  case "$VERDICT" in
     OBSERVE) rm -f "$OUT"; write_state OBSERVE ai_requests_more_evidence; sleep 15; continue ;;
     CANDIDATE) : ;;
-    *) rm -f "$OUT"; write_state INVALID unparseable_verdict; sleep 60; continue ;;
   esac
   case "$CONF:$GLMIN:$GLMAX:$GBMIN:$GBMAX:$GGMIN:$GGMAX" in *[!0-9:]*|:*) parse_diag; rm -f "$OUT"; write_state INVALID non_numeric_candidate; sleep 60; continue;; esac
   [ "$CONF" -ge 0 ] && [ "$CONF" -le 100 ] || { rm -f "$OUT"; write_state INVALID confidence_out_of_range; sleep 60; continue; }
