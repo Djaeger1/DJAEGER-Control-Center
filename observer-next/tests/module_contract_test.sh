@@ -640,6 +640,60 @@ grep -Fqx 'EXECUTOR_REASON=LATCHED_RECHECK_RESOLVED' "$TEST_ROOT/runtime/executi
 grep -Fqx 'ROLLBACK_STATE=RELINQUISHED' "$TEST_ROOT/runtime/execution.env"
 grep -Fq ',RELEASED,LATCHED_RECHECK_EXTERNAL_OVERRIDE,' "$TEST_ROOT/history/outcomes.csv"
 
+# Legacy partial-apply latch: state lost digest/targets, but the ledger still
+# contains the failed digest and an earlier verified row with exact targets.
+# Resolver must reconstruct identity read-only and supersede the correct digest.
+printf '500000\n' > "$LP/scaling_min_freq"; printf '1700000\n' > "$LP/scaling_max_freq"
+printf '800000\n' > "$BP/scaling_min_freq"; printf '2200000\n' > "$BP/scaling_max_freq"
+printf '300000000\n' > "$GP/min_freq"; printf '900000000\n' > "$GP/max_freq"
+
+cat >> "$TEST_ROOT/history/outcomes.csv" <<EOF
+$NOW,sts.al,legacypartial123,APPLIED_VERIFIED,CONSENSUS_SHADOW_APPROVED,60,1,17,2100,VERIFIED,600000-1400000,900000-1800000,300000000-600000000
+$((NOW+1)),sts.al,legacypartial123,ROLLBACK_FAILED,APPLY_OR_READBACK_FAILED,60,1,17,2100,RESTORE_FAILED,NA,NA,NA
+EOF
+
+cat > "$TEST_ROOT/runtime/execution_backup.env" <<EOF
+ACTUATORS=ALL
+LITTLE_PATH=/sys/devices/system/cpu/cpufreq/policy0
+LITTLE_MIN=600000
+LITTLE_MAX=1800000
+BIG_PATH=/sys/devices/system/cpu/cpufreq/policy6
+BIG_MIN=900000
+BIG_MAX=2400000
+GPU_PATH=/sys/class/kgsl/kgsl-3d0/devfreq
+GPU_MIN=300000000
+GPU_MAX=900000000
+EOF
+
+cat > "$TEST_ROOT/runtime/execution.env" <<EOF
+EXECUTOR_STATE=ROLLBACK_FAILED
+EXECUTOR_REASON=RESTORE_FAILURE_LATCHED
+ACTIVE_DIGEST=NONE
+APPLIED_PACKAGE=NONE
+APPLIED_INTENT=NONE
+APPLIED_ACTUATORS=ALL
+APPLIED_LITTLE=NA
+APPLIED_BIG=NA
+APPLIED_GPU=NA
+READBACK=RESTORE_FAILED
+ROLLBACK_STATE=RESTORE_FAILED
+APPLIED_AT=0
+MONITOR_BAD_COUNT=0
+MONITOR_SAMPLES=0
+UPDATED_AT=$NOW
+EOF
+
+DJAEGER_SYSFS_ROOT="$FAKE" sh "$MODULE/bin/executor.sh" "$TEST_ROOT" resolve-latched
+test ! -e "$TEST_ROOT/runtime/execution_backup.env"
+grep -Fqx 'EXECUTOR_STATE=IDLE' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'EXECUTOR_REASON=LATCHED_RECHECK_RESOLVED' "$TEST_ROOT/runtime/execution.env"
+grep -Fqx 'LITTLE_POST_STATE=EXTERNAL' "$TEST_ROOT/runtime/execution_restore.env"
+grep -Fqx 'BIG_POST_STATE=EXTERNAL' "$TEST_ROOT/runtime/execution_restore.env"
+grep -Fqx 'GPU_POST_STATE=BACKUP' "$TEST_ROOT/runtime/execution_restore.env"
+grep -Fq 'legacypartial123,RELEASED,LATCHED_RECHECK_EXTERNAL_OVERRIDE' "$TEST_ROOT/history/outcomes.csv"
+grep -Fqx 'DIGEST=legacypartial123' "$TEST_ROOT/runtime/execution_suppress.env"
+rm -f "$TEST_ROOT/runtime/execution_suppress.env"
+
 # A multi-axis latch must NOT be cleared if even one owned axis still equals
 # DJAEGER-applied state. This prevents blind ownership loss after partial drift.
 printf '1400000\n' > "$LP/scaling_max_freq"
@@ -832,6 +886,9 @@ grep -Fq 'suppress_digest "$_failed_digest" "$_failed_pkg" APPLY_OR_READBACK_FAI
 grep -Fq '_failed_little="${LMIN}-${LMAX}"' "$MODULE/bin/executor.sh"
 grep -Fq 'resolve_restore_failure APPLY_OR_READBACK_FAILED' "$MODULE/bin/executor.sh"
 grep -Fq 'suppress_digest "$_digest" "$_pkg" SYSFS_EXTERNAL_OVERRIDE 900' "$MODULE/bin/executor.sh"
+grep -Fq 'recover_latched_identity()' "$MODULE/bin/executor.sh"
+grep -Fq 'TARGET_LITTLE=${LMIN}-${LMAX}' "$MODULE/bin/executor.sh"
+grep -Fq 'NR>1&&NF==13&&$4=="ROLLBACK_FAILED"' "$MODULE/bin/executor.sh"
 grep -Fq 'tail -c 1 "$OUTCOMES"' "$MODULE/bin/executor.sh"
 grep -Fq 'Preserve CSV row boundaries' "$MODULE/bin/executor.sh"
 grep -Fq 'CANDIDATE_SWITCH_AFTER_KEEP' "$MODULE/bin/executor.sh"
