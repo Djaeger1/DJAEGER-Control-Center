@@ -186,6 +186,32 @@ On the next DJAEGER AI work session:
 - Replace the placeholders in **CURRENT VERIFIED STATE** and **ACTIVE BLOCKERS** with the latest proven state.
 - Then continue only from the remaining unresolved issue.
 
+
+## 14. NEW CHAT / CHAT-LIMIT BOOTSTRAP
+
+If a DJAEGER AI chat reaches the conversation limit, or the user starts a new chat and only says something short such as:
+- "Lanjutkan DJAEGER AI"
+- "Lanjutkan dari terakhir"
+- "Teruskan proyek DJAEGER"
+- "Lanjutkan"
+
+then ChatGPT should NOT ask the user to reconstruct the project from memory.
+
+Bootstrap procedure:
+1. Identify that the requested project is DJAEGER AI.
+2. Read this `CHATGPT.md` first.
+3. Read the latest relevant repository state / commit / runtime evidence needed for the unresolved task.
+4. Continue from **CURRENT VERIFIED STATE**, **ACTIVE BLOCKERS**, and **NEXT ACTION**.
+5. Do not repeat work already marked completed.
+6. If this file is stale compared with newer verified repository/device evidence, reconcile it and update this file before continuing.
+7. If the user names another DJAEGER project, use that project's own memory file instead; never cross-contaminate projects.
+
+User fallback:
+- The user does not need to remember a special command.
+- A short instruction such as **"Lanjutkan DJAEGER AI"** is sufficient when repository access is available.
+- If repository access is unavailable in a future session, explicitly say that the project memory could not be fetched rather than guessing.
+
+
 ## 13. CHANGELOG
 
 ### 2026-09-23
