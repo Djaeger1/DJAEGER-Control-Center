@@ -1,0 +1,59 @@
+name: DJAEGER Gaming V3.4 Postinstall Hotfix1 Audit
+
+on:
+  push:
+    branches: [djaeger-gaming-v3.4-postinstall-hotfix1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-gaming-v34-postinstall-hotfix1
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Source isolation
+        run: |
+          set -euo pipefail
+          node isolation-check.js
+          npm test
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Postinstall hotfix contract
+        run: |
+          set -euo pipefail
+          S=observer-next/module/service.sh
+          W=observer-next/module/bin/hermes_thought_worker.sh
+
+          grep -Fq 'hermes_adapter hermes_thought_worker consensus shadow' "$S"
+          grep -Fq 'nohup sh "$MODDIR/bin/hermes_thought_worker.sh" "$ROOT" "$MODDIR"' "$S"
+          grep -Fq 'DJAEGER_THOUGHT_KNOWLEDGE_INIT_V1' "$W"
+          grep -Fq 'mkdir -p "$ROOT/history" "$ROOT/runtime"' "$W"
+          grep -Fq "printf 'fingerprint|at|reason|text" "$W"
+          grep -Fq 'WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4' "$W"
+          bash observer-next/tests/module_contract_test.sh
+
+      - name: Android unit tests only
+        working-directory: observer-next/android
+        run: gradle :app:testReleaseUnitTest --stacktrace
