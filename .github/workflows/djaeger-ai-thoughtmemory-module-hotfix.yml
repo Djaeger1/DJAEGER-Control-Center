@@ -1,4 +1,4 @@
-name: DJAEGER AI THOUGHT MEMORY Module Hotfix
+name: DJAEGER AI THOUGHT MEMORY Terminal Tests
 
 on:
   push:
@@ -9,11 +9,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: djaeger-ai-thoughtmemory-hotfix-${{ github.ref }}
+  group: djaeger-ai-thoughtmemory-terminal-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  module-hotfix:
+  terminal-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,14 +29,33 @@ jobs:
           grep -Fq 'EXPECTED_CONTROL_CENTER_VERSION_CODE=111' "$PUB"
           grep -Fq 'expected_apk=111' "$CTL"
           grep -Fq '[ "$module_code" = 210 ]' "$CTL"
-          grep -Fq 'MAX_BYTES=104857600' "$PUB"
-          grep -Fq 'MEMORY_MAX_BYTES=104857600' observer-next/module/bin/observer.sh
-          grep -Fq 'MEMORY_RETAIN_BYTES=94371840' observer-next/module/bin/observer.sh
-          grep -Fq 'LEARN_WINDOW_BYTES=8388608' observer-next/module/bin/learner.sh
+
+      - name: Verify concise thought contract
+        run: |
+          set -euo pipefail
+          PUB=observer-next/module/bin/publisher.sh
+          grep -Fq '_thought_context="Game masih stabil di sekitar $_fps FPS, tetapi skin ${_skin_t}C mulai menekan kenyamanan."' "$PUB"
+          grep -Fq 'ONE HERMES mempertahankan kondisi saat ini' "$PUB"
+          grep -Fq 'opsi lebih dingin hanya dipilih jika panas meningkat tanpa merusak kestabilan frame.' "$PUB"
           ! grep -Fq 'Device Truth saat ini membaca sekitar' "$PUB"
           ! grep -Fq 'Suhu yang terbaca: skin' "$PUB"
           ! grep -Fq 'Clock aktif kira-kira' "$PUB"
           ! grep -Fq '_human_metrics' "$PUB"
+
+      - name: Verify 100 MiB persistent memory contract
+        run: |
+          set -euo pipefail
+          PUB=observer-next/module/bin/publisher.sh
+          OBS=observer-next/module/bin/observer.sh
+          LEARN=observer-next/module/bin/learner.sh
+          grep -Fq 'MAX_BYTES=104857600' "$PUB"
+          grep -Fq 'MEMORY_MAX_BYTES=104857600' "$OBS"
+          grep -Fq 'MEMORY_RETAIN_BYTES=94371840' "$OBS"
+          grep -Fq 'sample_counts.tsv' "$OBS"
+          grep -Fq 'LEARN_WINDOW_BYTES=8388608' "$LEARN"
+          grep -Fq 'ANALYSIS_HISTORY="$TMPBASE.history"' "$LEARN"
+          ! grep -Fq 'MAX_BYTES=3145728' "$PUB"
+          ! grep -Fq 'if [ "$SIZE" -gt 3145728 ]' "$OBS"
 
       - name: Source isolation and backend tests
         run: |
@@ -65,46 +84,14 @@ jobs:
             bash -n "$f"
           done
 
-      - name: Module contract and fake-sysfs rollback tests
+      - name: Contract and fake-sysfs terminal tests
         run: bash observer-next/tests/module_contract_test.sh
 
-      - name: Package compatible module hotfix
+      - name: Confirm no release packaging
         run: |
           set -euo pipefail
-          mkdir -p out
-          cd observer-next/module
-          zip -qr ../../out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip .
-          cd ../..
-
-          unzip -t out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip > out/MODULE_ZIP_TEST.txt
-          unzip -l out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip > out/MODULE_CONTENTS.txt
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip module.prop | grep -Fqx 'versionCode=210'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip bin/publisher.sh | grep -Fq '_expected_apk=111'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip bin/publisher.sh | grep -Fq 'MAX_BYTES=104857600'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip bin/observer.sh | grep -Fq 'MEMORY_MAX_BYTES=104857600'
-          unzip -p out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip bin/learner.sh | grep -Fq 'LEARN_WINDOW_BYTES=8388608'
-
-          cd out
-          sha256sum DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip > SHA256SUMS.txt
-          printf '%s\n' \
-            'STATUS=MODULE_HOTFIX_VERIFIED_OFFLINE' \
-            'PAIR_COMPATIBILITY=MODULE_210_APP_111' \
-            'APK_UNCHANGED=YES' \
-            'APK_INSTALL_REQUIRED=NO' \
-            'THOUGHT=CONCISE_SELECTIVE_TELEMETRY' \
-            'PERSISTENT_MEMORY_MAX_BYTES=104857600' \
-            'LIVE_LEARN_WINDOW_BYTES=8388608' \
-            'RAW_HISTORY_RETAIN_BYTES=94371840' \
-            'LIVE_DEVICE_VALIDATION=REQUIRED_AFTER_REMOTE_ACTIVATION' \
-            > BUILD_REPORT.txt
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DJAEGER-AI-Adaptive-v1.1.7-THOUGHTMEMORY-HOTFIX
-          path: |
-            out/DJAEGER-AI-Adaptive-Module-v1.1.7-thoughtmemory-HOTFIX.zip
-            out/SHA256SUMS.txt
-            out/BUILD_REPORT.txt
-            out/MODULE_ZIP_TEST.txt
-            out/MODULE_CONTENTS.txt
-          if-no-files-found: error
+          test ! -d out
+          echo 'TERMINAL_TEST_ONLY=PASS'
+          echo 'MODULE_BUILD=DISABLED'
+          echo 'APK_BUILD=DISABLED'
+          echo 'ARTIFACT_UPLOAD=DISABLED'
