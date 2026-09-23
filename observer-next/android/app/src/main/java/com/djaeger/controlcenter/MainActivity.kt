@@ -224,9 +224,20 @@ private fun ageLabel(raw:String):String{
     BoxCard(if(adaptiveContract) "DJAEGER AI AGENT • DEVICE TRUTH + HARDWARE CONTROLLER" else "AI AGENT • SYSFS1 • FULL HARDWARE CONTROLLER",body,true)
 }
 
-private fun currentRange(raw:String,unit:String):String{
+private fun currentRange(raw:String,sourceUnit:String):String{
     val v=raw.trim()
-    return if(v.isBlank()||v.contains("NA")) "—" else "$v $unit"
+    if(v.isBlank()||v.contains("NA",true)||v=="-") return "—"
+    val parts=v.split("-")
+    if(parts.size!=2) return "—"
+    val a=parts[0].toLongOrNull() ?: return "—"
+    val b=parts[1].toLongOrNull() ?: return "—"
+    val div=when(sourceUnit){"Hz"->1_000_000.0;"kHz"->1_000.0;else->1.0}
+    val unit=if(sourceUnit=="Hz"||sourceUnit=="kHz") "MHz" else sourceUnit
+    fun fmt(x:Long):String{
+        val y=x/div
+        return if(kotlin.math.abs(y-kotlin.math.round(y))<0.05) kotlin.math.round(y).toLong().toString() else "%.1f".format(y)
+    }
+    return "${fmt(a)}–${fmt(b)} $unit"
 }
 
 private fun planRange(a:String,b:String,unit:String):String{
@@ -395,7 +406,7 @@ private fun planRange(a:String,b:String,unit:String):String{
     val srReadback=envField(s.strategyResult,"READBACK")
     val srOutcome=envField(s.strategyResult,"OUTCOME")
     val validation=if(srValidation.isNotBlank()) "$srValidation • readback=${srReadback.ifBlank{"—"}} • outcome=${srOutcome.ifBlank{"—"}}" else "LOCAL VALIDATOR / FAIL-CLOSED"
-    val body="Gemini: $cloudConnection\nTruth: CURRENT BRAIN / FUSED\nCloud proposal: $cloudState • ${cloudScore}%\nCloud reason: $cloudReason\nHermes proposal: $hermesState • ${hermesConf}%\nCurrent brain: ${brainLabel(currentBrain)}\nBrain decision: ${brainMode.ifBlank{"—"}}\nBrain profile: ${brainProfile.ifBlank{"—"}}\nFinal profile / mode: $finalProfile / $execMode\nFinal source: ${finalSource.ifBlank{"—"}}\nFinal adjustment: $adjustment\nUser mode: ${s.userMode}\nCPU little: ${currentRange(little,"kHz")}\nCPU big: ${currentRange(big,"kHz")}\nGPU: ${currentRange(gpu,"MHz")}\nValidasi Local AI: $validation"
+    val body="Gemini: $cloudConnection\nTruth: CURRENT BRAIN / FUSED\nCloud proposal: $cloudState • ${cloudScore}%\nCloud reason: $cloudReason\nHermes proposal: $hermesState • ${hermesConf}%\nCurrent brain: ${brainLabel(currentBrain)}\nBrain decision: ${brainMode.ifBlank{"—"}}\nBrain profile: ${brainProfile.ifBlank{"—"}}\nFinal profile / mode: $finalProfile / $execMode\nFinal source: ${finalSource.ifBlank{"—"}}\nFinal adjustment: $adjustment\nUser mode: ${s.userMode}\nCPU little: ${currentRange(little,"kHz")}\nCPU big: ${currentRange(big,"kHz")}\nGPU: ${currentRange(gpu,"Hz")}\nValidasi Local AI: $validation"
     BoxCard("STRATEGI",body,true)
 }
 
@@ -931,7 +942,7 @@ private fun humanDecision(s:RuntimeState):String{
         BoxCard("AI SUMMARY LIVE",aiSummary(s));BoxCard("LOCAL BRAIN LIVE",brainText,true);BoxCard("ADAPTIVE OPERATING ENVELOPE LIVE",s.envelope.ifBlank{"No envelope published yet"},true);BoxCard("GEMINI INTELLIGENCE HUMAN VIEW",retained,true);BoxCard("GEMINI HTTP STATE LIVE",s.geminiHttp.ifBlank{"No Gemini HTTP state yet"},true);BoxCard("GEMINI SERVER STATE LIVE",s.geminiServer.ifBlank{"No server state / no active backoff"},true)
     }
 }
-private fun aiSummary(s:RuntimeState):String{val h=s.geminiHttp.lowercase();val server=s.geminiServer.lowercase();val gem=when{h.isBlank()&&server.isBlank()->"No published Gemini state";"backoff" in server||"error" in h||"fail" in h->"Attention / ONE HERMES takeover may be active";else->"State published"};val brain=envField(s.brain,"CURRENT_BRAIN").ifBlank{"WAITING"};val hermes=envField(s.brain,"HERMES_MODE").ifBlank{"DEPUTY_STANDBY"};return "Primary brain: GEMINI • $gem\nActive brain: $brain\nONE HERMES: $hermes\nObjective: FRAME STABILITY FIRST • MINIMUM POWER SECOND\nHardware controller: AI AGENT"}
+private fun aiSummary(s:RuntimeState):String{val h=s.geminiHttp.lowercase();val server=s.geminiServer.lowercase();val gem=when{h.isBlank()&&server.isBlank()->"No published Gemini state";"backoff" in server||"error" in h||"fail" in h->"Attention / ONE HERMES takeover may be active";else->"State published"};val brain=envField(s.brain,"CURRENT_BRAIN").ifBlank{"WAITING"};val hermes=envField(s.brain,"HERMES_MODE").ifBlank{"DEPUTY_STANDBY"};return "Primary brain: GEMINI • $gem\nActive brain: $brain\nONE HERMES: $hermes\nObjective: FRAME STABILITY FIRST • THERMAL COMFORT SECOND • MINIMUM POWER THIRD\nHardware controller: AI AGENT"}
 @Composable fun History(s:RuntimeState){Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){DecisionCard(s.latestDecision);PlanCard(s.latestPlan);BoxCard("DECISION LEDGER • LAST 16",s.decisions.ifBlank{"No decisions recorded yet"},true);BoxCard("PLAN HISTORY • LAST 16",s.plans.ifBlank{"No plans recorded yet"},true)}}
 @Composable fun DecisionCard(d:DecisionRecord?){if(d==null)BoxCard("LATEST AI DECISION","No decision parsed yet") else BoxCard("LATEST AI DECISION","ID: ${d.id}\nGame: ${d.game} • Scene: ${d.scene}\nProfile: ${d.profile}\nBudgets L/B/G: ${d.little} / ${d.big} / ${d.gpu}\nOutcome: ${d.outcome}\nPred FPS/Skin: ${d.predFps} / ${d.predSkin}\nActual FPS/Skin: ${d.actualFps} / ${d.actualSkin}\nWindow: ${d.window}")}
 @Composable fun PlanCard(p:PlanRecord?){if(p==null)BoxCard("LATEST PLAN","No plan parsed yet") else BoxCard("LATEST PLAN","State: ${p.state} • Score: ${p.score}\nReason: ${p.reason}\nMode/Profile: ${p.mode} / ${p.profile}\nLittle: ${p.lmin}–${p.lmax}\nBig: ${p.bmin}–${p.bmax}\nGPU: ${p.gmin}–${p.gmax}")}
