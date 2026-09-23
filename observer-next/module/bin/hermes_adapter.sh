@@ -430,6 +430,40 @@ write_hermes_plan(){
   chmod 600 "$_t"; mv -f "$_t" "$HPLAN"
 }
 
+strategy_quarantined_file(){
+  _qs="$1"
+  _qf="$ROOT/history/shadow_reject_strategies.csv"
+  [ -r "$_qf" ] || return 1
+  _qn=$(date +%s)
+  _qp=$(kv PACKAGE "$_qs")
+  _qi=$(kv INTENT "$_qs")
+  _qa=$(kv ACTUATORS "$_qs")
+  # MULTIACTUATOR_MATCHER_NORMALIZE
+  _qa=$(printf "%s" "$_qa" | tr ',' '+')
+  _ql0=$(kv LITTLE_MIN_KHZ "$_qs"); _ql1=$(kv LITTLE_MAX_KHZ "$_qs")
+  _qb0=$(kv BIG_MIN_KHZ "$_qs"); _qb1=$(kv BIG_MAX_KHZ "$_qs")
+  _qg0=$(kv GPU_MIN_HZ "$_qs"); _qg1=$(kv GPU_MAX_HZ "$_qs")
+  awk -F, -v now="$_qn" -v p="$_qp" -v i="$_qi" -v a="$_qa" \
+    -v l0="$_ql0" -v l1="$_ql1" -v b0="$_qb0" -v b1="$_qb1" -v g0="$_qg0" -v g1="$_qg1" '
+    NR>1 && $1~/^[0-9]+$/ && now-$1>=0 && now-$1<=900 &&
+    $2==p && $3==i && $4==a && $5==l0 && $6==l1 &&
+    $7==b0 && $8==b1 && $9==g0 && $10==g1 {found=1}
+    END{exit !found}
+  ' "$_qf" 2>/dev/null
+}
+
+rewrite_local_candidate_tmp(){
+  {
+    echo "PACKAGE=$_pkg"
+    echo "INTENT=$_intent"
+    echo "ACTUATORS=$_actuators"
+    echo "LITTLE_MIN_KHZ=$_nl0"; echo "LITTLE_MAX_KHZ=$_nl1"
+    echo "BIG_MIN_KHZ=$_nb0"; echo "BIG_MAX_KHZ=$_nb1"
+    echo "GPU_MIN_HZ=$_ng0"; echo "GPU_MAX_HZ=$_ng1"
+  } > "$_tmp"
+}
+
+
 local_history_takeover(){
   [ -r "$OUTCOMES" ] || return 1
   _pkg=$(kv ACTIVE_PACKAGE "$SNAP")
@@ -512,6 +546,149 @@ frame_critical(){
   }'
 }
 
+# CONTEXTUAL_HEALTHY_FRAME_OVERRIDE_V1
+contextual_healthy_ref(){
+  _hf="$ROOT/history/telemetry.csv"
+  [ -r "$_hf" ] || return 1
+  _hp=$(kv ACTIVE_PACKAGE "$SNAP")
+  _hc=$(num "$(kv CPU_AVG_KHZ "$SNAP")")
+  _hs=$(num "$(kv SKIN_TEMP_C "$SNAP")")
+  _hn=$(date +%s)
+  _hcut=$((_hn-3600))
+
+  _hr=$(awk -F, -v p="$_hp" -v cutoff="$_hcut" -v ca="$_hc" -v cs="$_hs" '
+    NR>1 && $1+0>=cutoff && $3==p && $23=="STOCK_BASELINE" &&
+    $20+0>=20 && $21~/^[0-9]+$/ && !seen[$21]++ {
+      cpuok=1
+      if(ca>0 && $4+0>0) cpuok=($4>=ca*0.80 && $4<=ca*1.20)
+      skinok=1
+      if(cs>0 && $10+0>0) skinok=($10>=cs-3 && $10<=cs+3)
+      if(cpuok && skinok && $18+0<=20 && $16+0>=54 && $17+0<=5){
+        n++; f+=$16; j+=$17; q+=$18; z+=$19
+      }
+    }
+    END{
+      if(n>0) printf "%d %.3f %.3f %.3f %.3f",n,f/n,j/n,q/n,z/n
+      else printf "0 0 0 0 0"
+    }
+  ' "$_hf" 2>/dev/null)
+
+  HR_N=$(printf "%s\n" "$_hr" | awk '{print $1}')
+  HR_FPS=$(printf "%s\n" "$_hr" | awk '{print $2}')
+  HR_JANK=$(printf "%s\n" "$_hr" | awk '{print $3}')
+  HR_P95=$(printf "%s\n" "$_hr" | awk '{print $4}')
+  HR_P99=$(printf "%s\n" "$_hr" | awk '{print $5}')
+  case "$HR_N" in ''|*[!0-9]*) HR_N=0;; esac
+  [ "$HR_N" -ge 60 ]
+}
+
+frame_degraded(){
+  _fps=$(num "$(kv FPS_EST "$SNAP")")
+  _jank=$(num "$(kv JANK_PCT "$SNAP")")
+  _p95=$(num "$(kv P95_MS "$SNAP")")
+
+  if contextual_healthy_ref; then
+    _bfps="$HR_FPS"; _bjank="$HR_JANK"; _bp95="$HR_P95"
+  else
+    _bfps=$(num "$(kv FPS_P50 "$LEARN")")
+    _bjank=$(num "$(kv JANK_P95 "$LEARN")")
+    _bp95=$(num "$(kv FRAME_P95_P95_MS "$LEARN")")
+  fi
+
+  awk -v f="$_fps" -v j="$_jank" -v p="$_p95" \
+      -v bf="$_bfps" -v bj="$_bjank" -v bp="$_bp95" 'BEGIN{
+    if(bf<=0 || bp<=0) exit 1
+    bad=(f>0 && f<bf*0.98) || (p>0 && p>bp*1.08)
+    if(j>=0 && bj>=0 && j>bj*1.20+1) bad=1
+    exit bad?0:1
+  }'
+}
+
+frame_critical(){
+  _fps=$(num "$(kv FPS_EST "$SNAP")")
+  _j=$(num "$(kv JANK_PCT "$SNAP")")
+  _p95=$(num "$(kv P95_MS "$SNAP")")
+  _p99=$(num "$(kv P99_MS "$SNAP")")
+
+  if contextual_healthy_ref; then
+    _bfps="$HR_FPS"; _bj="$HR_JANK"; _bp95="$HR_P95"; _bp99="$HR_P99"
+  else
+    _bfps=$(num "$(kv FPS_P50 "$LEARN")")
+    _bj=$(num "$(kv JANK_P95 "$LEARN")")
+    _bp95=$(num "$(kv FRAME_P95_P95_MS "$LEARN")")
+    _bp99=$(num "$(kv FRAME_P99_P95_MS "$LEARN")")
+  fi
+
+  awk -v f="$_fps" -v bf="$_bfps" -v j="$_j" -v bj="$_bj" \
+      -v p="$_p95" -v bp="$_bp95" -v q="$_p99" -v bq="$_bp99" 'BEGIN{
+    bad=(bf>0&&f>0&&f<bf*0.80)||(bp>0&&p>bp*1.25)||(bq>0&&q>bq*1.25)
+    if(bj>=0&&j>bj*1.50+2) bad=1
+    exit bad?0:1
+  }'
+}
+
+frame_recovery_boost_supported(){
+  _cf="$ROOT/history/telemetry.csv"
+  [ -r "$_cf" ] || return 0
+  _cp=$(kv ACTIVE_PACKAGE "$SNAP")
+  _cc=$(num "$(kv CPU_AVG_KHZ "$SNAP")")
+  _cs=$(num "$(kv SKIN_TEMP_C "$SNAP")")
+  _cn=$(date +%s)
+  _ccut=$((_cn-3600))
+
+  _cr=$(awk -F, -v p="$_cp" -v cutoff="$_ccut" -v ca="$_cc" -v cs="$_cs" '
+    NR>1 && $1+0>=cutoff && $3==p && $23=="STOCK_BASELINE" &&
+    $20+0>=20 && $21~/^[0-9]+$/ && !seen[$21]++ {
+      cpuok=1
+      if(ca>0 && $4+0>0) cpuok=($4>=ca*0.80 && $4<=ca*1.20)
+      skinok=1
+      if(cs>0 && $10+0>0) skinok=($10>=cs-3 && $10<=cs+3)
+      if(!(cpuok && skinok)) next
+
+      if($18+0<=20 && $16+0>=54 && $17+0<=5){
+        sn++; sl+=$7; sb+=$8; sg+=$9; sw+=$14
+      }
+      if($18+0>=25 || $16+0<50 || $17+0>15){
+        bn++; bl+=$7; bb+=$8; bg+=$9; bw+=$14
+      }
+    }
+    END{
+      if(sn>0 && bn>0)
+        printf "%d %d %.0f %.0f %.0f %.1f %.0f %.0f %.0f %.1f",
+          sn,bn,sl/sn,sb/sn,sg/sn,sw/sn,bl/bn,bb/bn,bg/bn,bw/bn
+      else
+        printf "%d %d 0 0 0 0 0 0 0 0",sn+0,bn+0
+    }
+  ' "$_cf" 2>/dev/null)
+
+  CR_SN=$(printf "%s\n" "$_cr" | awk '{print $1}')
+  CR_BN=$(printf "%s\n" "$_cr" | awk '{print $2}')
+  CR_SL=$(printf "%s\n" "$_cr" | awk '{print $3}')
+  CR_SB=$(printf "%s\n" "$_cr" | awk '{print $4}')
+  CR_SG=$(printf "%s\n" "$_cr" | awk '{print $5}')
+  CR_SW=$(printf "%s\n" "$_cr" | awk '{print $6}')
+  CR_BL=$(printf "%s\n" "$_cr" | awk '{print $7}')
+  CR_BB=$(printf "%s\n" "$_cr" | awk '{print $8}')
+  CR_BG=$(printf "%s\n" "$_cr" | awk '{print $9}')
+  CR_BW=$(printf "%s\n" "$_cr" | awk '{print $10}')
+
+  case "$CR_SN:$CR_BN" in *[!0-9:]*) return 0;; esac
+  [ "$CR_SN" -ge 60 ] && [ "$CR_BN" -ge 60 ] || return 0
+
+  # If bad-frame windows already run at >=95% of smooth clocks and power,
+  # there is no empirical evidence that a clock boost is the missing resource.
+  if awk -v sl="$CR_SL" -v sb="$CR_SB" -v sg="$CR_SG" -v sw="$CR_SW" \
+         -v bl="$CR_BL" -v bb="$CR_BB" -v bg="$CR_BG" -v bw="$CR_BW" 'BEGIN{
+      unsupported=(sl>0&&sb>0&&sg>0&&sw>0 &&
+                   bl>=sl*0.95 && bb>=sb*0.95 && bg>=sg*0.95 && bw>=sw*0.95)
+      exit unsupported?0:1
+    }'; then
+    return 1
+  fi
+  return 0
+}
+
+
 local_synthesize_takeover(){
   [ "$(kv STATE "$LEARN")" = READY_HARDWARE_MODEL ] || { HDETAIL=local_synth_model_not_ready; return 1; }
   [ "$(kv FRAME_EVIDENCE "$LEARN")" = VALID ] || { HDETAIL=local_synth_frame_model_not_ready; return 1; }
@@ -541,13 +718,21 @@ local_synthesize_takeover(){
   _actuators=NONE
 
   if frame_degraded; then
+    # FRAME_RECOVERY_CAUSAL_GATE_V1
+    if ! frame_recovery_boost_supported; then
+      HDETAIL=local_frame_recovery_boost_not_supported_by_history
+      return 1
+    fi
     _n=$(opp_next_in_range "$_bav" "$_b0" "$_b1"); [ -n "$_n" ] && _nb0="$_n"
     _n=$(opp_next_in_range "$_gav" "$_g0" "$_g1"); [ -n "$_n" ] && _ng0="$_n"
     if frame_critical; then
-      _n=$(opp_next_in_range "$_lav" "$_l0" "$_l1"); [ -n "$_n" ] && _nl0="$_n"
+      # FRAME_RECOVERY_CONTEXTUAL_STAGE1
+      # Critical recovery starts with BIG+GPU because this is the
+      # least aggressive evidence-backed recovery cohort. LITTLE
+      # is reserved for later escalation after post-apply evidence.
       _intent=FRAME_RECOVERY
-      _reason=LOCAL_FRAME_CRITICAL_RECOVERY
-      _actuators=LITTLE,BIG,GPU
+      _reason=LOCAL_FRAME_CRITICAL_RECOVERY_STAGE1_BIG_GPU
+      _actuators=BIG,GPU
     else
       _intent=FRAME_RECOVERY
       _reason=LOCAL_FRAME_DEGRADED_RECOVERY
@@ -590,6 +775,52 @@ local_synthesize_takeover(){
     echo "GPU_MIN_HZ=$_ng0"; echo "GPU_MAX_HZ=$_ng1"
   } > "$_tmp"
 
+  # MULTI_REJECT_ALTERNATIVE_SYNTH
+  # Never repeat a semantically identical shadow-rejected strategy during
+  # the 900s quarantine. Try a different local actuator before giving up.
+  if strategy_quarantined_file "$_tmp"; then
+    if [ "$_actuators" = GPU ]; then
+      _n=$(opp_prev_in_range "$_bav" "$_b1" "$_b0")
+      if [ -n "$_n" ]; then
+        _nl0="$_l0"; _nl1="$_l1"
+        _nb0="$_b0"; _nb1="$_n"
+        _ng0="$_g0"; _ng1="$_g1"
+        _actuators=BIG
+        if thermal_pressure; then
+          _reason=LOCAL_HUMAN_COMFORT_THERMAL_TRIM_BIG
+        else
+          _reason=LOCAL_POWER_TRIM_BIG
+        fi
+        rewrite_local_candidate_tmp
+      fi
+    fi
+  fi
+
+  if strategy_quarantined_file "$_tmp"; then
+    if [ "$_actuators" = BIG ] || [ "$_actuators" = GPU ]; then
+      _n=$(opp_prev_in_range "$_lav" "$_l1" "$_l0")
+      if [ -n "$_n" ]; then
+        _nl0="$_l0"; _nl1="$_n"
+        _nb0="$_b0"; _nb1="$_b1"
+        _ng0="$_g0"; _ng1="$_g1"
+        _actuators=LITTLE
+        if thermal_pressure; then
+          _reason=LOCAL_HUMAN_COMFORT_THERMAL_TRIM_LITTLE
+        else
+          _reason=LOCAL_POWER_TRIM_LITTLE
+        fi
+        rewrite_local_candidate_tmp
+      fi
+    fi
+  fi
+
+  if strategy_quarantined_file "$_tmp"; then
+    rm -f "$_tmp" "$HPLAN" "$LOCAL_OUT"
+    HDETAIL=all_local_comfort_strategies_quarantined
+    return 1
+  fi
+
+
   if ! validate_candidate_file "$_tmp"; then
     rm -f "$_tmp"
     return 1
@@ -605,6 +836,11 @@ local_synthesize_takeover(){
   return 0
 }
 cloud_takeover(){
+  # REJECT_QUARANTINE_NO_CLOUD
+  if [ "$HDETAIL" = shadow_rejected_strategy_quarantine ]; then
+    HCLOUD_STATE=REACHABLE_IDLE
+    return 1
+  fi
   # Restarting/hot-updating ONE HERMES must never itself spend Cloud neurons.
   # During this short boot guard, local continuity remains available.
   _boot_now=$(date +%s)
@@ -835,6 +1071,52 @@ while true; do
     fi
   fi
 
+  # HEALTHY_LOCAL_OBSERVE_BEFORE_CLOUD
+  # Do not spend Cloud neurons just because Gemini is unavailable.
+  # If frame pacing, thermal comfort and power are all currently acceptable,
+  # the correct decision is local observe.
+  if ! frame_degraded && ! thermal_pressure && ! power_pressure; then
+    rm -f "$HPLAN" "$LOCAL_OUT"
+    HLOCAL_STATE=TAKEOVER_OBSERVE
+    HACTIVE_SOURCE=HERMES_LOCAL
+    HCLOUD_STATE=REACHABLE_IDLE
+    HDETAIL=healthy_local_observe_no_cloud_needed
+    write_state HERMES_TAKEOVER
+    sleep 15
+    continue
+  fi
+
+
+  # FRAME_RECOVERY_LOCAL_BEFORE_CLOUD
+  # Frame stability first. Below the hard thermal gate, deterministic local
+  # synthesis gets first chance; Cloud is fallback only. Shadow still gates
+  # executor authority.
+  if frame_degraded; then
+    if local_synthesize_takeover; then
+      HLOCAL_STATE=TAKEOVER_LOCAL_SYNTH
+      HACTIVE_SOURCE=HERMES_LOCAL
+      HCLOUD_STATE=REACHABLE_IDLE
+      HCLOUD_USED=NO
+      write_state HERMES_TAKEOVER
+      sleep 10
+      continue
+    fi
+  fi
+
+
+  # FRAME_RECOVERY_CAUSAL_OBSERVE_BARRIER
+  if [ "$HDETAIL" = local_frame_recovery_boost_not_supported_by_history ]; then
+    rm -f "$HPLAN" "$LOCAL_OUT"
+    HLOCAL_STATE=TAKEOVER_OBSERVE
+    HACTIVE_SOURCE=HERMES_LOCAL
+    HCLOUD_STATE=REACHABLE_IDLE
+    HCLOUD_USED=NO
+    write_state HERMES_TAKEOVER
+    sleep 15
+    continue
+  fi
+
+
   # Gemini unavailable outside the local comfort path: ONE HERMES Cloud remains
   # preferred deputy cognition, neuron-guarded by cloud_takeover itself.
   if cloud_takeover; then
@@ -845,6 +1127,21 @@ while true; do
     sleep 45
     continue
   fi
+
+  # REJECT_QUARANTINE_OBSERVE_BARRIER
+  # A strategy just rejected by shadow must not fall through to Cloud,
+  # proven-history reuse, or another synth in the same decision cycle.
+  case "$HDETAIL" in shadow_rejected_strategy_quarantine|all_local_comfort_strategies_quarantined) true;; *) false;; esac
+  if [ $? -eq 0 ]; then
+    rm -f "$HPLAN" "$LOCAL_OUT"
+    HLOCAL_STATE=TAKEOVER_OBSERVE
+    HACTIVE_SOURCE=HERMES_LOCAL
+    HCLOUD_STATE=REACHABLE_IDLE
+    write_state HERMES_TAKEOVER
+    sleep 15
+    continue
+  fi
+
 
   if local_history_takeover; then
     HLOCAL_STATE=TAKEOVER_LOCAL
