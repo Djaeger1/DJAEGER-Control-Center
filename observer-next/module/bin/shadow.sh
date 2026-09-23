@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # Counterfactual shadow evaluator owned by AI Agent policy.
-# Objective is lexicographic: frame stability first, minimum power second.
+# Human-comfort objective is lexicographic: frame stability first, thermal comfort second, minimum power third.
 # This worker never writes hardware.
 
 ROOT="$1"
@@ -12,6 +12,7 @@ fi
 HISTORY="$ROOT/history/telemetry.csv"
 LEARN="$ROOT/history/learned_envelope.env"
 POLICY="$ROOT/policy/candidate.env"
+SNAP="$ROOT/runtime/snapshot.env"
 OUT="$ROOT/runtime/shadow.env"
 APPROVAL="$ROOT/policy/approved.env"
 
@@ -52,7 +53,7 @@ publish(){
       echo "GPU_MIN_HZ=$(kv GPU_MIN_HZ "$POLICY")"
       echo "GPU_MAX_HZ=$(kv GPU_MAX_HZ "$POLICY")"
       echo "AUTHORITY=AI_AGENT_LOCAL_CONTROLLER"
-      echo "OBJECTIVE=FRAME_STABILITY_FIRST_MINIMUM_POWER_SECOND"
+      echo "OBJECTIVE=HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD"
     } > "$_a"
     chmod 600 "$_a"; mv -f "$_a" "$APPROVAL"
   else
@@ -101,17 +102,25 @@ while true; do
   BASE_FPS=$(kv FPS_P50 "$LEARN"); BASE_JANK=$(kv JANK_P95 "$LEARN"); BASE_P95=$(kv FRAME_P95_P95_MS "$LEARN")
   BASE_POWER50=$(kv POWER_P50_MW "$LEARN"); BASE_POWER95=$(kv POWER_P95_MW "$LEARN")
   case "$BASE_FPS:$BASE_JANK:$BASE_P95:$BASE_POWER50:$BASE_POWER95" in *[!0-9.:]*|:*) publish WAITING baseline_metric_missing; sleep 20; continue;; esac
-  if awk -v intent="$INTENT" -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v p50="$BASE_POWER50" -v p95="$BASE_POWER95" 'BEGIN{
+  CUR_SKIN=$(kv SKIN_TEMP_C "$SNAP"); case "$CUR_SKIN" in ''|NA|*[!0-9.]*) CUR_SKIN=0;; esac
+  COMFORT_PRESSURE=0
+  awk -v s="$CUR_SKIN" 'BEGIN{exit !(s>0&&s>=42)}' && COMFORT_PRESSURE=1
+  if awk -v intent="$INTENT" -v comfort="$COMFORT_PRESSURE" -v f="$FPS_AVG" -v bf="$BASE_FPS" -v j="$JANK_AVG" -v bj="$BASE_JANK" -v p="$P95_AVG" -v bp="$BASE_P95" -v w="$POWER_AVG" -v p50="$BASE_POWER50" -v p95="$BASE_POWER95" 'BEGIN{
     frame_ok=(bf>0&&bp>0&&f>=bf*0.98&&p<=bp*1.05&&((bj<=0&&j<=1)||(bj>0&&j<=bj*1.05)));
     frame_better=(f>=bf*1.02)||(p<=bp*0.95)||((bj>0)&&(j<=bj*0.85));
     if(intent=="FRAME_RECOVERY") ok=frame_ok&&frame_better&&(p95>0&&w<=p95*1.10);
     else if(intent=="POWER_EFFICIENCY") ok=frame_ok&&(p50>0&&w<=p50*1.05);
     else ok=frame_ok&&((frame_better&&(p95>0&&w<=p95*1.10))||(!frame_better&&(p50>0&&w<=p50*1.05)));
+    if(comfort==1 && intent!="FRAME_RECOVERY") ok=ok&&(p50>0&&w<=p50);
     exit !ok
   }'; then
-    publish PASS "frame_priority_then_minimum_power_${INTENT}"
+    if [ "$COMFORT_PRESSURE" = 1 ]; then
+      publish PASS "human_comfort_frame_stable_thermal_pressure_power_reduced_${INTENT}"
+    else
+      publish PASS "human_comfort_frame_first_minimum_power_${INTENT}"
+    fi
   else
-    publish REJECT "frame_first_contract_failed_${INTENT}"
+    publish REJECT "human_comfort_contract_failed_${INTENT}"
   fi
   # Re-evaluate a live candidate promptly without busy-looping over history.
   sleep 20
