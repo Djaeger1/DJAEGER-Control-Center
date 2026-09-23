@@ -29,6 +29,7 @@ GSTATE="$ROOT/runtime/gemini_reasoner.env"
 HPLAN="$ROOT/policy/hermes_proposal.env"
 OUTCOMES="$ROOT/history/outcomes.csv"
 EXECUTION="$ROOT/runtime/execution.env"
+NEURON="$ROOT/config/hermes_neuron_live.env"
 CLOUD_MIN_INTERVAL=900
 
 kv(){ sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n1; }
@@ -74,13 +75,28 @@ write_state(){
     echo "HERMES_MODE=${HMODE:-DEPUTY_STANDBY}"
     echo "HERMES_ACTIVE_SOURCE=${HACTIVE_SOURCE:-NONE}"
     _cl_at="$(kv AT "$CLOUD_LAST")"; case "$_cl_at" in ''|*[!0-9]*) _cl_at=0;; esac
-    _cl_age=$(( $(date +%s) - _cl_at )); [ "$_cl_age" -ge 0 ] 2>/dev/null || _cl_age=999999
     _cl_route="$(kv ROUTE "$CLOUD_LAST")"; [ -n "$_cl_route" ] || _cl_route=NA
     _cl_model="$(kv MODEL "$CLOUD_LAST")"; [ -n "$_cl_model" ] || _cl_model=NA
     _cl_verdict="$(kv VERDICT "$CLOUD_LAST")"; [ -n "$_cl_verdict" ] || _cl_verdict=NA
     _cl_http="$(kv HTTP "$CLOUD_LAST")"; [ -n "$_cl_http" ] || _cl_http=NA
     _cl_delta="$(kv NEURON_DELTA "$CLOUD_LAST")"; [ -n "$_cl_delta" ] || _cl_delta=0
-    _cl_used=NO; [ "$_cl_at" -gt 0 ] 2>/dev/null && _cl_used=YES
+    _cl_used=NO
+    if [ "$_cl_at" -gt 0 ] 2>/dev/null; then
+      _cl_used=YES
+    else
+      _ledger_calls=$(num "$(kv SUCCESS_CALLS "$NEURON")")
+      _ledger_at="$(kv UPDATED_AT "$NEURON")"; case "$_ledger_at" in ''|*[!0-9]*) _ledger_at=0;; esac
+      if [ "$_ledger_calls" -gt 0 ] 2>/dev/null && [ "$_ledger_at" -gt 0 ] 2>/dev/null; then
+        _cl_at="$_ledger_at"
+        _cl_used=YES
+        _cl_route=UNRECORDED_PRE_PERSISTENCE
+        _cl_model=UNRECORDED_PRE_PERSISTENCE
+        _cl_verdict=UNRECORDED_PRE_PERSISTENCE
+        _cl_http=200
+        _cl_delta="$(kv LAST_DELTA "$NEURON")"; [ -n "$_cl_delta" ] || _cl_delta=0
+      fi
+    fi
+    _cl_age=$(( $(date +%s) - _cl_at )); [ "$_cl_age" -ge 0 ] 2>/dev/null || _cl_age=999999
     echo "HERMES_CLOUD_USED=$_cl_used"
     echo "HERMES_CLOUD_ACTIVE=$([ "${HACTIVE_SOURCE:-NONE}" = HERMES_CLOUD ] && echo YES || echo NO)"
     echo "HERMES_CLOUD_LAST_SUCCESS_AT=$_cl_at"
@@ -587,6 +603,9 @@ cloud_takeover(){
 
   _now=$(date +%s)
   _last=$(kv AT "$LAST"); case "$_last" in ''|*[!0-9]*) _last=0;; esac
+  _ncalls=$(num "$(kv SUCCESS_CALLS "$NEURON")")
+  _nupdated=$(kv UPDATED_AT "$NEURON"); case "$_nupdated" in ''|*[!0-9]*) _nupdated=0;; esac
+  [ "$_ncalls" -gt 0 ] 2>/dev/null && [ "$_nupdated" -gt "$_last" ] 2>/dev/null && _last="$_nupdated"
   [ $((_now-_last)) -ge "$CLOUD_MIN_INTERVAL" ] || { HCLOUD_STATE=COOLDOWN; HDETAIL=neuron_guard_min_interval; return 1; }
 
   _token=$(config_value HERMES_ACCESS_KEY)
@@ -617,6 +636,20 @@ cloud_takeover(){
   rm -f "$_cfg"
   if [ "$HTTP" = 200 ] && [ -r "$_resp" ] && grep -Eq '"ok"[[:space:]]*:[[:space:]]*true|"text"[[:space:]]*:' "$_resp" 2>/dev/null; then
     command -v neuron_record_success >/dev/null 2>&1 && neuron_record_success "$_mode" "$_req" "$_resp"
+    _raw_model=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$_resp" 2>/dev/null | head -n1 | sed 's/.*:[[:space:]]*"//;s/"$//')
+    [ -n "$_raw_model" ] || _raw_model=NA
+    _raw_delta="$(kv LAST_DELTA "$NEURON")"; [ -n "$_raw_delta" ] || _raw_delta=0
+    _cltmp="$CLOUD_LAST.tmp.$"
+    {
+      echo "AT=$(date +%s)"
+      echo "HTTP=200"
+      echo "ROUTE=$_mode"
+      echo "MODEL=$_raw_model"
+      echo "VERDICT=PENDING_PARSE"
+      echo "CONFIDENCE=0"
+      echo "NEURON_DELTA=$_raw_delta"
+    } > "$_cltmp"
+    chmod 600 "$_cltmp" 2>/dev/null; mv -f "$_cltmp" "$CLOUD_LAST"
   fi
   rm -f "$_req"
   [ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"; rm -f "$_resp"; return 1; }
@@ -628,10 +661,11 @@ cloud_takeover(){
   rm -f "$_resp"
   _gv(){ printf '%s\n' "$_text" | sed -n "s/^$1=//p" | head -n1; }
   _verdict=$(_gv VERDICT); _conf=$(_gv CONFIDENCE)
-  _ndelta="$(kv LAST_DELTA "$ROOT/config/hermes_neuron_live.env")"; [ -n "$_ndelta" ] || _ndelta=0
-  _cltmp="$CLOUD_LAST.tmp.$"
+  _ndelta="$(kv LAST_DELTA "$NEURON")"; [ -n "$_ndelta" ] || _ndelta=0
+  _cl_at_saved="$(kv AT "$CLOUD_LAST")"; case "$_cl_at_saved" in ''|*[!0-9]*) _cl_at_saved=$(date +%s);; esac
+  _cltmp="$CLOUD_LAST.tmp.$$"
   {
-    echo "AT=$(date +%s)"
+    echo "AT=$_cl_at_saved"
     echo "HTTP=$HTTP"
     echo "ROUTE=$_mode"
     echo "MODEL=$HMODEL"
