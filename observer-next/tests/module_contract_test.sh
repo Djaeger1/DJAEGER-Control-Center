@@ -884,12 +884,21 @@ grep -Fq 'HERMES_CLOUD_LAST_VERDICT=' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'HERMES_CLOUD_ACTIVE=' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'HERMES_CLOUD_ACTIVE=$_hcloud_active' "$MODULE/bin/publisher.sh"
 grep -Fq 'HERMES_CLOUD_LAST_VERDICT=$_hcloud_last_verdict' "$MODULE/bin/publisher.sh"
-grep -Fq 'Device Truth saat ini membaca sekitar' "$MODULE/bin/publisher.sh"
-grep -Fq 'Saya belum mengunci diri ke profil tetap' "$MODULE/bin/publisher.sh"
-grep -Fq '_thought="$_thought Shadow baru saja lulus,' "$MODULE/bin/publisher.sh"
-grep -Fq 'pub_khz_mhz()' "$MODULE/bin/publisher.sh"
-grep -Fq 'pub_hz_mhz()' "$MODULE/bin/publisher.sh"
-! grep -Fq '_thought="Shadow lulus kontrak frame-first/minimum-power.' "$MODULE/bin/publisher.sh"
+grep -Fq '_thought_context="Game masih stabil di sekitar $_fps FPS, tetapi skin ${_skin_t}C mulai menekan kenyamanan."' "$MODULE/bin/publisher.sh"
+grep -Fq '_intent_human="Belum ada alasan untuk mengunci profil atau memaksakan perubahan."' "$MODULE/bin/publisher.sh"
+grep -Fq '_thought="$_thought Shadow lulus; AI Agent masih menunggu transaksi lokal dan readback."' "$MODULE/bin/publisher.sh"
+! grep -Fq 'Device Truth saat ini membaca sekitar' "$MODULE/bin/publisher.sh"
+! grep -Fq 'Suhu yang terbaca: skin' "$MODULE/bin/publisher.sh"
+! grep -Fq 'Clock aktif kira-kira' "$MODULE/bin/publisher.sh"
+! grep -Fq '_human_metrics' "$MODULE/bin/publisher.sh"
+grep -Fq 'MAX_BYTES=104857600' "$MODULE/bin/publisher.sh"
+grep -Fq 'MEMORY_MAX_BYTES=104857600' "$MODULE/bin/observer.sh"
+grep -Fq 'MEMORY_RETAIN_BYTES=94371840' "$MODULE/bin/observer.sh"
+grep -Fq 'sample_counts.tsv' "$MODULE/bin/observer.sh"
+grep -Fq 'LEARN_WINDOW_BYTES=8388608' "$MODULE/bin/learner.sh"
+grep -Fq 'ANALYSIS_HISTORY="$TMPBASE.history"' "$MODULE/bin/learner.sh"
+! grep -Fq 'MAX_BYTES=3145728' "$MODULE/bin/publisher.sh"
+! grep -Fq 'if [ "$SIZE" -gt 3145728 ]' "$MODULE/bin/observer.sh"
 grep -Fq 'NEURON="$ROOT/config/hermes_neuron_live.env"' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq '_nupdated=$(kv UPDATED_AT "$NEURON")' "$MODULE/bin/hermes_adapter.sh"
 grep -Fq 'UNRECORDED_PRE_PERSISTENCE' "$MODULE/bin/hermes_adapter.sh"
@@ -902,11 +911,9 @@ s=open(sys.argv[1],encoding='utf-8').read()
 http=s.index('[ "$HTTP" = 200 ] || { HCLOUD_STATE=HTTP_ERROR; HDETAIL="cloud_takeover_http_$HTTP"')
 guard=s.index('{ echo "AT=$_now"; echo "DIGEST=TAKEOVER"; } > "$LAST.tmp.$"', http)
 assert http < guard, "failed Hermes Cloud request must not arm 900s success guard"
-hold=s.index('if hard_thermal_guard_active; then')
-comfort=s.index('if ! frame_degraded && thermal_pressure; then', hold)
-cloud=s.index('if cloud_takeover; then', comfort)
+cloud=s.index('if cloud_takeover; then', s.index('Gemini unavailable outside the local comfort path'))
 local=s.index('if local_history_takeover; then', cloud)
-assert hold < comfort < cloud < local, "comfort hold/trim must precede cloud, with history as fallback"
+assert cloud < local, "Hermes Cloud must precede local-history fallback when Gemini is unavailable"
 PY
 grep -Fq '$4=="KEPT"' "$MODULE/bin/hermes_adapter.sh"
 ! grep -Fq '$4=="KEPT"||$4=="APPLIED_VERIFIED"' "$MODULE/bin/hermes_adapter.sh"
@@ -1107,7 +1114,8 @@ assert 'case "$HA" in' in s
 assert 'HERMES_LOCAL) BRAIN_SOURCE=HERMES_LOCAL' in s
 assert 'HERMES_CLOUD) BRAIN_SOURCE=HERMES_CLOUD' in s
 PY
-grep -Fq 'Skin sudah masuk comfort pressure untuk preferensi panas pengguna. Saya akan mencari opsi lebih dingin' "$MODULE/bin/publisher.sh"
+grep -Fq 'mulai menekan kenyamanan.' "$MODULE/bin/publisher.sh"
+grep -Fq 'opsi lebih dingin hanya dipilih jika panas meningkat tanpa merusak kestabilan frame.' "$MODULE/bin/publisher.sh"
 python3 - "$MODULE/bin/hermes_adapter.sh" <<'PY'
 import sys
 s=open(sys.argv[1],encoding='utf-8').read()
