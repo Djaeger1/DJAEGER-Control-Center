@@ -195,30 +195,41 @@ CANONICAL_ARTIFACT_STATUS=VERIFIED_ARTIFACT_IDENTITY
 
 LATEST_DEVICE_VERIFIED_PAIR=UNKNOWN
 LATEST_DEVICE_VERIFIED_AT=UNKNOWN
-LATEST_DEVICE_RUNTIME_STATUS=NOT_RECONCILED
+LATEST_DEVICE_RUNTIME_STATUS=V3_4_GAME_LIVE_VERIFY_PASS
+LATEST_DEVICE_RUNTIME_EVIDENCE_AT=2026-09-23
+LATEST_DEVICE_HERMES_ACTIVE_SOURCE=HERMES_LOCAL
+LATEST_DEVICE_THOUGHT_WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4
+LATEST_DEVICE_PROGRESS=STEADY
+LATEST_DEVICE_FRAME_CLASS=FRAME_SMOOTH
+LATEST_DEVICE_EVIDENCE=shadow:WAITING,executor:IDLE,intent:NONE,progress:STEADY
+LATEST_DEVICE_VERIFY_MARKER=V3_4_GAME_VERIFY=PASS
 ```
 
 Interpretation:
-- The canonical artifact pair is now explicitly recorded and must not be guessed from memory.
-- `LATEST_DEVICE_VERIFIED_PAIR=UNKNOWN` means there is currently **no project-memory proof** that v1.1.7, or any later pair, is the pair presently installed and verified live on the phone.
+- The canonical artifact pair is explicitly recorded and must not be guessed from memory.
+- The latest recovered **real-device runtime checkpoint** is V3.4 GAME LIVE VERIFY PASS with HERMES_LOCAL / ONE_HERMES_THOUGHT_V3_4 / STEADY / FRAME_SMOOTH.
+- `LATEST_DEVICE_VERIFIED_PAIR=UNKNOWN` remains intentionally separate: the recovered runtime evidence proves the V3.4 runtime state, but does not by itself identify the exact packaged APK/module filenames currently installed.
 - Do not silently copy `LATEST_CANONICAL_ARTIFACT_PAIR` into `LATEST_DEVICE_VERIFIED_PAIR`.
-- Real-device evidence is required before those fields may be changed.
+- Real-device package identity evidence is still required before those pair fields may be changed.
 
 ## 11. ACTIVE BLOCKERS
 
-- Latest real-device installed pair is not yet recorded with live evidence.
-- Latest real-device runtime state is not yet reconciled into this file.
-- The canonical artifact pair **is now recorded**; do not list it as unknown again unless newer artifact evidence supersedes it.
-- Any newer repository/device evidence must be reconciled before promoting a new pair or runtime state.
+- V3.4 GAME live runtime is verified PASS, but the exact currently installed APK/module package identity is not yet reconciled.
+- The V3.4 runtime patches proven via terminal/live testing are not yet fully consolidated into the canonical source tree.
+- Final combined audit is still required, especially service/shadow lifecycle consistency; do not assume lifecycle is complete merely because V3_4_GAME_VERIFY passed.
+- Do **not** build/publish another final APK/module pair until the combined runtime/source audit and consolidation are complete.
+- The canonical artifact pair **is recorded**; do not list it as unknown unless newer artifact evidence supersedes it.
 
 ## 12. NEXT ACTION
 
 On the next DJAEGER GAMING work session:
 - Read this file **before answering version/state questions**.
-- Treat v1.1.7 adaptivefix FINAL as the current canonical artifact pair unless newer artifact evidence is found.
-- Verify the actually installed APK/module pair from real-device evidence.
-- Reconcile runtime evidence and populate `LATEST_DEVICE_VERIFIED_PAIR`, `LATEST_DEVICE_VERIFIED_AT`, and `LATEST_DEVICE_RUNTIME_STATUS` only when proven.
-- Then continue only from the remaining unresolved issue.
+- Start from the recovered V3.4 live checkpoint; do **not** restart from v1.1.7 packaging work.
+- Run the **final combined audit** of all V3/V3.4 patches that were proven live.
+- Consolidate those proven patches into the canonical source tree while preserving executor, Shadow, Hermes adapter, and sysfs authority contracts unless evidence requires a change.
+- Resolve/verify service + Shadow lifecycle consistency.
+- Only after the combined audit/consolidation is clean, build **one final matched module + APK pair**.
+- Separately reconcile the exact currently installed APK/module package identity from real-device evidence when available.
 
 
 ## 14. NEW CHAT / CHAT-LIMIT BOOTSTRAP
@@ -250,6 +261,17 @@ User fallback:
 
 
 ## 13. CHANGELOG
+### 2026-09-23 — Recovered final chat-limit checkpoint
+- Recovered the last DJAEGER GAMING runtime state from the chat that hit its limit.
+- Real-device checkpoint: `V3_4_GAME_VERIFY=PASS`.
+- `HERMES_ACTIVE_SOURCE=HERMES_LOCAL`.
+- `THOUGHT_WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4`.
+- `PROGRESS=STEADY`.
+- `FRAME_CLASS=FRAME_SMOOTH`.
+- Evidence line: `shadow:WAITING,executor:IDLE,intent:NONE,progress:STEADY`.
+- Restored the true unfinished task: final combined audit + consolidation of proven V3/V3.4 runtime patches into source, with service/Shadow lifecycle verification.
+- Preserved the prior constraint: no new final module/APK build until runtime/source consolidation is complete.
+
 ### 2026-09-23 — SSOT hardening / canonical pair repair
 - Recorded the canonical v1.1.7 adaptivefix FINAL APK/module pair and exact SHA-256 values.
 - Separated `LATEST_CANONICAL_ARTIFACT_PAIR` from `LATEST_DEVICE_VERIFIED_PAIR`.
