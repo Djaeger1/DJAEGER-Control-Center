@@ -93,7 +93,7 @@ echo "CONTEXT_END_MARKERS=$END_COUNT"
 awk -v SNIP="$SNIP" '
   BEGIN{skip=0; inserted=0; starts=0; ends=0}
   {
-    if(!skip && $0=="  CUTOFF=$((NOW-86400))"){
+    if(!skip && index($0,"  CUTOFF=$((NOW-86400))")==1){
       starts++
       skip=1
       while((getline x < SNIP)>0) print x
@@ -102,7 +102,7 @@ awk -v SNIP="$SNIP" '
       next
     }
 
-    if(skip && $0 ~ /^  INTENT=\\$\\(kv INTENT "\\$POLICY"\\);/){
+    if(skip && index($0,"  INTENT=$(kv INTENT ")==1){
       ends++
       skip=0
       print
@@ -122,8 +122,8 @@ if ! grep -Fq 'SHADOW_CONTEXT_TIER=' "$N"; then
     {
       print
       if(index($0,"SHADOW_POWER_WINDOWS=")>0 && !done){
-        print "    echo \\"SHADOW_CONTEXT_TIER=${CONTEXT_TIER:-NONE}\\""
-        print "    echo \\"SHADOW_CONTEXT_HOURS=${CONTEXT_HOURS:-0}\\""
+        print "    echo \"SHADOW_CONTEXT_TIER=${CONTEXT_TIER:-NONE}\""
+        print "    echo \"SHADOW_CONTEXT_HOURS=${CONTEXT_HOURS:-0}\""
         done=1
       }
     }
