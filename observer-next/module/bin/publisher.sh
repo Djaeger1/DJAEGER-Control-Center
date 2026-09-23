@@ -524,12 +524,42 @@ publish_cc() {
     _thought_evidence="rollback=$_rollback readback=$_readback"
     _thought="Saya menghentikan eksekusi karena recovery SYSFS belum bisa dibuktikan aman. Saya tidak akan memaksakan write baru selama readback belum jelas; keselamatan state perangkat lebih penting daripada terus mencoba kandidat."
   fi
+  # ONE_HERMES_THOUGHT_PUBLISHER_V1
+  # Publisher is display-only. ONE HERMES worker owns Hermes reasoning text.
+  case "$_hactive" in
+    HERMES_LOCAL|HERMES_H2|HERMES_CLOUD)
+      _ht="$_root/runtime/hermes_thought.env"
+      if [ -r "$_ht" ]; then
+        _ht_ver="$(pub_kv WORKER_VERSION "$_ht")"
+        _ht_at="$(pub_kv AT "$_ht")"; case "$_ht_at" in ''|*[!0-9]*) _ht_at=0;; esac
+        _ht_age=$((_now-_ht_at)); [ "$_ht_age" -ge 0 ] 2>/dev/null || _ht_age=999999
+        _ht_pkg="$(pub_kv PACKAGE "$_ht")"
+        _ht_text="$(pub_kv TEXT "$_ht")"
+        if [ "$_ht_ver" = ONE_HERMES_THOUGHT_V3_4 ] && [ "$_ht_pkg" = "$_pkg" ] && [ "$_ht_age" -le 180 ] 2>/dev/null && [ -n "$_ht_text" ]; then
+          _thought_source=HERMES_H2
+          _thought_status="$(pub_kv STATUS "$_ht")"; [ -n "$_thought_status" ] || _thought_status=DEPUTY_LOCAL_OBSERVE
+          _thought_conf="$(pub_kv CONFIDENCE "$_ht")"; case "$_thought_conf" in ''|*[!0-9]*) _thought_conf=0;; esac
+          _thought_reason="$(pub_kv REASON "$_ht")"; [ -n "$_thought_reason" ] || _thought_reason=ONE_HERMES_LOCAL_REASONING
+          _thought_evidence="$(pub_kv EVIDENCE "$_ht")"
+          _thought="$_ht_text"
+          _thought_age="$_ht_age"
+        fi
+      fi
+      ;;
+  esac
   _thought_fresh=0; [ "$_thought_age" -le 180 ] 2>/dev/null && _thought_fresh=1
 
   if [ -r "$_root/history/telemetry.csv" ]; then _history_bytes="$(wc -c < "$_root/history/telemetry.csv" 2>/dev/null)"
   else _history_bytes=0
   fi
   case "$_history_bytes" in ''|*[!0-9]*) _history_bytes=0;; esac
+  _memory_used_bytes=0
+  for _mf in "$_root/history/"*; do
+    [ -f "$_mf" ] || continue
+    _mb="$(wc -c < "$_mf" 2>/dev/null)"; case "$_mb" in ''|*[!0-9]*) _mb=0;; esac
+    _memory_used_bytes=$((_memory_used_bytes+_mb))
+  done
+
   _outcome_rows=0; _outcome_keep=0; _outcome_rollback=0; _outcome_rollback_failed=0
   _recent_outcome_rows=0; _recent_keep=0; _recent_rollback=0; _recent_rollback_failed=0
   _validation_outcome_rows=0; _validation_keep=0; _validation_rollback=0; _validation_rollback_failed=0; _validation_superseded_drift=0
@@ -707,7 +737,7 @@ publish_cc() {
     echo "AGENT_LAST_VALIDATION=$_cons_state"; echo "AGENT_LAST_READBACK=$_readback"; echo "AGENT_ACTIVE_INTENT=$_exec_intent"; echo "AGENT_ACTIVE_ACTUATORS=$_exec_actuators"; echo "DECISION_PRIORITY=SAFETY_GATES>FRAME_STABILITY>THERMAL_COMFORT>MINIMUM_POWER"
     echo "THOUGHT_FRESH=$_thought_fresh"; echo "THOUGHT_AGE_SEC=$_thought_age"
     echo "__THOUGHTS__"; echo "SOURCE=$_thought_source"; echo "STATUS=$_thought_status"; echo "CONFIDENCE=$_thought_conf"; echo "TEXT=$(pub_clean_long "$_thought")"; echo "CONTEXT_PACKAGE=$_pkg"; echo "CONTEXT_CLASS=$_workload"; echo "REASON=$(pub_clean "$_thought_reason")"; echo "EVIDENCE=$(pub_clean "$_thought_evidence")"; echo "AT=$((_now-_thought_age))"
-    echo "__MEMORY__"; echo "USED_BYTES=$_history_bytes"; echo "MAX_BYTES=3145728"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "RECENT_OUTCOME_ROWS=$_recent_outcome_rows"; echo "RECENT_KEEP_ROWS=$_recent_keep"; echo "RECENT_ROLLBACK_ROWS=$_recent_rollback"; echo "RECENT_ROLLBACK_FAILED_ROWS=$_recent_rollback_failed"; echo "VALIDATION_OUTCOME_ROWS=$_validation_outcome_rows"; echo "VALIDATION_KEEP_ROWS=$_validation_keep"; echo "VALIDATION_ROLLBACK_ROWS=$_validation_rollback"; echo "VALIDATION_ROLLBACK_FAILED_ROWS=$_validation_rollback_failed"; echo "VALIDATION_SUPERSEDED_DRIFT_ROWS=$_validation_superseded_drift"; echo "MATURITY_PACKAGE=$_maturity_pkg"; echo "MATURITY_MODEL_STATE=$_maturity_learning"; echo "MATURITY_MODEL_SAMPLES=$_maturity_samples"; echo "MATURITY_MODEL_CONFIDENCE=$_maturity_confidence"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
+    echo "__MEMORY__"; echo "USED_BYTES=$_memory_used_bytes"; echo "MAX_BYTES=104857600"; echo "CAPACITY_KIND=PERSISTENT_STORAGE_NOT_RAM"; echo "LEDGER_ROWS=$_samples"; echo "HARDWARE_OUTCOME_ROWS=$_outcome_rows"; echo "KEEP_ROWS=$_outcome_keep"; echo "ROLLBACK_ROWS=$_outcome_rollback"; echo "ROLLBACK_FAILED_ROWS=$_outcome_rollback_failed"; echo "RECENT_OUTCOME_ROWS=$_recent_outcome_rows"; echo "RECENT_KEEP_ROWS=$_recent_keep"; echo "RECENT_ROLLBACK_ROWS=$_recent_rollback"; echo "RECENT_ROLLBACK_FAILED_ROWS=$_recent_rollback_failed"; echo "VALIDATION_OUTCOME_ROWS=$_validation_outcome_rows"; echo "VALIDATION_KEEP_ROWS=$_validation_keep"; echo "VALIDATION_ROLLBACK_ROWS=$_validation_rollback"; echo "VALIDATION_ROLLBACK_FAILED_ROWS=$_validation_rollback_failed"; echo "VALIDATION_SUPERSEDED_DRIFT_ROWS=$_validation_superseded_drift"; echo "MATURITY_PACKAGE=$_maturity_pkg"; echo "MATURITY_MODEL_STATE=$_maturity_learning"; echo "MATURITY_MODEL_SAMPLES=$_maturity_samples"; echo "MATURITY_MODEL_CONFIDENCE=$_maturity_confidence"; echo "PERMANENT_READINESS=$_permanent_readiness"; echo "LAST_OUTCOME=$_outcome_last"; echo "LAST_OUTCOME_REASON=$(pub_clean "$_outcome_reason")"
     echo "__AUTHORITY__"; echo "STATE=AI_AGENT_LOCAL_GATED"; echo "HARDWARE_AUTHORITY=AI_AGENT"; echo "CLOUD_HARDWARE_AUTHORITY=NONE"; echo "SYSFS_WRITES=AI_AGENT_INTERNAL_EXECUTOR_ONLY"; echo "EXECUTOR=$_exec_state"
     echo "__SESSION_SAFETY__"; echo "STATE=FAIL_CLOSED"; echo "ROLLBACK=$_rollback"; echo "THERMAL_AUTHORITY=LOCAL_GUARD_PLUS_NATIVE"
     echo "__SUPERVISOR__"
