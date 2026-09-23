@@ -1087,6 +1087,11 @@ grep -Fq 'FRAME_STABILITY_PLUS_THERMAL_COMFORT' "$MODULE/bin/publisher.sh"
 grep -Fq 'comfort==1 && intent!="FRAME_RECOVERY"' "$MODULE/bin/shadow.sh"
 grep -Fq 'HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD' "$MODULE/bin/gemini_reasoner.sh"
 grep -Fq 'HUMAN_COMFORT_FRAME_FIRST_THERMAL_SECOND_MINIMUM_POWER_THIRD' "$MODULE/bin/consensus.sh"
+grep -Fq 'CLOUD_BOOT_GUARD_SEC=120' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'restart_guard_no_cloud' "$MODULE/bin/hermes_adapter.sh"
+grep -Fq 'BASELINE_SKIN_C=$(kv SKIN_TEMP_C "$SNAP")' "$MODULE/bin/executor.sh"
+grep -Fq 'skin>skin0+1.0' "$MODULE/bin/executor.sh"
+grep -Fq 'POST_APPLY_HUMAN_COMFORT_STABLE_' "$MODULE/bin/executor.sh"
 grep -Fqx 'CREDENTIAL_SCAN_SCOPE=LEGACY_BACKUPS_TERMUX_DOWNLOAD' "$TEST_ROOT/recovery/migration.env"
 
 echo 'module-contract-tests=PASS'
