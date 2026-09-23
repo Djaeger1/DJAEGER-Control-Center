@@ -20,14 +20,16 @@ Repository currently hosting this handover:
 - `Djaeger1/DJAEGER-Control-Center`
 
 
-## LEGACY NAME / RENAMING RULE
+## PROJECT NAME / ALIAS RULE
 
-- **Current canonical project name: DJAEGER GAMING**
-- Previous name: **DJAEGER AI / DJAEGER AI Gaming**
-- The old name is retained only as a historical alias for older commits, artifacts, screenshots, and chat references.
-- New documentation, handovers, releases, UI labels, and session commands should use **DJAEGER GAMING**.
-- This rename exists specifically to distinguish the current project from the older DJAEGER AI lineage.
-- Do not silently mix legacy DJAEGER AI states into DJAEGER GAMING unless they are explicitly reconciled and verified as still applicable.
+- **Canonical current name:** `DJAEGER GAMING`
+- **Accepted current aliases:** `DJAEGER GAMING`, `DJAEGER AI GAMING`
+- These two names refer to the same current project.
+- **Plain `DJAEGER AI` alone is NOT the preferred current-project name** because it may refer to the older DJAEGER AI lineage.
+- If the user says `DJAEGER GAMING` or `DJAEGER AI GAMING`, load this current project memory.
+- If the user says only `DJAEGER AI`, first treat it as legacy/ambiguous unless the surrounding context clearly identifies the current gaming project.
+- The user may forget which of the two current aliases they used previously; do not force them to remember the exact wording.
+
 
 ## 2. ABSOLUTE OPERATING RULES
 
@@ -201,6 +203,7 @@ On the next DJAEGER GAMING work session:
 
 If a DJAEGER AI chat reaches the conversation limit, or the user starts a new chat and only says something short such as:
 - "Lanjutkan DJAEGER GAMING"
+- "Lanjutkan DJAEGER AI GAMING"
 - "Lanjutkan dari terakhir"
 - "Teruskan proyek DJAEGER"
 - "Lanjutkan"
@@ -218,11 +221,15 @@ Bootstrap procedure:
 
 User fallback:
 - The user does not need to remember a special command.
-- A short instruction such as **"Lanjutkan DJAEGER GAMING"** is sufficient when repository access is available.
+- A short instruction such as **"Lanjutkan DJAEGER GAMING"** or **"Lanjutkan DJAEGER AI GAMING"** is sufficient when repository access is available.
 - If repository access is unavailable in a future session, explicitly say that the project memory could not be fetched rather than guessing.
 
 
 ## 13. CHANGELOG
+### 2026-09-23 — Alias clarification
+- Accepted both `DJAEGER GAMING` and `DJAEGER AI GAMING` as names for the current project.
+- Plain `DJAEGER AI` remains legacy/ambiguous and should not be assumed to mean the current project without context.
+
 
 ### 2026-09-23 — Rename
 - Canonical project name changed from **DJAEGER AI / DJAEGER AI Gaming** to **DJAEGER GAMING**.
