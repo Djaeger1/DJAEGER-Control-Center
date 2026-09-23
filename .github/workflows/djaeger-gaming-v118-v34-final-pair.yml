@@ -1,0 +1,185 @@
+name: DJAEGER GAMING v1.1.8 V3.4 Final Pair
+
+on:
+  push:
+    branches: [djaeger-gaming-v3.4-final-consolidation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: djaeger-gaming-v118-v34-final-pair
+  cancel-in-progress: true
+
+jobs:
+  final-pair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Verify final identity
+        run: |
+          set -euo pipefail
+          PROP=observer-next/module/module.prop
+          APP=observer-next/android/app/build.gradle.kts
+          UI=observer-next/android/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          REPO=observer-next/android/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          PUB=observer-next/module/bin/publisher.sh
+          CTL=observer-next/module/bin/observerctl.sh
+
+          grep -Fqx 'name=DJAEGER GAMING' "$PROP"
+          grep -Fqx 'version=1.1.8-v3.4-final' "$PROP"
+          grep -Fqx 'versionCode=211' "$PROP"
+          grep -Fq 'versionCode = 112' "$APP"
+          grep -Fq 'versionName = "1.1.8-v3.4-final"' "$APP"
+          grep -Fq 'syncModule=="211"&&syncCc=="112"' "$UI"
+          grep -Fq 'VERIFIED • MODULE 211 / APP 112' "$UI"
+          grep -Fq 'private val apkVersionCode=112' "$REPO"
+          grep -Fq '_expected_apk=112' "$PUB"
+          grep -Fq 'EXPECTED_CONTROL_CENTER_VERSION_CODE=112' "$PUB"
+          grep -Fq 'expected_apk=112' "$CTL"
+          grep -Fq '[ "$module_code" = 211 ]' "$CTL"
+
+      - name: Source isolation
+        run: |
+          set -euo pipefail
+          node isolation-check.js
+          npm test
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          for f in observer-next/module/*.sh observer-next/module/bin/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: V3.4 lifecycle shadow and memory gates
+        run: |
+          set -euo pipefail
+          grep -Fq 'WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4' observer-next/module/bin/hermes_thought_worker.sh
+          grep -Fq 'djaeger_singleton_claim shadow' observer-next/module/bin/shadow.sh
+          grep -Fq 'human_comfort_frame_first_minimum_power' observer-next/module/bin/shadow.sh
+          grep -Fq 'worker_pids()' observer-next/module/service.sh
+          grep -Fq 'kill_worker_hard' observer-next/module/service.sh
+          grep -Fq 'SINGLETON_GUARD=ENABLED' observer-next/module/service.sh
+          grep -Fq 'MAX_BYTES=104857600' observer-next/module/bin/publisher.sh
+          grep -Fq 'EXEC_RANGE_SOURCE=LIVE_POLICY_BOUNDS' observer-next/module/bin/publisher.sh
+          bash observer-next/tests/module_contract_test.sh
+
+      - name: Android tests and release build
+        working-directory: observer-next/android
+        run: gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
+
+      - name: Package and sign exactly one final pair
+        run: |
+          set -euo pipefail
+          mkdir -p out
+
+          MODULE="out/DJAEGER-GAMING-Module-v1.1.8-V3.4-FINAL.zip"
+          APK="out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL.apk"
+
+          (
+            cd observer-next/module
+            zip -qr "../../$MODULE" .
+          )
+
+          UNSIGNED="$(find observer-next/android/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
+          test -n "$UNSIGNED"
+
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | sort -V | tail -n1)"
+          test -x "$BUILD_TOOLS/zipalign"
+          test -x "$BUILD_TOOLS/apksigner"
+          test -x "$APK ANALYZER" 2>/dev/null || true
+
+          SIGN_DIR="$RUNNER_TEMP/djaeger-gaming-v118-signing"
+          mkdir -p "$SIGN_DIR"
+          PASS="$(openssl rand -hex 24)"
+          echo "::add-mask::$PASS"
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$SIGN_DIR/djaeger-gaming-v118.p12" \
+            -storepass "$PASS" -keypass "$PASS" \
+            -alias djaegergaming -keyalg RSA -keysize 4096 -validity 3650 \
+            -dname 'CN=DJAEGER GAMING Final, O=DJAEGER, C=ID'
+
+          ALIGNED="$RUNNER_TEMP/djaeger-gaming-v118-aligned.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$SIGN_DIR/djaeger-gaming-v118.p12" --ks-type PKCS12 \
+            --ks-key-alias djaegergaming \
+            --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$APK" "$ALIGNED"
+
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee out/APKSIGNER_VERIFY.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
+          "$APKANALYZER" manifest debuggable "$APK" | tee out/APK_DEBUGGABLE.txt
+
+          unzip -t "$APK" > out/APK_ZIP_TEST.txt
+          unzip -t "$MODULE" > out/MODULE_ZIP_TEST.txt
+          unzip -l "$MODULE" > out/MODULE_CONTENTS.txt
+
+          grep -q "package: name='com.djaeger.observer' versionCode='112' versionName='1.1.8-v3.4-final'" out/AAPT_BADGING.txt
+          grep -qx 'false' out/APK_DEBUGGABLE.txt
+          grep -Eq 'bin/executor\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/shadow\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/hermes_thought_worker\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/railway_bridge\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'bin/migrate\.sh' out/MODULE_CONTENTS.txt
+          grep -Eq 'uninstall\.sh' out/MODULE_CONTENTS.txt
+          ! grep -Eq 'agent_bus\.sh' out/MODULE_CONTENTS.txt
+
+          unzip -p "$MODULE" module.prop | grep -Fqx 'name=DJAEGER GAMING'
+          unzip -p "$MODULE" module.prop | grep -Fqx 'version=1.1.8-v3.4-final'
+          unzip -p "$MODULE" module.prop | grep -Fqx 'versionCode=211'
+          unzip -p "$MODULE" bin/publisher.sh | grep -Fq '_expected_apk=112'
+          unzip -p "$MODULE" bin/publisher.sh | grep -Fq 'MAX_BYTES=104857600'
+          unzip -p "$MODULE" bin/publisher.sh | grep -Fq 'EXEC_RANGE_SOURCE=LIVE_POLICY_BOUNDS'
+          unzip -p "$MODULE" bin/hermes_thought_worker.sh | grep -Fq 'WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4'
+          unzip -p "$MODULE" service.sh | grep -Fq 'SINGLETON_GUARD=ENABLED'
+          unzip -p "$MODULE" bin/shadow.sh | grep -Fq 'human_comfort_frame_first_minimum_power'
+
+          sha256sum "$APK" "$MODULE" > out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL-SHA256SUMS.txt
+
+          CERT_SHA="$(grep -m1 'Signer #1 certificate SHA-256 digest:' out/APKSIGNER_VERIFY.txt | sed 's/.*: //')"
+          {
+            echo 'STATUS=FINAL_PAIR_BUILD_VERIFIED_OFFLINE'
+            echo 'PROJECT=DJAEGER_GAMING'
+            echo 'PAIR=MODULE_211_APK_112'
+            echo 'VERSION=1.1.8-v3.4-final'
+            echo 'THOUGHT_WORKER=ONE_HERMES_THOUGHT_V3_4'
+            echo 'MEMORY_MAX_BYTES=104857600'
+            echo 'EXEC_RANGE_SOURCE=LIVE_POLICY_BOUNDS'
+            echo 'SOURCE_AUDIT_RUN=35872300995'
+            echo "SIGNER_CERT_SHA256=$CERT_SHA"
+            echo 'SIGNER_CONTINUITY=NEW_RELEASE_SIGNER_DROP_IN_UPDATE_NOT_GUARANTEED'
+            echo 'CLOUD_HARDWARE_AUTHORITY=NONE'
+            echo 'SYSFS_AUTHORITY=AI_AGENT_INTERNAL_EXECUTOR_ONLY'
+            echo 'LIVE_DEVICE_VALIDATION=REQUIRED_AFTER_INSTALL'
+          } > out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL-BUILD-REPORT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-GAMING-v1.1.8-V3.4-FINAL
+          path: |
+            out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL.apk
+            out/DJAEGER-GAMING-Module-v1.1.8-V3.4-FINAL.zip
+            out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL-SHA256SUMS.txt
+            out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL-BUILD-REPORT.txt
+            out/APKSIGNER_VERIFY.txt
+            out/AAPT_BADGING.txt
+            out/APK_DEBUGGABLE.txt
+            out/APK_ZIP_TEST.txt
+            out/MODULE_ZIP_TEST.txt
+            out/MODULE_CONTENTS.txt
+          if-no-files-found: error
