@@ -826,9 +826,31 @@ relinquish_no_write(){
 reconcile(){
   load_active
 
-  # A failed restore is a hard fail-closed latch. Repeated writes can fight the
-  # kernel/thermal owner and create an endless recovery loop.
+  # A failed restore remains fail-closed, but the latch must not become a
+  # permanent UI/runtime dead-end. Re-check it read-only on every reconcile:
+  # never write sysfs here. If all owned axes are now BACKUP or EXTERNAL
+  # (kernel/vendor has already recovered or taken ownership), clear the stale
+  # transaction and resume normal brain arbitration automatically.
   if [ "$PREV_EXECUTOR_STATE" = ROLLBACK_FAILED ] && [ -r "$BACKUP" ]; then
+    _resolve_pkg="$APPLIED_PACKAGE"
+    _resolve_digest="$ACTIVE_DIGEST"
+    _resolve_little="$APPLIED_LITTLE"
+    _resolve_big="$APPLIED_BIG"
+    _resolve_gpu="$APPLIED_GPU"
+
+    if [ "$_resolve_digest" = NONE ] || [ "$_resolve_little" = NA ] || [ "$_resolve_big" = NA ] || [ "$_resolve_gpu" = NA ]; then
+      recover_latched_identity
+      [ "$_resolve_pkg" = NONE ] && _resolve_pkg="$_ri_pkg"
+      [ "$_resolve_digest" = NONE ] && _resolve_digest="$_ri_digest"
+      [ "$_resolve_little" = NA ] && _resolve_little="$_ri_little"
+      [ "$_resolve_big" = NA ] && _resolve_big="$_ri_big"
+      [ "$_resolve_gpu" = NA ] && _resolve_gpu="$_ri_gpu"
+    fi
+
+    if resolve_restore_failure AUTO_LATCHED_RECHECK "$_resolve_pkg" "$_resolve_digest" "$_resolve_little" "$_resolve_big" "$_resolve_gpu"; then
+      return 0
+    fi
+
     READBACK=RESTORE_FAILED
     ROLLBACK_STATE=RESTORE_FAILED
     publish ROLLBACK_FAILED RESTORE_FAILURE_LATCHED
