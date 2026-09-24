@@ -2,7 +2,7 @@ name: DJAEGER Gaming V3.4 Postinstall Hotfix1 Audit
 
 on:
   push:
-    branches: [djaeger-gaming-v3.4-postinstall-hotfix1, djaeger-gaming-r89-overview-fix1]
+    branches: [djaeger-gaming-v3.4-postinstall-hotfix1]
   workflow_dispatch:
 
 permissions:
