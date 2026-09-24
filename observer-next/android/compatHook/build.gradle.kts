@@ -14,7 +14,10 @@ android {
         versionName = "1.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
-            cmake { cppFlags += listOf("-std=c++17", "-fvisibility=hidden") }
+            cmake {
+                cppFlags += listOf("-std=c++17", "-fvisibility=hidden")
+                arguments += listOf("-DANDROID_STL=c++_static")
+            }
         }
     }
 
