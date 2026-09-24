@@ -1,4 +1,4 @@
-name: Build DJAEGER Charge Control v2
+name: Build DJAEGER Charge Control v2.1
 
 on:
   push:
@@ -26,21 +26,24 @@ jobs:
       - name: Static contract checks
         run: |
           ! grep -R "/sys/class/power_supply" charge-control-build/app/src/main/java
-          grep -R "/data/adb/modules/djaeger_autocut_charge/system/bin/djaeger-charge-control" charge-control-build/app/src/main/java
+          ! grep -R "ProcessBuilder\|Runtime.getRuntime().exec\|su -c" charge-control-build/app/src/main/java
+          grep -R "CONTROL_MODE" charge-control-build/app/src/main/java
           grep -R "MANUAL_BYPASS" charge-control-build/app/src/main/java
+          grep -R "skin_temp" charge-control-build/app/src/main/java
           grep -R "EXTRA_TEMPERATURE" charge-control-build/app/src/main/java
           grep -R "ACTION_BYPASS" charge-control-build/app/src/main/java
           grep -R "ACTION_AUTO" charge-control-build/app/src/main/java
+          grep -R "com.djaeger.autocut.STATUS" charge-control-build/app/src/main
 
       - name: Build APK
         run: |
           cd charge-control-build
           gradle :app:assembleDebug --stacktrace
           mkdir -p ../dist
-          cp app/build/outputs/apk/debug/app-debug.apk ../dist/DJAEGER-Charge-Control-v2.0-PocoX5.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../dist/DJAEGER-Charge-Control-v2.1-PocoX5.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DJAEGER-Charge-Control-v2.0-PocoX5
-          path: dist/DJAEGER-Charge-Control-v2.0-PocoX5.apk
+          name: DJAEGER-Charge-Control-v2.1-PocoX5
+          path: dist/DJAEGER-Charge-Control-v2.1-PocoX5.apk
