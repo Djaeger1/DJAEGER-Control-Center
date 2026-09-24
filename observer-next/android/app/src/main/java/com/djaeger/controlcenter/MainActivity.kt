@@ -216,7 +216,7 @@ private fun ageLabel(raw:String):String{
     val adaptiveContract=syncContract=="DJAEGER_AI_ADAPTIVE_V3"
     val workloadActive=envField(s.workloadFinal,"STATUS")=="ACTIVE"
     val pairVerified=envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"
-    val exactMatched=adaptiveContract&&pairVerified&&syncModule=="211"&&syncCc=="112"
+    val exactMatched=adaptiveContract&&pairVerified&&syncModule=="211"&&syncCc=="113"
     val identityMatched=!adaptiveContract&&s.installed&&s.moduleVersion.contains("HERMESCLOUD1",true)&&workloadActive
     val matched=s.installed&&(exactMatched||identityMatched)
     val matchText=when{exactMatched->"YES • VERIFIED HANDSHAKE";identityMatched->"YES • LEGACY IDENTITY";!s.installed->"NO • MODULE NOT INSTALLED";adaptiveContract->"NO • HANDSHAKE NOT VERIFIED";else->"CHECKING • CONTRACT NOT PUBLISHED"}
@@ -319,7 +319,7 @@ private fun planRange(a:String,b:String,unit:String):String{
     val syncContract=envField(s.controlCenterSync,"CONTRACT").ifBlank{"UNPUBLISHED"}
     val syncModule=envField(s.controlCenterSync,"MODULE_VERSION_CODE").ifBlank{"—"}
     val syncCc=envField(s.controlCenterSync,"CONTROL_CENTER_VERSION_CODE").ifBlank{"—"}
-    val syncMatched=(syncContract=="DJAEGER_AI_ADAPTIVE_V3"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="211"&&syncCc=="112")||(syncContract=="REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_DUALREG3_SHAREDINT1_HERMESCLOUD1_WORKLOADFINAL1_APPREBUILD4_MAXVALUE1"&&syncModule=="129659"&&syncCc=="12263")
+    val syncMatched=(syncContract=="DJAEGER_AI_ADAPTIVE_V3"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="211"&&syncCc=="113")||(syncContract=="REBUILD3_LANG3_MWFIX2_ATTR1_MATH1_HK1_SYSFS1_CCSYNC1_DUALREG3_SHAREDINT1_HERMESCLOUD1_WORKLOADFINAL1_APPREBUILD4_MAXVALUE1"&&syncModule=="129659"&&syncCc=="12263")
     val currentBrain=envField(s.brain,"CURRENT_BRAIN")
     val finalSource=envField(s.brain,"FINAL_SOURCE")
     val displayState=when(hState){
@@ -440,9 +440,9 @@ private fun registryPreview(raw:String,max:Int=8):String{
     val syncContract=envField(s.controlCenterSync,"CONTRACT")
     val syncModule=envField(s.controlCenterSync,"MODULE_VERSION_CODE")
     val syncCc=envField(s.controlCenterSync,"CONTROL_CENTER_VERSION_CODE")
-    val paired=(syncContract=="DJAEGER_AI_ADAPTIVE_V3"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="211"&&syncCc=="112")||(syncContract.endsWith("WORKLOADFINAL1")&&syncModule=="129659"&&syncCc=="12263"&&finalState=="ACTIVE")
+    val paired=(syncContract=="DJAEGER_AI_ADAPTIVE_V3"&&envField(s.controlCenterSync,"PAIR_VERIFIED")=="YES"&&syncModule=="211"&&syncCc=="113")||(syncContract.endsWith("WORKLOADFINAL1")&&syncModule=="129659"&&syncCc=="12263"&&finalState=="ACTIVE")
 
-    val pairLabel=if(syncContract=="DJAEGER_AI_ADAPTIVE_V3") "VERIFIED • MODULE 211 / APP 112" else "VC129659 / VC12263"
+    val pairLabel=if(syncContract=="DJAEGER_AI_ADAPTIVE_V3") "VERIFIED • MODULE 211 / APP 113" else "VC129659 / VC12263"
     val body="Current: $cls • $pkg\nProfile: $profile • Subject: $subject\nReasoning: $domain\nGame semantics: $gameSem\nFrame semantics: $frameSem\nClassifier: $source • confidence $confidence%\n\nFinal enforcement: $finalState\nDual registry: $dual • conflicts $conflicts\nExecution scope: $execScope\nAPP game policy: $appPolicy\nSYSTEM game policy: $systemPolicy\nUNKNOWN game policy: $unknownPolicy\nStale policy: $stale\nLearning isolation: $learning\n\nShadow domain gates: GAME $gateGame • APP $gateApp • SYSTEM $gateSystem\nLatest proposal: $proposalSource • $proposalClass • $proposalPkg\nBinding: $proposalDecision • $proposalReason\nPre-exec guard: $guardDecision • $guardReason\n\nControl Center pair: ${if(paired)"MATCHED • $pairLabel" else "CHECKING / NOT MATCHED"}"
     BoxCard("WORKLOAD • GAME / APP / SYSTEM",body,true)
 }
