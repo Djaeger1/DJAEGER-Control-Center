@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "DJAEGER-AI-Observer-Next"
 include(":app")
+
+include(":compatHook")
