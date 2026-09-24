@@ -523,73 +523,27 @@ private fun compactModuleVersion(raw:String):String=when{
     val workloadClass=envField(s.workloadContext,"WORKLOAD_CLASS").ifBlank{envField(s.workloadContext,"SUBJECT_CLASS")}.uppercase()
     val workloadPackage=envField(s.workloadContext,"PACKAGE").ifBlank{"UNKNOWN"}
     val workloadProfile=envField(s.workloadContext,"WORKLOAD_PROFILE").ifBlank{"UNKNOWN"}
-    val visibleGame=envField(s.workloadContext,"VISIBLE_GAME").ifBlank{
-        s.game.takeUnless{it=="NA"||it=="NONE"}?:"NONE"
-    }
-    val gameVisible=!stale&&visibleGame.isNotBlank()&&visibleGame!="NONE"&&visibleGame!="NA"
-    val gameSubjectFocused=gameVisible&&workloadClass=="GAME"&&workloadPackage==visibleGame
-    val gameEngineActive=!stale&&s.active=="1"&&workloadClass=="GAME"
-    val focusGuard=gameVisible&&!gameSubjectFocused
-    val brainProfile=envField(s.brain,"FINAL_PROFILE").ifBlank{envField(s.brain,"BRAIN_PROFILE")}
-    val telemetryProfile=s.telemetry.profile.takeUnless{
-        it.isBlank()||it=="NA"||it=="UNKNOWN"||it=="LEARNED_PENDING"||it=="ADAPTIVE_LEARNED"
-    }.orEmpty()
-
     val sessionState=when{
         stale->"UNKNOWN / STALE"
-        gameEngineActive->"GAME ACTIVE"
-        focusGuard->"GAME VISIBLE • FOCUS GUARD"
-        gameSubjectFocused->"GAME VISIBLE • ENGINE ARMING"
+        s.active=="1"->"GAME ACTIVE"
         workloadClass=="APP"->"APP ACTIVE • OBSERVE ONLY"
         workloadClass=="SYSTEM"->"SYSTEM ACTIVE • OBSERVE ONLY"
         else->"WAITING GAME"
     }
-    val sample=when{
-        s.telemetry.epoch<=0->"—"
-        else->{
-            val at=SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(Date(s.telemetry.epoch*1000))
-            if(s.sampleFresh) "$at • LIVE" else "$at • STALE"
-        }
-    }
-    val gamePackage=when{
-        stale->"—"
-        gameEngineActive->s.game
-        gameVisible->visibleGame
-        else->"NA"
-    }
-    val game=when(gamePackage){
-        "sts.al"->"Arcane Legends • sts.al"
-        else->gamePackage
-    }
-    val window=when{
-        stale->"—"
-        gameEngineActive->s.window
-        focusGuard->"VISIBLE • FOCUS GUARD"
-        gameSubjectFocused->"VISIBLE • ENGINE ARMING"
-        else->"INACTIVE"
-    }
+    val sample=when{s.telemetry.epoch>0->SimpleDateFormat("HH:mm:ss",Locale.getDefault()).format(Date(s.telemetry.epoch*1000));s.sampleFresh->"MEASURED LIVE";else->"—"}
+    val game=if(s.active=="1") s.game else if(stale) "—" else "NA"
+    val window=if(s.active=="1") s.window else if(stale) "—" else "INACTIVE"
     val profile=when{
-        stale->"—"
-        gameEngineActive->telemetryProfile.ifBlank{brainProfile.ifBlank{"—"}}
-        focusGuard->brainProfile.ifBlank{"IDLE"}
-        workloadClass=="APP"||workloadClass=="SYSTEM"->brainProfile.ifBlank{workloadProfile}
-        else->brainProfile.ifBlank{"—"}
+        s.active=="1"->s.telemetry.profile
+        workloadClass=="APP"||workloadClass=="SYSTEM"->workloadProfile
+        else->"—"
     }
-    val gameExecution=when{
-        gameEngineActive->"ACTIVE"
-        focusGuard->"HELD • FOCUS GUARD"
-        gameSubjectFocused->"WAITING R89 ACTIVE"
-        else->"BLOCKED / OBSERVE ONLY"
-    }
+    val gameExecution=if(s.active=="1"&&workloadClass=="GAME") "ACTIVE" else "BLOCKED / OBSERVE ONLY"
     val age=if(s.updated>0) (System.currentTimeMillis()/1000-s.updated).coerceAtLeast(0) else -1
     val ageText=if(age>=0) "${age}s" else "—"
-    BoxCard(
-        "ENGINE / SESSION",
-        if(s.installed)
-            "Engine: $engine • age $ageText\nSession: $sessionState\nModule: ${compactModuleVersion(s.moduleVersion)}\nGame: $game\nWindow: $window\nProfile: $profile\nFocused workload: $workloadClass • $workloadPackage\nGame execution: $gameExecution\nLast device sample: $sample\nController PID: ${s.controllerPid.ifBlank{"—"}} • Predictor PID: ${s.predictorPid.ifBlank{"—"}}"
-        else "DJAEGER module not found"
-    )
+    BoxCard("ENGINE / SESSION",if(s.installed)"Engine: $engine • age $ageText\nSession: $sessionState\nModule: ${compactModuleVersion(s.moduleVersion)}\nGame: $game\nWindow: $window\nProfile: $profile\nWorkload: $workloadClass • $workloadPackage\nGame execution: $gameExecution\nLast device sample: $sample\nController PID: ${s.controllerPid.ifBlank{"—"}} • Predictor PID: ${s.predictorPid.ifBlank{"—"}}" else "DJAEGER module not found")
 }
+
 @Composable fun NetworkCard(n:NetworkState){
     val clipboard=LocalClipboardManager.current
     val show=n.fresh||n.held
