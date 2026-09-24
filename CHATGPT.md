@@ -304,6 +304,59 @@ On the next DJAEGER GAMING work session:
 - Do not make a new packaged release unless needed. If packaging is later required, bump version/versionCode and include HOTFIX1; never publish changed bytes under the old v1.1.8 / VC211 identity.
 - Do not request another reboot merely to prove the hotfix unless a later symptom makes reboot persistence the active blocker.
 
+## 15. CURRENT APK / R89 COMPATIBILITY HARD CONTRACT
+
+Status: **HARD CONTRACT — DO NOT OVERRIDE**
+
+Effective 2026-09-24:
+
+- Keep the currently installed Control Center APK in use.
+- Installed APK identity: `com.djaeger.observer`, versionCode `112`, versionName `1.1.8-v3.4-final`.
+- Installed APK SHA-256: `97bc32bb68c93fa8ac6527a86bd18bd0a1b4752b13b0a65192f6fc3be03cca37`.
+- Do not ask the user to upgrade, replace, reinstall, or switch this APK for the R89 compatibility task.
+- Do not use LSPosed for this task.
+- R89/module/runtime compatibility must adapt to this APK.
+- Preserve existing Gemini, ONE HERMES Local/Cloud, device IDs, access IDs, tokens, key-vault slots, Railway/cloud endpoints, and other DJAEGER Gaming identity/config. Never store raw secrets in CHATGPT.md.
+- UI state must reflect real engine state; never fake hardware authority merely to satisfy labels.
+
+### ENGINE / SESSION contract
+
+When `sts.al` remains running/visible but another app has actual focus:
+
+```text
+Session: APP ACTIVE • OBSERVE ONLY
+Game: sts.al
+Window: MULTIWINDOW
+Profile: <real current/effective profile>
+Focused workload: APP • <actual focused application>
+Game execution: BLOCKED / OBSERVE ONLY
+```
+
+Required runtime behavior:
+- game presence remains `sts.al`;
+- window context remains `MULTIWINDOW`;
+- focused workload reports the actual focused app;
+- game execution is actually blocked;
+- R89 releases/restores game hardware authority and must not keep applying the game tuning envelope;
+- telemetry/observation may continue;
+- Gemini/ONE HERMES may observe but must not directly write game sysfs while execution is blocked.
+
+When the game itself becomes the focused foreground workload:
+
+```text
+Session: GAME ACTIVE
+Game: sts.al
+Window: FOREGROUND
+Focused workload: GAME • sts.al
+Game execution: ACTIVE
+```
+
+Forbidden semantics for app-focused multiwindow:
+- `GAME VISIBLE • FOCUS GUARD`
+- `VISIBLE • FOCUS GUARD`
+- `HELD • FOCUS GUARD`
+- `ENGINE ARMING`
+
 ## 14. NEW CHAT / CHAT-LIMIT BOOTSTRAP
 
 If a DJAEGER AI chat reaches the conversation limit, or the user starts a new chat and only says something short such as:
