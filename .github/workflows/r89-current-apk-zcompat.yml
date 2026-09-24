@@ -1,0 +1,86 @@
+name: R89 Current APK Zygisk Compat
+
+on:
+  push:
+    branches: [r89-current-apk-zcompat]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r89-current-apk-zcompat
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Install NDK/CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.0.12077973" "cmake;3.22.1"
+
+      - name: Build hook payload
+        working-directory: observer-next/android
+        run: gradle :compatHook:assembleRelease --stacktrace
+
+      - name: Package Zygisk compatibility module
+        run: |
+          set -euo pipefail
+          APK="$(find observer-next/android/compatHook/build/outputs/apk/release -type f -name '*.apk' | head -n1)"
+          test -n "$APK"
+          mkdir -p out/module/hook out/module/zygisk
+
+          unzip -p "$APK" classes.dex > out/module/hook/classes.dex
+          unzip -p "$APK" lib/arm64-v8a/libpine.so > out/module/hook/libpine.so
+          unzip -p "$APK" lib/arm64-v8a/libdjaeger_r89_compat.so > out/module/zygisk/arm64-v8a.so
+
+          test -s out/module/hook/classes.dex
+          test -s out/module/hook/libpine.so
+          test -s out/module/zygisk/arm64-v8a.so
+
+          cat > out/module/module.prop <<'EOF'
+          id=djaeger_r89_cc112_zcompat
+          name=DJAEGER R89 Current APK Compatibility
+          version=1.0-r89-cc112-current-apk
+          versionCode=1
+          author=DJAEGER
+          description=Runtime-only compatibility for the already-installed DJAEGER GAMING VC112 APK. No APK replacement, no LSPosed. Keeps R89 engine truth and renders APP observe / visible game multiwindow semantics.
+          EOF
+
+          cat > out/module/customize.sh <<'EOF'
+          SKIPUNZIP=0
+          ui_print "- DJAEGER R89 Current APK Compatibility"
+          ui_print "- Keeps installed APK unchanged"
+          ui_print "- Uses Zygisk runtime hook; LSPosed is not used"
+          ui_print "- arm64 only"
+          [ "$ARCH" = "arm64" ] || abort "! arm64 device required"
+          EOF
+
+          chmod 755 out/module/customize.sh
+          chmod 644 out/module/module.prop out/module/hook/classes.dex out/module/hook/libpine.so out/module/zygisk/arm64-v8a.so
+          (
+            cd out/module
+            zip -qr ../DJAEGER-R89-CC112-CURRENT-APK-ZCOMPAT.zip .
+          )
+          sha256sum out/DJAEGER-R89-CC112-CURRENT-APK-ZCOMPAT.zip > out/DJAEGER-R89-CC112-CURRENT-APK-ZCOMPAT.sha256
+          unzip -l out/DJAEGER-R89-CC112-CURRENT-APK-ZCOMPAT.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-R89-CC112-CURRENT-APK-ZCOMPAT
+          path: |
+            out/DJAEGER-R89-CC112-CURRENT-APK-ZCOMPAT.zip
+            out/DJAEGER-R89-CC112-CURRENT-APK-ZCOMPAT.sha256
