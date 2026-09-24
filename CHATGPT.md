@@ -249,12 +249,21 @@ LATEST_CANONICAL_BUILD_RUN=35873269162
 LATEST_CANONICAL_ARTIFACT_ID=10757025416
 CANONICAL_ARTIFACT_STATUS=BUILD_VERIFIED_KNOWN_POSTINSTALL_LIFECYCLE_GAP
 
-LATEST_DEVICE_VERIFIED_PAIR=v1.1.8-v3.4-final+POSTINSTALL_HOTFIX1
-LATEST_DEVICE_VERIFIED_AT=2026-09-23T21:46:25+07:00
-LATEST_DEVICE_APK_VERSION_CODE=112
+LATEST_DEVICE_VERIFIED_PAIR=v12.9.50-r89-CC113-ONEHERMES-COMPAT1 + Control Center 1.1.9-r89-cc113
+LATEST_DEVICE_VERIFIED_AT=2026-09-25T00:43:32+07:00
+LATEST_DEVICE_APK_VERSION_CODE=113
+LATEST_DEVICE_APK_VERSION_NAME=1.1.9-r89-cc113
+LATEST_DEVICE_APK_SHA256=5f95beb6b8cb5767126cb1f8a2f0b0e1a352bff1b258c0d748f1523b65b35d44
 LATEST_DEVICE_MODULE_VERSION_CODE=211
+LATEST_DEVICE_MODULE_VERSION=v12.9.50-r89-CC113-ONEHERMES-COMPAT1
 LATEST_DEVICE_PAIR_VERIFIED=YES
-LATEST_DEVICE_RUNTIME_STATUS=LIVE_VERIFIED_WITH_POSTINSTALL_HOTFIX1
+LATEST_CC113_BUILD_BRANCH=r89-current-apk-compat
+LATEST_CC113_BUILD_COMMIT=a022c2f7914b42cfc33298e9f9167527a6efaf89
+LATEST_CC113_BUILD_RUN=36034563414
+LATEST_CC113_ARTIFACT_ID=10824220174
+LATEST_CC113_ARTIFACT_DIGEST=sha256:c7b17ea906bffd16705be4ce06e6618c3280d38de4e3c2f215d10e147ac41535
+LATEST_R89_CC113_MODULE_ZIP_SHA256=4f7ef54cf4738481e0c0da8e0f643d382f7334cdd5af4f714b3ed05bceb6e14f
+LATEST_DEVICE_RUNTIME_STATUS=LIVE_VERIFIED_R89_CC113
 LATEST_DEVICE_RUNTIME_EVIDENCE_AT=2026-09-23
 LATEST_DEVICE_HERMES_ACTIVE_SOURCE=HERMES_LOCAL
 LATEST_DEVICE_THOUGHT_WORKER_VERSION=ONE_HERMES_THOUGHT_V3_4
@@ -306,20 +315,21 @@ On the next DJAEGER GAMING work session:
 
 ## 15. CURRENT APK / R89 COMPATIBILITY HARD CONTRACT
 
-Status: **HARD CONTRACT — DO NOT OVERRIDE**
+Status: **HARD CONTRACT — LIVE VERIFIED ON CC113**
 
-Effective 2026-09-24:
+Effective 2026-09-25:
 
-- Keep the currently installed Control Center APK in use.
-- Installed APK identity: `com.djaeger.observer`, versionCode `112`, versionName `1.1.8-v3.4-final`.
-- Installed APK SHA-256: `97bc32bb68c93fa8ac6527a86bd18bd0a1b4752b13b0a65192f6fc3be03cca37`.
-- Do not ask the user to upgrade, replace, reinstall, or switch this APK for the R89 compatibility task.
+- The user explicitly approved replacing/upgrading the prior VC112 APK.
+- Current installed Control Center is `com.djaeger.observer`, versionCode `113`, versionName `1.1.9-r89-cc113`.
+- Installed APK SHA-256: `5f95beb6b8cb5767126cb1f8a2f0b0e1a352bff1b258c0d748f1523b65b35d44`.
+- Current R89 module identity: `v12.9.50-r89-CC113-ONEHERMES-COMPAT1`, versionCode `211`.
+- Pair handshake is `PAIR_VERIFIED=YES` with expected/app VC113.
+- Do not downgrade/replace this working pair unless the user explicitly requests rollback or a later verified upgrade.
 - Do not use LSPosed for this task.
-- R89/module/runtime compatibility must adapt to this APK.
-- Preserve existing Gemini, ONE HERMES Local/Cloud, device IDs, access IDs, tokens, key-vault slots, Railway/cloud endpoints, and other DJAEGER Gaming identity/config. Never store raw secrets in CHATGPT.md.
-- UI state must reflect real engine state; never fake hardware authority merely to satisfy labels.
+- Preserve R89 formulas, thermal/root authority, Gemini, ONE HERMES, credentials, identity, Railway/cloud configuration, and rollback behavior.
+- Never store raw keys/tokens/passwords in this file or chat output.
 
-### ENGINE / SESSION contract
+### ENGINE / SESSION contract — verified
 
 When `sts.al` remains running/visible but another app has actual focus:
 
@@ -337,11 +347,23 @@ Required runtime behavior:
 - window context remains `MULTIWINDOW`;
 - focused workload reports the actual focused app;
 - game execution is actually blocked;
-- R89 releases/restores game hardware authority and must not keep applying the game tuning envelope;
+- R89 restores/releases game hardware authority instead of leaving a game clamp active;
 - telemetry/observation may continue;
-- Gemini/ONE HERMES may observe but must not directly write game sysfs while execution is blocked.
+- Gemini/ONE HERMES may observe, but cloud reasoners never gain direct sysfs authority.
 
-When the game itself becomes the focused foreground workload:
+Real-device verification on 2026-09-25 with Control Center focused in freeform over Arcane Legends:
+- `ACTIVE=0`
+- `GAME=sts.al`
+- `WINDOW_MODE=MULTIWINDOW`
+- `WORKLOAD_CLASS=APP`
+- `PACKAGE=com.djaeger.observer`
+- `EXECUTOR_STATE=IDLE`
+- `APPLIED_PACKAGE=NONE`
+- `APPLIED_ACTUATORS=NONE`
+- restored sysfs: policy0 `1113600-1708800`, policy6 `1104000-2054400`, GPU `266000000-840000000`
+- UI text verified by UI hierarchy exactly includes `Session: APP ACTIVE • OBSERVE ONLY`, `Game: sts.al`, `Window: MULTIWINDOW`, `Focused workload: APP • com.djaeger.observer`, and `Game execution: BLOCKED / OBSERVE ONLY`.
+
+When the game itself becomes focused foreground workload:
 
 ```text
 Session: GAME ACTIVE
@@ -351,11 +373,28 @@ Focused workload: GAME • sts.al
 Game execution: ACTIVE
 ```
 
-Forbidden semantics for app-focused multiwindow:
+Real-device verification on 2026-09-25:
+- `active='1'`
+- `game='sts.al'`
+- `window_mode='FOREGROUND'`
+- R89 applied its real profile and hardware bounds under existing safety/readback logic.
+
+Forbidden app-focused semantics remain:
 - `GAME VISIBLE • FOCUS GUARD`
 - `VISIBLE • FOCUS GUARD`
 - `HELD • FOCUS GUARD`
 - `ENGINE ARMING`
+
+Credential/config continuity verified after upgrade without exposing secrets:
+- Gemini vault: 4 keys present.
+- Gemini config unchanged from pre-upgrade backup.
+- ONE HERMES cloud config unchanged from pre-upgrade backup.
+- Control Center Gemini vault, Hermes cloud config, and identity config unchanged from pre-upgrade backup.
+- Hermes access key present.
+- Railway config present.
+- Cloudflare config slots present.
+- Current snapshot reports Gemini READY and Hermes reachable.
+- LSPosed is not required by this implementation.
 
 ## 14. NEW CHAT / CHAT-LIMIT BOOTSTRAP
 
@@ -386,6 +425,19 @@ User fallback:
 
 
 ## 13. CHANGELOG
+### 2026-09-25 — R89 + Control Center 113 live contract verified
+- User explicitly approved upgrading/replacing the prior VC112 APK.
+- Built Control Center VC113 / `1.1.9-r89-cc113` from branch `r89-current-apk-compat`.
+- Build commit `a022c2f7914b42cfc33298e9f9167527a6efaf89`; GitHub Actions run `36034563414` SUCCESS; artifact ID `10824220174`.
+- Installed APK SHA-256 `5f95beb6b8cb5767126cb1f8a2f0b0e1a352bff1b258c0d748f1523b65b35d44`.
+- Live R89 module updated in place to `v12.9.50-r89-CC113-ONEHERMES-COMPAT1` while preserving the R89 controller/predictor and all existing credential/config stores.
+- Pair handshake verified: module VC211 / app VC113 / `PAIR_VERIFIED=YES`.
+- GAME-focused state verified: `active=1`, `sts.al`, `FOREGROUND`, R89 execution active.
+- APP-focused freeform-over-game state verified end-to-end: `ACTIVE=0`, `GAME=sts.al`, `MULTIWINDOW`, workload APP, executor IDLE, no applied actuators, original CPU/GPU bounds restored.
+- UI hierarchy verified the exact approved labels: APP ACTIVE / OBSERVE ONLY, sts.al, MULTIWINDOW, focused APP, BLOCKED / OBSERVE ONLY.
+- Credential continuity verified non-secretly: 4 Gemini keys, Hermes access key, identity, Railway, and Cloudflare configuration present; selected pre-upgrade config hashes unchanged.
+- Packaged current live R89 module to device Download as `DJAEGER-GAMING-R89-CC113-ONEHERMES-COMPAT1.zip`; SHA-256 `4f7ef54cf4738481e0c0da8e0f643d382f7334cdd5af4f714b3ed05bceb6e14f`; ZIP integrity PASS.
+
 ### 2026-09-23 — Post-install live verification + HOTFIX1
 - User installed and rebooted DJAEGER GAMING v1.1.8 V3.4 FINAL.
 - Real device proves APK VC112 / module VC211 / version `1.1.8-v3.4-final`.
