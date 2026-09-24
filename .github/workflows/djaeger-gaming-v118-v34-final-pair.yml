@@ -2,7 +2,7 @@ name: DJAEGER GAMING v1.1.8 V3.4 Final Pair
 
 on:
   push:
-    branches: [djaeger-gaming-v3.4-final-consolidation]
+    branches: [djaeger-gaming-v3.4-final-consolidation, r89-current-apk-compat]
   workflow_dispatch:
 
 permissions:
