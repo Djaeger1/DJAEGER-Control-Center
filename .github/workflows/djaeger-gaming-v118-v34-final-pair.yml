@@ -2,7 +2,7 @@ name: DJAEGER GAMING v1.1.8 V3.4 Final Pair
 
 on:
   push:
-    branches: [djaeger-gaming-v3.4-final-consolidation]
+    branches: [djaeger-gaming-v3.4-final-consolidation, djaeger-gaming-r89-overview-fix1]
   workflow_dispatch:
 
 permissions:
