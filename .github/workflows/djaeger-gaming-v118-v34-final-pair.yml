@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: djaeger-gaming-v118-v34-final-pair
@@ -167,6 +167,19 @@ jobs:
             echo 'SYSFS_AUTHORITY=AI_AGENT_INTERNAL_EXECUTOR_ONLY'
             echo 'LIVE_DEVICE_VALIDATION=REQUIRED_AFTER_INSTALL'
           } > out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL-BUILD-REPORT.txt
+
+      - name: Publish R89 current-APK runtime asset
+        if: github.ref_name == 'r89-current-apk-compat'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete r89-current-apk-compat --yes --cleanup-tag >/dev/null 2>&1 || true
+          gh release create r89-current-apk-compat \
+            out/DJAEGER-GAMING-v1.1.8-V3.4-FINAL.apk \
+            --target "$GITHUB_SHA" \
+            --title "R89 Current APK Compatibility Runtime" \
+            --notes "Runtime compatibility payload for the already-installed VC112 APK. Not an APK upgrade path."
 
       - uses: actions/upload-artifact@v4
         with:
