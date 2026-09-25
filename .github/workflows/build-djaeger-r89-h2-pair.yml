@@ -1,0 +1,115 @@
+name: Build DJAEGER R89-h2 + R22-4-h2 APK
+
+on:
+  push:
+    branches: [djaeger-r89-h2-pair-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Restore exact uploaded h2 source files
+        run: |
+          set -euo pipefail
+          ROOT=control-center-r2/app/src/main/java/com/djaeger/controlcenter
+
+          cat h2-payload/MainActivity.kt.gz.b64.part00 \
+              h2-payload/MainActivity.kt.gz.b64.part01 \
+              h2-payload/MainActivity.kt.gz.b64.part02 > /tmp/MainActivity.kt.gz.b64
+          base64 -d /tmp/MainActivity.kt.gz.b64 | gzip -d > "$ROOT/MainActivity.kt"
+
+          cat h2-payload/DjaegerRepository.kt.gz.b64.part00 \
+              h2-payload/DjaegerRepository.kt.gz.b64.part01 > /tmp/DjaegerRepository.kt.gz.b64
+          base64 -d /tmp/DjaegerRepository.kt.gz.b64 | gzip -d > "$ROOT/DjaegerRepository.kt"
+
+          base64 -d h2-payload/ConsolidatedRuntimeMapper.kt.gz.b64.part00 | gzip -d > "$ROOT/ConsolidatedRuntimeMapper.kt"
+          base64 -d h2-payload/KeyVault4.kt.gz.b64.part00 | gzip -d > "$ROOT/KeyVault4.kt"
+
+          test "$(wc -c < "$ROOT/MainActivity.kt")" -eq 39336
+          test "$(wc -c < "$ROOT/DjaegerRepository.kt")" -eq 22514
+          test "$(wc -c < "$ROOT/ConsolidatedRuntimeMapper.kt")" -eq 2835
+          test "$(wc -c < "$ROOT/KeyVault4.kt")" -eq 2798
+
+      - name: Pin h2 application identity
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("control-center-r2/app/build.gradle.kts")
+          s=p.read_text()
+          s=s.replace('versionCode = 12222', 'versionCode = 12225')
+          s=s.replace('versionName = "0.12.1-r22-r92ui2"', 'versionName = "0.12.1-r22-4-h2"')
+          p.write_text(s)
+          PY
+          grep -Fq 'versionCode = 12225' control-center-r2/app/build.gradle.kts
+          grep -Fq 'versionName = "0.12.1-r22-4-h2"' control-center-r2/app/build.gradle.kts
+
+      - name: Unit tests and release build
+        working-directory: control-center-r2
+        run: |
+          set -euo pipefail
+          gradle :app:testReleaseUnitTest :app:assembleRelease --stacktrace
+
+      - name: Sign and verify APK
+        run: |
+          set -euo pipefail
+          mkdir -p output signing
+          U="$(find control-center-r2/app/build/outputs/apk/release -type f -name '*unsigned.apk' | head -n1)"
+          test -n "$U"
+
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt \
+            -storetype PKCS12 \
+            -keystore signing/djaeger-r89-h2.p12 \
+            -storepass "$PASS" \
+            -keypass "$PASS" \
+            -alias djaeger-r89-h2 \
+            -keyalg RSA -keysize 4096 -validity 9125 \
+            -dname 'CN=DJAEGER R89-h2 Control Center, O=DJAEGER, C=ID'
+
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          "$BT/zipalign" -p -f 4 "$U" output/aligned.apk
+          "$BT/apksigner" sign \
+            --ks signing/djaeger-r89-h2.p12 \
+            --ks-type PKCS12 \
+            --ks-key-alias djaeger-r89-h2 \
+            --ks-pass "pass:$PASS" \
+            --key-pass "pass:$PASS" \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out output/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk \
+            output/aligned.apk
+
+          "$BT/apksigner" verify --verbose --print-certs output/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk | tee output/APKSIGNER_VERIFY.txt
+          "$BT/aapt" dump badging output/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk | tee output/AAPT_BADGING.txt
+          unzip -t output/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk > output/APK_ZIP_TEST.txt
+          sha256sum output/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk > output/SHA256SUMS.txt
+
+          grep -q "package: name='com.djaeger.controlcenter'" output/AAPT_BADGING.txt
+          grep -q "versionName='0.12.1-r22-4-h2'" output/AAPT_BADGING.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-R89-h2-R22-4-h2-APK
+          path: |
+            output/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk
+            output/AAPT_BADGING.txt
+            output/APKSIGNER_VERIFY.txt
+            output/APK_ZIP_TEST.txt
+            output/SHA256SUMS.txt
+          if-no-files-found: error
