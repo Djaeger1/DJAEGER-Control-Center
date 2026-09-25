@@ -1,0 +1,68 @@
+name: Build DJAEGER R89 + R22-4 h2 APK
+
+on:
+  push:
+    branches: [djaeger-r89-h2-apk-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Decode uploaded R22-4 h2 source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/djaeger-r22-src
+          base64 -d build-inputs/DJAEGER_R22-4_HermesOne_ANDROID_SOURCE_ONLY_h2.zip.b64 > /tmp/r22-4-h2.zip
+          unzip -q /tmp/r22-4-h2.zip -d /tmp/djaeger-r22-src
+
+      - name: Run Android tests and build APK
+        working-directory: /tmp/djaeger-r22-src/ui_source_repo/control-center-r2
+        run: |
+          set -euo pipefail
+          gradle :app:testReleaseUnitTest :app:assembleDebug --stacktrace
+
+      - name: Verify APK
+        working-directory: /tmp/djaeger-r22-src/ui_source_repo/control-center-r2
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' | head -n1)"
+          test -n "$APK"
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp "$APK" "$GITHUB_WORKSPACE/out/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk"
+
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          "$BUILD_TOOLS/aapt" dump badging "$GITHUB_WORKSPACE/out/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk" | tee "$GITHUB_WORKSPACE/out/AAPT_BADGING.txt"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$GITHUB_WORKSPACE/out/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk" | tee "$GITHUB_WORKSPACE/out/APKSIGNER_VERIFY.txt"
+          unzip -t "$GITHUB_WORKSPACE/out/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk" | tee "$GITHUB_WORKSPACE/out/APK_ZIP_TEST.txt"
+          sha256sum "$GITHUB_WORKSPACE/out/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk" | tee "$GITHUB_WORKSPACE/out/SHA256SUMS.txt"
+
+          grep -q "package: name='com.djaeger.controlcenter'" "$GITHUB_WORKSPACE/out/AAPT_BADGING.txt"
+          grep -q "versionName='0.12.1-r22-4-h2'" "$GITHUB_WORKSPACE/out/AAPT_BADGING.txt"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-R22-4-h2-APK
+          path: |
+            out/DJAEGER-Control-Center-v0.12.1-r22-4-h2.apk
+            out/AAPT_BADGING.txt
+            out/APKSIGNER_VERIFY.txt
+            out/APK_ZIP_TEST.txt
+            out/SHA256SUMS.txt
+          if-no-files-found: error
