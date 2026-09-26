@@ -160,7 +160,7 @@ class DjaegerRepository {
 
     suspend fun geminiChat(prompt:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
         if(prompt.isBlank()) return@withContext Pair(false,"CHAT_ERROR=EMPTY_PROMPT")
-        val (rc,out)=suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000)); Pair(rc==0,out.trim())
+        val (rc,out)=suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000),120000); Pair(rc==0,out.trim())
     }
 
     suspend fun geminiKnowledgeStatus():Pair<Boolean,String> = withContext(Dispatchers.IO){
