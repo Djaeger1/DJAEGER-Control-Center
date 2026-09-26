@@ -1,4 +1,4 @@
-name: Build VC12263 VC129659 CLOUDATTR UI1 FIX34
+name: Build VC12263 VC129655 CLOUDATTR UI1 FIX34
 on:
   push:
     branches: [codex/vc12263-cloudattr-ui-fix34]
@@ -47,6 +47,8 @@ jobs:
           python3 scripts/r54_pre_normalize_game_title.py
           python3 scripts/r54_hcc1_feedback4_ui1.py
           python3 scripts/r56_vc12263_vc129659_cloudattr_ui1_fix34.py
+          # Match the live installed module on the target device (VC129655) without touching module code.
+          sed -i 's/129659/129655/g' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
 
       - name: Exact source gates
         run: |
@@ -60,7 +62,7 @@ jobs:
           S=M[M.index('@Composable fun ThoughtsCard(s:RuntimeState)'):M.index('@Composable fun AgentRebuild3Card',M.index('@Composable fun ThoughtsCard(s:RuntimeState)'))]
           assert 'versionCode = 12263' in B
           assert 'syncModule=="129659"' in M and 'syncCc=="12263"' in M
-          assert "MODULE_VERSION_CODE='129659'" in RD and "CONTROL_CENTER_VERSION_CODE='12263'" in RD
+          assert "MODULE_VERSION_CODE='129655'" in RD and "CONTROL_CENTER_VERSION_CODE='12263'" in RD
           assert 'CLOUD_CONTROL_PROVIDER' in S and 'CLOUD_PLAN_PROVIDER' in S
           assert 'Cloud in control: $cloudInControl' in S
           assert 'Cloud plan: $cloudPlan' in S
@@ -70,7 +72,7 @@ jobs:
           assert 'visibleComfortPreset=="BASELINE"' in M and 'visibleComfortPreset=="COOL_STABLE"' in M
           assert '/sys/' not in R and '/proc/sys/' not in R
           print('SOURCE_GATE=PASS')
-          print('PAIR=VC129659+VC12263')
+          print('PAIR=VC129655+VC12263')
           PY
 
       - name: Unit tests and release build
@@ -83,7 +85,7 @@ jobs:
       - name: Official Android package/sign/parse gates
         run: |
           set -euo pipefail
-          OUT=output-vc12263-vc129659-fix34
+          OUT=output-vc12263-vc129655-gemini-fix
           rm -rf "$OUT" && mkdir -p "$OUT"
           U="$(find control-center-r2/app/build/outputs/apk/release -name '*unsigned.apk' | head -1)"
           test -n "$U"
