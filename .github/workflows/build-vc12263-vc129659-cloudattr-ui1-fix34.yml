@@ -47,8 +47,9 @@ jobs:
           python3 scripts/r54_pre_normalize_game_title.py
           python3 scripts/r54_hcc1_feedback4_ui1.py
           python3 scripts/r56_vc12263_vc129659_cloudattr_ui1_fix34.py
-          # Match the live installed module on the target device (VC129655) without touching module code.
+          # Match the live installed module and apply the Gemini Ask timeout fix after all generator scripts.
           sed -i 's/129659/129655/g' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
+          sed -i '/^    suspend fun geminiChat(prompt:String)/,/^    suspend fun geminiKnowledgeStatus()/ s/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000))/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000),120000)/' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
 
       - name: Exact source gates
         run: |
@@ -61,7 +62,7 @@ jobs:
           B=Path('control-center-r2/app/build.gradle.kts').read_text()
           S=M[M.index('@Composable fun ThoughtsCard(s:RuntimeState)'):M.index('@Composable fun AgentRebuild3Card',M.index('@Composable fun ThoughtsCard(s:RuntimeState)'))]
           assert 'versionCode = 12263' in B
-          assert 'syncModule=="129659"' in M and 'syncCc=="12263"' in M
+          assert 'syncModule=="129655"' in M and 'syncCc=="12263"' in M
           assert "MODULE_VERSION_CODE='129655'" in RD and "CONTROL_CENTER_VERSION_CODE='12263'" in RD
           assert 'CLOUD_CONTROL_PROVIDER' in S and 'CLOUD_PLAN_PROVIDER' in S
           assert 'Cloud in control: $cloudInControl' in S
@@ -82,6 +83,14 @@ jobs:
           gradle :app:testReleaseUnitTest --stacktrace
           gradle :app:assembleRelease --stacktrace
 
+      - name: Verify Gemini Ask timeout patch
+        run: |
+          set -euo pipefail
+          grep -Fq 'suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000),120000)' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          grep -Fq 'syncModule=="129655"' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
+          grep -Fq "MODULE_VERSION_CODE='129655'" control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
+          echo GEMINI_ASK_TIMEOUT_PATCH=PASS
+
       - name: Official Android package/sign/parse gates
         run: |
           set -euo pipefail
@@ -100,7 +109,7 @@ jobs:
           ALIAS=djaeger-vc12263-vc129659-fix34
           keytool -genkeypair -noprompt -storetype PKCS12 -keystore /tmp/fix34.p12             -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 4096 -validity 3650             -dname 'CN=DJAEGER VC12263 VC129659 FIX34, O=DJAEGER, C=ID'
 
-          APK="$OUT/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129659-CLOUDATTR1-UI1-FIX34.apk"
+          APK="$OUT/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129655-CLOUDATTR1-UI1-GEMINI-FIX.apk"
           "$BT/apksigner" sign             --ks /tmp/fix34.p12 --ks-type PKCS12 --ks-key-alias "$ALIAS"             --ks-pass "pass:$PASS" --key-pass "pass:$PASS"             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true             --out "$APK" "$OUT/aligned.apk"
 
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee "$OUT/APKSIGNER_VERIFY.txt"
@@ -119,11 +128,11 @@ jobs:
           sha256sum "$APK" > "$OUT/SHA256.txt"
           rm "$OUT/aligned.apk"
 
-          printf '%s\n'             'STATUS=PASS'             'SOURCE_PARENT=VC12263_PROVEN_377835d547d3131c138b06c2056110bf87fe6ef0'             'PAIR=VC129659+VC12263'             'AAPT_BADGING=PASS'             'AAPT_MANIFEST_TREE=PASS'             'ZIPALIGN=PASS'             'APK_SIGNATURE_V1=NOT_REQUIRED_MINSDK26'             'APK_SIGNATURE_V2=PASS'             'APK_SIGNATURE_V3=PASS'             'LANGUAGE_UI_REMOVED=YES'             'CLOUD_CONTROL_PROVIDER_AWARE=YES'             'CLOUD_PLAN_PROVIDER_AWARE=YES'             'LAYOUT_CHANGED=NO' > "$OUT/BUILD_REPORT.txt"
+          printf '%s\n'             'STATUS=PASS'             'SOURCE_PARENT=VC12263_PROVEN_377835d547d3131c138b06c2056110bf87fe6ef0'             'PAIR=VC129655+VC12263'             'AAPT_BADGING=PASS'             'AAPT_MANIFEST_TREE=PASS'             'ZIPALIGN=PASS'             'APK_SIGNATURE_V1=NOT_REQUIRED_MINSDK26'             'APK_SIGNATURE_V2=PASS'             'APK_SIGNATURE_V3=PASS'             'LANGUAGE_UI_REMOVED=YES'             'CLOUD_CONTROL_PROVIDER_AWARE=YES'             'CLOUD_PLAN_PROVIDER_AWARE=YES'             'LAYOUT_CHANGED=NO' > "$OUT/BUILD_REPORT.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: djaeger-vc12263-vc129659-cloudattr-ui1-fix34
+          name: djaeger-vc12263-vc129655-cloudattr-ui1-gemini-fix
           path: output-vc12263-vc129659-fix34/
           if-no-files-found: error
           retention-days: 30
