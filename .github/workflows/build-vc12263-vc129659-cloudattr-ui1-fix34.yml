@@ -133,6 +133,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: djaeger-vc12263-vc129655-cloudattr-ui1-gemini-fix
-          path: output-vc12263-vc129659-fix34/
+          path: output-vc12263-vc129655-gemini-fix/
           if-no-files-found: error
           retention-days: 30
