@@ -50,9 +50,18 @@ jobs:
           # Match the live installed module and apply the Gemini Ask timeout fix after all generator scripts.
           sed -i 's/129659/129655/g' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
           sed -i '/^    suspend fun geminiChat(prompt:String)/,/^    suspend fun geminiKnowledgeStatus()/ s/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000))/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000),120000)/' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          # Fix false "DJAEGER module not found": the live root snapshot contains module detection,
-          # runtime status, telemetry and all thermal-zone reads in one su call. 2.5s is too tight on-device.
-          sed -i 's/val (rc,out)=su(liveCmd)/val (rc,out)=su(liveCmd,8000)/' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          # Fix false "DJAEGER module not found": the live root snapshot combines module detection,
+          # runtime status, telemetry and thermal reads. Give this single root read a larger budget.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt')
+          s=p.read_text()
+          import re
+          s2,n=re.subn(r'val\s*\(rc,out\)\s*=\s*su\(liveCmd(?:,\s*\d+)?\)', 'val (rc,out)=su(liveCmd,8000)', s, count=1)
+          if n != 1:
+              raise SystemExit('SNAPSHOT_TIMEOUT_PATCH_ANCHOR_NOT_FOUND')
+          p.write_text(s2)
+          PY
 
       - name: Exact source gates
         run: |
@@ -75,7 +84,7 @@ jobs:
           assert 'GAME REGISTRY • MANUAL' in M and 'APP REGISTRY • MANUAL' in M
           assert 'visibleComfortPreset=="BASELINE"' in M and 'visibleComfortPreset=="COOL_STABLE"' in M
           assert '/sys/' not in R and '/proc/sys/' not in R
-          assert 'su(liveCmd,8000)' in R
+          assert 'su(liveCmd,8000)' in R or 'su(liveCmd, 8000)' in R
           print('SOURCE_GATE=PASS')
           print('PAIR=VC129655+VC12263')
           print('SNAPSHOT_TIMEOUT=8000MS')
