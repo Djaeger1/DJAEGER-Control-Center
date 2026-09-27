@@ -50,6 +50,9 @@ jobs:
           # Match the live installed module and apply the Gemini Ask timeout fix after all generator scripts.
           sed -i 's/129659/129655/g' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
           sed -i '/^    suspend fun geminiChat(prompt:String)/,/^    suspend fun geminiKnowledgeStatus()/ s/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000))/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000),120000)/' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          # Fix false "DJAEGER module not found": the live root snapshot contains module detection,
+          # runtime status, telemetry and all thermal-zone reads in one su call. 2.5s is too tight on-device.
+          sed -i 's/val (rc,out)=su(liveCmd)/val (rc,out)=su(liveCmd,8000)/' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
 
       - name: Exact source gates
         run: |
@@ -72,8 +75,10 @@ jobs:
           assert 'GAME REGISTRY • MANUAL' in M and 'APP REGISTRY • MANUAL' in M
           assert 'visibleComfortPreset=="BASELINE"' in M and 'visibleComfortPreset=="COOL_STABLE"' in M
           assert '/sys/' not in R and '/proc/sys/' not in R
+          assert 'su(liveCmd,8000)' in R
           print('SOURCE_GATE=PASS')
           print('PAIR=VC129655+VC12263')
+          print('SNAPSHOT_TIMEOUT=8000MS')
           PY
 
       - name: Unit tests and release build
@@ -89,7 +94,9 @@ jobs:
           grep -Fq 'suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000),120000)' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           grep -Fq 'syncModule=="129655"' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt
           grep -Fq "MODULE_VERSION_CODE='129655'" control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
+          grep -Fq 'su(liveCmd,8000)' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           echo GEMINI_ASK_TIMEOUT_PATCH=PASS
+          echo SNAPSHOT_TIMEOUT_PATCH=PASS
 
       - name: Official Android package/sign/parse gates
         run: |
@@ -128,7 +135,7 @@ jobs:
           sha256sum "$APK" > "$OUT/SHA256.txt"
           rm "$OUT/aligned.apk"
 
-          printf '%s\n'             'STATUS=PASS'             'SOURCE_PARENT=VC12263_PROVEN_377835d547d3131c138b06c2056110bf87fe6ef0'             'PAIR=VC129655+VC12263'             'AAPT_BADGING=PASS'             'AAPT_MANIFEST_TREE=PASS'             'ZIPALIGN=PASS'             'APK_SIGNATURE_V1=NOT_REQUIRED_MINSDK26'             'APK_SIGNATURE_V2=PASS'             'APK_SIGNATURE_V3=PASS'             'LANGUAGE_UI_REMOVED=YES'             'CLOUD_CONTROL_PROVIDER_AWARE=YES'             'CLOUD_PLAN_PROVIDER_AWARE=YES'             'LAYOUT_CHANGED=NO' > "$OUT/BUILD_REPORT.txt"
+          printf '%s\n'             'STATUS=PASS'             'SOURCE_PARENT=VC12263_PROVEN_377835d547d3131c138b06c2056110bf87fe6ef0'             'PAIR=VC129655+VC12263'             'AAPT_BADGING=PASS'             'AAPT_MANIFEST_TREE=PASS'             'ZIPALIGN=PASS'             'APK_SIGNATURE_V1=NOT_REQUIRED_MINSDK26'             'APK_SIGNATURE_V2=PASS'             'APK_SIGNATURE_V3=PASS'             'LANGUAGE_UI_REMOVED=YES'             'CLOUD_CONTROL_PROVIDER_AWARE=YES'             'CLOUD_PLAN_PROVIDER_AWARE=YES'             'LAYOUT_CHANGED=NO'             'SNAPSHOT_TIMEOUT_FIX=8000MS' > "$OUT/BUILD_REPORT.txt"
 
       - uses: actions/upload-artifact@v4
         with:
