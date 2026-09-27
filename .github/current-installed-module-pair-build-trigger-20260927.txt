@@ -1,0 +1,1 @@
+Build trigger for the live Poco X5 5G pairing: installed module VC129655 + Control Center VC12263.
