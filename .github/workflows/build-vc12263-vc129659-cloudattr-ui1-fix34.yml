@@ -47,55 +47,12 @@ jobs:
           python3 scripts/r54_pre_normalize_game_title.py
           python3 scripts/r54_hcc1_feedback4_ui1.py
           python3 scripts/r56_vc12263_vc129659_cloudattr_ui1_fix34.py
-          # Match the live installed module and keep the Gemini Ask timeout fix.
+          # Match the live installed module and apply the Gemini Ask timeout fix.
           sed -i 's/129659/129655/g' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
           sed -i '/^    suspend fun geminiChat(prompt:String)/,/^    suspend fun geminiKnowledgeStatus()/ s/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000))/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000),120000)/' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
-          # Root-cause fix for the misleading "DJAEGER module not found":
-          # keep the single atomic-root reader, but publish a tiny module-identity section
-          # from the same su process. The mapper uses it only as an installation fallback
-          # when cc_snapshot is unavailable. No second recurring root reader is introduced.
-          python3 - <<'PY'
-          from pathlib import Path
-          reader=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt')
-          mapper=Path('control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedRuntimeMapper.kt')
-          rd=reader.read_text()
-          rp='''                printf '\n__MODULE_IDENTITY__\n'
-                if [ -d /data/adb/modules/djaeger_game_stabilizer ]; then
-                  echo 'INSTALLED=1'
-                  sed -n 's/^versionCode=//p' /data/adb/modules/djaeger_game_stabilizer/module.prop 2>/dev/null | head -n 1 | sed 's/^/VERSION_CODE=/'
-                  sed -n 's/^version=//p' /data/adb/modules/djaeger_game_stabilizer/module.prop 2>/dev/null | head -n 1 | sed 's/^/VERSION=/'
-                else
-                  echo 'INSTALLED=0'
-                  echo 'VERSION_CODE=0'
-                  echo 'VERSION=unknown'
-                fi
-'''
-          anchor="            """.trimIndent()"
-          if "__MODULE_IDENTITY__" not in rd:
-              if anchor not in rd:
-                  raise SystemExit("MODULE_IDENTITY_READER_ANCHOR_NOT_FOUND")
-              rd=rd.replace(anchor,rp+anchor,1)
-          rm=mapper.read_text()
-          old="'''" + """        val installedText = s["INSTALLED"].orEmpty().trim()
-          val installed = installedText == "1" || installedText.equals("YES", true) || installedText.equals("TRUE", true)
-          val runtime = AtomicSnapshot.keyValues(s["RUNTIME"].orEmpty())""" + "'''"
-          new="'''" + """        val installedText = s["INSTALLED"].orEmpty().trim()
-          val moduleIdentity = AtomicSnapshot.keyValues(s["MODULE_IDENTITY"].orEmpty())
-          val fallbackInstalled = moduleIdentity["INSTALLED"]?.let { v ->
-              v == "1" || v.equals("YES", true) || v.equals("TRUE", true)
-          } ?: false
-          val installed = installedText == "1" || installedText.equals("YES", true) || installedText.equals("TRUE", true) || fallbackInstalled
-          val runtime = AtomicSnapshot.keyValues(s["RUNTIME"].orEmpty())""" + "'''"
-          if old not in rm:
-              raise SystemExit("MODULE_IDENTITY_MAPPER_ANCHOR_NOT_FOUND")
-          rm=rm.replace(old,new,1)
-          oldv='moduleVersion = s["VERSION"].orEmpty().trim().ifBlank { "unknown" },'
-          newv='moduleVersion = s["VERSION"].orEmpty().trim().ifBlank { moduleIdentity["VERSION"].orEmpty().ifBlank { "unknown" } },'
-          if oldv not in rm:
-              raise SystemExit("MODULE_IDENTITY_VERSION_ANCHOR_NOT_FOUND")
-          rm=rm.replace(oldv,newv,1)
-          reader.write_text(rd); mapper.write_text(rm)
-          PY
+          # Root-cause fix: make the single atomic root reader publish module identity
+          # even when cc_snapshot itself is absent, so UI cannot falsely say "module not found".
+          python3 scripts/fix_module_discovery.py
 
       - name: Exact source gates
         run: |
