@@ -66,14 +66,18 @@ jobs:
           script: |
             adb install -r apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk || exit 1
             adb shell am force-stop com.djaeger.apkreverse || exit 1
-            adb shell am start -W -n com.djaeger.apkreverse/.MainActivity || exit 1
+            START_OUT="$(adb shell am start -W -n com.djaeger.apkreverse/.MainActivity)"
+            echo "$START_OUT"
             sleep 3
-            adb shell dumpsys activity activities | grep -F "com.djaeger.apkreverse" || true
-            adb logcat -d -t 500
-            PID="$(adb shell pidof com.djaeger.apkreverse | tr -d '\r')"
-            echo "PID=$PID"
-            test -n "$PID" || exit 1
-            echo "EMULATOR_SMOKE_PASS pid=$PID"
+            ACTIVITY_STATE="$(adb shell dumpsys activity activities)"
+            echo "$ACTIVITY_STATE" | grep -F "mResumedActivity: ActivityRecord" | grep -F "com.djaeger.apkreverse/.MainActivity" >/dev/null || exit 1
+            echo "$ACTIVITY_STATE" | grep -F "processName=com.djaeger.apkreverse" >/dev/null || exit 1
+            echo "$ACTIVITY_STATE" | grep -F "app=ProcessRecord" | grep -F "com.djaeger.apkreverse" >/dev/null || exit 1
+            if adb logcat -d -t 500 | grep -F "FATAL EXCEPTION" | grep -F "com.djaeger.apkreverse" >/dev/null; then
+              echo "FATAL_EXCEPTION_DETECTED"
+              exit 1
+            fi
+            echo "EMULATOR_SMOKE_PASS activity=com.djaeger.apkreverse/.MainActivity"
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
