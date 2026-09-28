@@ -56,6 +56,16 @@ jobs:
           cp "$APK" out/DJAEGER-APK-Reverse-v0.2.0-debug.apk
           sha256sum out/DJAEGER-APK-Reverse-v0.2.0-debug.apk > out/SHA256SUMS.txt
 
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DJAEGER-APK-Reverse-v0.2.0
+          path: |
+            out/DJAEGER-APK-Reverse-v0.2.0-debug.apk
+            out/SHA256SUMS.txt
+          if-no-files-found: error
+
       - name: Emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -63,6 +73,9 @@ jobs:
           target: default
           arch: x86_64
           profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          emulator-boot-timeout: 300
           script: |
             adb install -r apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk || exit 1
             adb shell am force-stop com.djaeger.apkreverse || exit 1
