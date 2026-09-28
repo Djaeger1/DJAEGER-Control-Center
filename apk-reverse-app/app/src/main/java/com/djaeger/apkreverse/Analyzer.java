@@ -31,6 +31,30 @@ public final class Analyzer {
         public final List<String> signals = new ArrayList<>();
         public final List<String> sampleStrings = new ArrayList<>();
 
+
+        public String toAiExplanation(String fileName) {
+            StringBuilder b = new StringBuilder();
+            b.append("DJAEGER AI • ANALYSIS EXPLANATION\n");
+            b.append("================================\n");
+            b.append("Target: ").append(fileName).append("\n\n");
+            b.append("Ringkasan:\n");
+            b.append("• DEX: ").append(dexCount).append("\n");
+            b.append("• Native .so: ").append(nativeCount).append("\n");
+            b.append("• Signature entries: ").append(signatureFileCount).append("\n");
+            b.append("• Manifest: ").append(manifestPresent ? "tersedia" : "tidak terdeteksi").append("\n\n");
+            b.append("Interpretasi lokal:\n");
+            if (nativeCount > 0) b.append("• Ada komponen native; analisis native sebaiknya dilanjutkan dengan disassembler/toolchain terpisah.\n");
+            if (signatureFileCount > 0) b.append("• APK membawa material signature konvensional di META-INF; ini bukan verifikasi keaslian sertifikat secara penuh.\n");
+            if (signals.isEmpty()) b.append("• Heuristik proteksi bawaan tidak menemukan sinyal khusus.\n");
+            else for (String s : signals) b.append("• Sinyal: ").append(s).append("\n");
+            b.append("\nLangkah berikut:\n");
+            b.append("1. Audit manifest/permission dan komponen exported.\n");
+            b.append("2. Tinjau DEX + string sensitif.\n");
+            b.append("3. Tinjau native library dan proteksi runtime bila diperlukan.\n");
+            b.append("4. Simpan workspace sebelum melakukan perubahan.\n");
+            return b.toString();
+        }
+
         public String toReport(String fileName) {
             StringBuilder b = new StringBuilder();
             b.append("DJAEGER APK Reverse\n");
@@ -54,8 +78,8 @@ public final class Analyzer {
                 b.append("\nSample printable strings:\n");
                 for (String s : sampleStrings) b.append("  - ").append(s).append('\n');
             }
-            b.append("\nNote: v0.1 performs local, read-only APK reconnaissance.\n");
-            b.append("It does not patch, bypass security controls, or modify the selected APK.\n");
+            b.append("\nNote: local, read-only APK reconnaissance.\n");
+            b.append("Patch/Rebuild/Sign are intentionally not reported as successful without their toolchain.\n");
             return b.toString();
         }
     }
