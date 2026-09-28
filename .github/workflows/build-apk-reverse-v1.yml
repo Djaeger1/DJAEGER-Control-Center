@@ -43,7 +43,8 @@ jobs:
           test -s "$APK"
           unzip -t "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | grep -F "com.djaeger.apkreverse" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | grep -F "package: name='com.djaeger.apkreverse'" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | grep -F "launchable-activity: name='com.djaeger.apkreverse.MainActivity'" >/dev/null
 
       - name: Package artifact before runtime test
         if: always()
