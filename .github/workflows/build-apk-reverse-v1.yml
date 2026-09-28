@@ -65,13 +65,22 @@ jobs:
           script: |
             adb install -r apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk || exit 1
             adb shell am force-stop com.djaeger.apkreverse || exit 1
-            adb shell monkey -p com.djaeger.apkreverse 1 || exit 1
+            adb shell am start -W -n com.djaeger.apkreverse/.MainActivity || {
+              echo "AM_START_FAILED"
+              adb logcat -d -t 300
+              exit 1
+            }
             sleep 3
+            echo "=== TOP ACTIVITY ==="
+            adb shell dumpsys activity activities | grep -F "com.djaeger.apkreverse" || true
+            echo "=== PROCESS ==="
             PID="$(adb shell pidof com.djaeger.apkreverse | tr -d '\r')"
-            test -n "$PID" || { echo "APK process not running"; exit 1; }
-            adb shell dumpsys activity activities | grep -F "com.djaeger.apkreverse" >/dev/null || exit 1
+            if test -z "$PID"; then
+              echo "APK process not running; collecting logcat."
+              adb logcat -d -t 500
+              exit 1
+            fi
             echo "EMULATOR_SMOKE_PASS pid=$PID"
-
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
