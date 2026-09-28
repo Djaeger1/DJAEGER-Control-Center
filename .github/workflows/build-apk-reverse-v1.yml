@@ -38,12 +38,22 @@ jobs:
 
       - name: Validate APK structure
         run: |
-          set -euo pipefail
+          set -e
           APK="apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           unzip -t "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | grep -F "com.djaeger.apkreverse"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | grep -F "com.djaeger.apkreverse" >/dev/null
+
+      - name: Package artifact before runtime test
+        if: always()
+        run: |
+          set -e
+          APK="apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          mkdir -p out
+          cp "$APK" out/DJAEGER-APK-Reverse-v0.1.0-debug.apk
+          sha256sum out/DJAEGER-APK-Reverse-v0.1.0-debug.apk > out/SHA256SUMS.txt
 
       - name: Emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
@@ -53,22 +63,18 @@ jobs:
           arch: x86_64
           profile: pixel_2
           script: |
-            set -euo pipefail
-            adb install -r apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk
-            adb shell am force-stop com.djaeger.apkreverse
-            adb shell monkey -p com.djaeger.apkreverse 1
+            adb install -r apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk || exit 1
+            adb shell am force-stop com.djaeger.apkreverse || exit 1
+            adb shell monkey -p com.djaeger.apkreverse 1 || exit 1
             sleep 3
-            adb shell pidof com.djaeger.apkreverse
-            adb shell dumpsys activity activities | grep -F "com.djaeger.apkreverse"
+            PID="$(adb shell pidof com.djaeger.apkreverse | tr -d '\r')"
+            test -n "$PID" || { echo "APK process not running"; exit 1; }
+            adb shell dumpsys activity activities | grep -F "com.djaeger.apkreverse" >/dev/null || exit 1
+            echo "EMULATOR_SMOKE_PASS pid=$PID"
 
-      - name: Package artifact
-        run: |
-          set -euo pipefail
-          mkdir -p out
-          cp apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk out/DJAEGER-APK-Reverse-v0.1.0-debug.apk
-          sha256sum out/DJAEGER-APK-Reverse-v0.1.0-debug.apk > out/SHA256SUMS.txt
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: DJAEGER-APK-Reverse-v0.1.0
           path: |
