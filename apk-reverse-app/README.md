@@ -1,4 +1,6 @@
-# DJAEGER APK Reverse v0.1.0
+# DJAEGER APK Reverse v0.2.0
+
+Model A Control Center layout: Analysis, AI explanation, Operations status, Runtime checks and Workspace export.
 
 Standalone Android APK for local, read-only reconnaissance of APK packages.
 
