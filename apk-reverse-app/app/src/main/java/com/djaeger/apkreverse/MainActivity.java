@@ -154,6 +154,17 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 4102 && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(data.getData())) {
+                if (out == null) throw new IllegalStateException("File tujuan tidak dapat dibuka");
+                out.write(lastReport.getBytes("UTF-8"));
+                statusText.setText("Status: workspace report diekspor");
+                toast("Report diekspor.");
+            } catch (Exception e) {
+                toast("Export gagal: " + e.getMessage());
+            }
+            return;
+        }
         if (requestCode != PICK_APK || resultCode != RESULT_OK || data == null || data.getData() == null) return;
         selectedUri = data.getData();
         selectedName = resolveName(selectedUri);
