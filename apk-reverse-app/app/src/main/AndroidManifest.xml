@@ -4,7 +4,9 @@
         android:allowBackup="false"
         android:label="DJAEGER APK Reverse"
         android:supportsRtl="true"
-        android:theme="@style/AppTheme">
+        android:theme="@style/AppTheme"
+        android:icon="@drawable/ic_djaeger_logo"
+        android:roundIcon="@drawable/ic_djaeger_logo">
         <activity
             android:name="com.djaeger.apkreverse.MainActivity"
             android:exported="true">
