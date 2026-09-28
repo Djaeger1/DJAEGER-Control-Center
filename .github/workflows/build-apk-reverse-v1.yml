@@ -65,11 +65,11 @@ jobs:
           script: |
             adb install -r apk-reverse-app/app/build/outputs/apk/debug/app-debug.apk || exit 1
             adb shell am force-stop com.djaeger.apkreverse || exit 1
-            adb shell am start -W -n com.djaeger.apkreverse/.MainActivity || {
+            if ! adb shell am start -W -n com.djaeger.apkreverse/.MainActivity; then
               echo "AM_START_FAILED"
-              adb logcat -d -t 300
+              adb logcat -d -t 500
               exit 1
-            }
+            fi
             sleep 3
             echo "=== TOP ACTIVITY ==="
             adb shell dumpsys activity activities | grep -F "com.djaeger.apkreverse" || true
