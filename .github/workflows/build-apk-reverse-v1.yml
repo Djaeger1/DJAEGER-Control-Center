@@ -91,12 +91,3 @@ jobs:
               exit 1
             fi
             echo "EMULATOR_SMOKE_PASS activity=com.djaeger.apkreverse/.MainActivity"
-      - name: Upload artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: DJAEGER-APK-Reverse-v0.2.0
-          path: |
-            out/DJAEGER-APK-Reverse-v0.2.0-debug.apk
-            out/SHA256SUMS.txt
-          if-no-files-found: error
