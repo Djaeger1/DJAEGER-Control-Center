@@ -51,7 +51,7 @@ jobs:
           sed -i 's/129659/129655/g' control-center-r2/app/src/main/java/com/djaeger/controlcenter/MainActivity.kt control-center-r2/app/src/main/java/com/djaeger/controlcenter/ConsolidatedSnapshotReader.kt
           sed -i '/^    suspend fun geminiChat(prompt:String)/,/^    suspend fun geminiKnowledgeStatus()/ s/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000))/suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000),120000)/' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           # HERMES CHAT PERSISTENT BRIDGE: Cloud replies are allowed to complete for up to 180s.
-          sed -i '/^    suspend fun hermesChat(prompt:String)/,/^    suspend fun hermesChatClear()/ s/suStdin("$module/bin/observerctl.sh hermes-chat-stdin",prompt.take(8000),40000)/suStdin("$module/bin/observerctl.sh hermes-chat-stdin",prompt.take(8000),180000)/' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
+          sed -i '/^    suspend fun hermesChat(prompt:String)/,/^    suspend fun hermesChatClear()/ s|suStdin("$module/bin/observerctl.sh hermes-chat-stdin",prompt.take(8000),40000)|suStdin("$module/bin/observerctl.sh hermes-chat-stdin",prompt.take(8000),180000)|' control-center-r2/app/src/main/java/com/djaeger/controlcenter/DjaegerRepository.kt
           # Minimal fix: keep the single atomic reader but publish module identity
           # from the same root process when cc_snapshot is absent.
           python3 scripts/fix_module_discovery.py
