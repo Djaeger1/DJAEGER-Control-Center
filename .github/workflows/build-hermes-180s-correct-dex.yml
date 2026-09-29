@@ -113,20 +113,23 @@ jobs:
           echo "DEX_CHECKSUM=CORRECT" | tee -a out/BUILD_REPORT.txt
           echo "NATIVE_LIB_PACKAGING=STORED" | tee -a out/BUILD_REPORT.txt
 
-      - name: Share APK for live-device validation
-        run: |
-          set -euo pipefail
-          APK="out/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129655-HERMES-180S-CORRECT.apk"
-          URL="$(curl -fsS --retry 3 -F 'reqtype=fileupload' -F "fileToUpload=@$APK" https://catbox.moe/user/api.php)"
-          echo "$URL" | grep -Eq '^https://files\.catbox\.moe/'
-          echo "PUBLIC_APK_URL=$URL" | tee out/PUBLIC_APK_URL.txt
-          curl -fL --retry 3 "$URL" -o /tmp/verify.apk
-          cmp "$APK" /tmp/verify.apk
-          echo "PUBLIC_DOWNLOAD_VERIFY=PASS" | tee -a out/BUILD_REPORT.txt
-
       - uses: actions/upload-artifact@v4
         with:
           name: djaeger-hermes-180s-correct-vc12263
           path: out/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Share APK for live-device validation
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          APK="out/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129655-HERMES-180S-CORRECT.apk"
+          RESP="$(curl -fsS --retry 3 -X POST -F "file=@$APK" https://pixeldrain.com/api/file)"
+          ID="$(printf '%s' "$RESP" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id", ""))')"
+          test -n "$ID"
+          URL="https://pixeldrain.com/api/file/$ID"
+          echo "PUBLIC_APK_URL=$URL" | tee out/PUBLIC_APK_URL.txt
+          curl -fL --retry 3 "$URL" -o /tmp/verify.apk
+          cmp "$APK" /tmp/verify.apk
+          echo "PUBLIC_DOWNLOAD_VERIFY=PASS" | tee -a out/BUILD_REPORT.txt
