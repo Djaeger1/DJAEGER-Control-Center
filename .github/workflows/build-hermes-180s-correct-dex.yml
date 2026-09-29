@@ -1,0 +1,132 @@
+name: Build HERMES 180s Correct DEX APK
+on:
+  push:
+    branches: [codex/hermes-chat-persistent-bridge-fix]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch known-good VC12263 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p work out
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Djaeger1/DJAEGER-Control-Center/actions/artifacts/10927616180/zip" -o work/base-artifact.zip
+          unzip -q work/base-artifact.zip -d work/base
+          APK="$(find work/base -maxdepth 1 -name '*.apk' -print -quit)"
+          test -s "$APK"
+          cp "$APK" work/base.apk
+
+      - name: Patch DEX correctly and preserve native library packaging
+        run: |
+          set -euo pipefail
+          rm -rf work/apk
+          mkdir work/apk
+          unzip -q work/base.apk -d work/apk
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, struct, zlib
+          p=Path("work/apk/classes2.dex")
+          b=p.read_bytes()
+          old=(40000).to_bytes(4,"little")
+          new=(180000).to_bytes(4,"little")
+          assert b.count(old)==1, f"unexpected 40000 count: {b.count(old)}"
+          assert b.count(new)==0, f"180000 already present: {b.count(new)}"
+          i=b.index(old)
+          b=b[:i]+new+b[i+4:]
+          b=bytearray(b)
+          b[12:32]=hashlib.sha1(bytes(b[32:])).digest()
+          b[8:12]=struct.pack("<I", zlib.adler32(bytes(b[12:])) & 0xffffffff)
+          Path("work/apk/classes2.dex").write_bytes(b)
+          assert b[12:32]==hashlib.sha1(bytes(b[32:])).digest()
+          assert struct.unpack("<I",b[8:12])[0]==(zlib.adler32(bytes(b[12:])) & 0xffffffff)
+          assert b.count(old)==0 and b.count(new)==1
+          print("DEX_SHA1=PASS")
+          print("DEX_ADLER32=PASS")
+          print("HERMES_TIMEOUT=180000")
+          PY
+          rm -f work/apk/META-INF/*.SF work/apk/META-INF/*.RSA work/apk/META-INF/*.DSA work/apk/META-INF/*.EC 2>/dev/null || true
+          rm -f work/patched-unsigned.apk
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          root=Path("work/apk")
+          out=Path("work/patched-unsigned.apk")
+          with zipfile.ZipFile(out,"w") as z:
+              for p in sorted(root.rglob("*")):
+                  if not p.is_file():
+                      continue
+                  rel=p.relative_to(root).as_posix()
+                  comp=zipfile.ZIP_STORED if rel.startswith("lib/") and rel.endswith(".so") else zipfile.ZIP_DEFLATED
+                  z.write(p, rel, compress_type=comp, compresslevel=9 if comp==zipfile.ZIP_DEFLATED else None)
+          with zipfile.ZipFile(out) as z:
+              assert z.testzip() is None
+              for n in z.namelist():
+                  if n.startswith("lib/") and n.endswith(".so"):
+                      assert z.getinfo(n).compress_type==zipfile.ZIP_STORED, n
+          print("ZIP_INTEGRITY=PASS")
+          print("NATIVE_LIBS_STORED=PASS")
+          PY
+
+      - name: Align sign and verify
+        run: |
+          set -euo pipefail
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/zipalign" -p -f 4 work/patched-unsigned.apk out/aligned.apk
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore work/hermes180.p12 -storepass "$PASS" -keypass "$PASS" -alias hermes180 -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER HERMES 180s Correct DEX, O=DJAEGER, C=ID'
+          APK="out/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129655-HERMES-180S-CORRECT.apk"
+          "$BT/apksigner" sign --ks work/hermes180.p12 --ks-type PKCS12 --ks-key-alias hermes180 --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" out/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee out/APKSIGNER_VERIFY.txt
+          "$BT/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
+          "$BT/zipalign" -c -v 4 "$APK" > out/ZIPALIGN_VERIFY.txt
+          python3 - <<'PY'
+          import zipfile,hashlib,struct,zlib
+          apk="out/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129655-HERMES-180S-CORRECT.apk"
+          with zipfile.ZipFile(apk) as z:
+              d=z.read("classes2.dex")
+              assert d[12:32]==hashlib.sha1(d[32:]).digest()
+              assert struct.unpack("<I",d[8:12])[0]==(zlib.adler32(d[12:]) & 0xffffffff)
+              assert d.count((180000).to_bytes(4,"little"))==1
+              assert d.count((40000).to_bytes(4,"little"))==0
+              for n in z.namelist():
+                  if n.startswith("lib/") and n.endswith(".so"):
+                      assert z.getinfo(n).compress_type==zipfile.ZIP_STORED, n
+          print("FINAL_DURABLE_CHECKS=PASS")
+          PY
+          grep -q "package: name='com.djaeger.controlcenter'" out/AAPT_BADGING.txt
+          grep -q "versionCode='12263'" out/AAPT_BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APKSIGNER_VERIFY.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APKSIGNER_VERIFY.txt
+          sha256sum "$APK" | tee out/SHA256.txt
+          echo "STATUS=PASS" | tee out/BUILD_REPORT.txt
+          echo "PAIR=VC129655+VC12263" | tee -a out/BUILD_REPORT.txt
+          echo "HERMES_TIMEOUT_MS=180000" | tee -a out/BUILD_REPORT.txt
+          echo "DEX_CHECKSUM=CORRECT" | tee -a out/BUILD_REPORT.txt
+          echo "NATIVE_LIB_PACKAGING=STORED" | tee -a out/BUILD_REPORT.txt
+
+      - name: Share APK for live-device validation
+        run: |
+          set -euo pipefail
+          APK="out/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129655-HERMES-180S-CORRECT.apk"
+          URL="$(curl -fsS --retry 3 -F 'reqtype=fileupload' -F "fileToUpload=@$APK" https://catbox.moe/user/api.php)"
+          echo "$URL" | grep -Eq '^https://files\.catbox\.moe/'
+          echo "PUBLIC_APK_URL=$URL" | tee out/PUBLIC_APK_URL.txt
+          curl -fL --retry 3 "$URL" -o /tmp/verify.apk
+          cmp "$APK" /tmp/verify.apk
+          echo "PUBLIC_DOWNLOAD_VERIFY=PASS" | tee -a out/BUILD_REPORT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: djaeger-hermes-180s-correct-vc12263
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
