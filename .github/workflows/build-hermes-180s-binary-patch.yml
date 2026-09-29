@@ -1,0 +1,85 @@
+name: Build HERMES 180s Binary Patch
+on:
+  push:
+    branches: [codex/hermes-chat-persistent-bridge-fix]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download known-good VC12263 APK artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p work out
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Djaeger1/DJAEGER-Control-Center/actions/artifacts/10927616180/zip" -o work/base-artifact.zip
+          unzip -q work/base-artifact.zip -d work/base
+          APK="$(find work/base -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$APK"
+          cp "$APK" work/base.apk
+          sha256sum work/base.apk
+
+      - name: Patch HERMES bridge timeout in classes2.dex
+        run: |
+          set -euo pipefail
+          rm -rf work/apk && mkdir work/apk
+          unzip -q work/base.apk -d work/apk
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("work/apk/classes2.dex")
+          b=p.read_bytes()
+          old=(40000).to_bytes(4,"little")
+          new=(180000).to_bytes(4,"little")
+          assert b.count(old)==1, f"unexpected 40000 count: {b.count(old)}"
+          assert b.count(new)==0, f"180000 already present: {b.count(new)}"
+          i=b.index(old)
+          p.write_bytes(b[:i]+new+b[i+4:])
+          print(f"PATCH_OFFSET=0x{i:x}")
+          print(f"NEW_COUNT={(b.count(new)+1)}")
+          PY
+          rm -f work/apk/META-INF/*.SF work/apk/META-INF/*.RSA work/apk/META-INF/*.DSA work/apk/META-INF/*.EC 2>/dev/null || true
+          (cd work/apk && zip -q -r -9 ../patched-unsigned.apk .)
+          echo PATCH_UNSIGNED=PASS
+
+      - name: Align sign and verify APK
+        run: |
+          set -euo pipefail
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          test -x "$BT/zipalign"
+          test -x "$BT/apksigner"
+          test -x "$BT/aapt"
+          "$BT/zipalign" -p -f 4 work/patched-unsigned.apk out/aligned.apk
+          PASS="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore work/fix.p12 -storepass "$PASS" -keypass "$PASS" -alias djaeger-hermes-180s -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=DJAEGER HERMES 180s, O=DJAEGER, C=ID'
+          APK="out/DJAEGER-Control-Center-v0.12.1-r2-VC12263-VC129655-HERMES-180S.apk"
+          "$BT/apksigner" sign --ks work/fix.p12 --ks-type PKCS12 --ks-key-alias djaeger-hermes-180s --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$APK" out/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee out/APKSIGNER_VERIFY.txt
+          "$BT/aapt" dump badging "$APK" | tee out/AAPT_BADGING.txt
+          "$BT/zipalign" -c -v 4 "$APK" | tee out/ZIPALIGN_VERIFY.txt
+          unzip -t "$APK" | tee out/ZIP_TEST.txt
+          grep -q "package: name='com.djaeger.controlcenter'" out/AAPT_BADGING.txt
+          grep -q "versionCode='12263'" out/AAPT_BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' out/APKSIGNER_VERIFY.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' out/APKSIGNER_VERIFY.txt
+          sha256sum "$APK" | tee out/SHA256.txt
+          rm -rf out/aligned.apk
+          echo STATUS=PASS | tee out/BUILD_REPORT.txt
+          echo HERMES_BRIDGE_TIMEOUT_MS=180000 | tee -a out/BUILD_REPORT.txt
+          echo BINARY_PATCH_ONLY=YES | tee -a out/BUILD_REPORT.txt
+          echo BASE_ARTIFACT_ID=10927616180 | tee -a out/BUILD_REPORT.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: djaeger-hermes-180s-vc12263
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
