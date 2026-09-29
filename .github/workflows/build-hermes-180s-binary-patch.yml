@@ -46,7 +46,10 @@ jobs:
           print(f"NEW_COUNT={(b.count(new)+1)}")
           PY
           rm -f work/apk/META-INF/*.SF work/apk/META-INF/*.RSA work/apk/META-INF/*.DSA work/apk/META-INF/*.EC 2>/dev/null || true
-          (cd work/apk && zip -q -r -9 ../patched-unsigned.apk .)
+          rm -f work/patched-unsigned.apk
+          (cd work/apk && find . -type f ! -path './lib/*' -print | zip -q -9 ../patched-unsigned.apk -@)
+          (cd work/apk && find lib -type f -name '*.so' -print | zip -q -0 ../patched-unsigned.apk -@)
+          echo NATIVE_LIBS=STORED
           echo PATCH_UNSIGNED=PASS
 
       - name: Align sign and verify APK
