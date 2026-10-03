@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">DJAEGER Battery UI Sync</string>
+    <string name="module_description">MIUI SystemUI battery percentage resynchronization fix. Does not modify BatteryService, sysfs, charging, or thermal controls.</string>
+    <string-array name="xposed_scope">
+        <item>com.android.systemui</item>
+    </string-array>
+</resources>
