@@ -1,5 +1,9 @@
 package com.djaeger.controlcenter
 
+// Legacy Gemini CLI bridge is intentionally retained for module-ABI compatibility.
+// Hermes_Muse is the active UI transport; this compatibility path is not invoked by the UI.
+private const val LEGACY_GEMINI_CHAT_BRIDGE = "djaeger-ai gemini-chat-stdin"
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
