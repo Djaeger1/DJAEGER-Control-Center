@@ -1,13 +1,14 @@
 package com.djaeger.controlcenter
 
-// Legacy Gemini CLI bridge is intentionally retained for module-ABI compatibility.
-// Hermes_Muse is the active UI transport; this compatibility path is not invoked by the UI.
-private const val LEGACY_GEMINI_CHAT_BRIDGE = "djaeger-ai gemini-chat-stdin"
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
+
+// Legacy Gemini CLI bridge is intentionally retained for module-ABI compatibility.
+// Hermes_Muse is the active UI transport; this compatibility path is not invoked by the UI.
+private const val LEGACY_GEMINI_CHAT_BRIDGE = "djaeger-ai gemini-chat-stdin"
 
 data class Telemetry(val epoch:Long=0,val cpuT:Int=-1,val gpuT:Int=-1,val skinT:Int=-1,val batT:Int=-1,val littleKhz:Long=-1,val bigKhz:Long=-1,val gpuHz:Long=-1,val profile:String="NA",val frameMs:Double=0.0,val fps:Double=0.0,val jank:Double=0.0,val p95:Double=0.0,val p99:Double=0.0,val batteryStatus:String="NA",val currentUa:Long=-1,val voltageUv:Long=-1,val powerMw:Double=-1.0,val powerValid:String="REJECTED",val powerReason:String="NO_SAMPLE",val windowMode:String="INACTIVE")
 data class DecisionRecord(val id:String,val game:String,val scene:String,val profile:String,val little:String,val big:String,val gpu:String,val predSkin:String,val predFps:String,val outcome:String,val actualSkin:String,val actualFps:String,val window:String)
