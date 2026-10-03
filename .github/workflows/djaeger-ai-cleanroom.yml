@@ -4,7 +4,7 @@ on:
   push:
     branches: [djaeger-ai-cleanroom-v1]
   pull_request:
-    branches: [djaeger-ai-cleanroom-base]
+    branches: [djaeger-ai-cleanroom-base, build-control-center-base-20261003]
   workflow_dispatch:
 
 permissions:
