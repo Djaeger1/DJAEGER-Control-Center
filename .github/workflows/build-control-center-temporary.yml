@@ -1,6 +1,11 @@
 name: Build DJAEGER Control Center APK
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'observer-next/**'
+      - '.github/workflows/build-control-center-temporary.yml'
   pull_request:
     branches: [main]
     paths:
@@ -64,5 +69,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add build-output/
-          git commit -m "Build Control Center APK" || exit 0
-          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          git commit -m "Build Control Center APK"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          else
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi
