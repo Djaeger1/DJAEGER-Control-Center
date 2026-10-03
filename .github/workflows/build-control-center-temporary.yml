@@ -3,10 +3,13 @@ name: Build DJAEGER Control Center APK
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'observer-next/**'
+      - '.github/workflows/build-control-center-temporary.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-control-center:
@@ -50,11 +53,16 @@ jobs:
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs             "$GITHUB_WORKSPACE/DJAEGER-Control-Center-v1.0.0-adaptive-clean.apk"
           sha256sum "$GITHUB_WORKSPACE/DJAEGER-Control-Center-v1.0.0-adaptive-clean.apk"             | tee "$GITHUB_WORKSPACE/DJAEGER-Control-Center-v1.0.0-adaptive-clean.apk.sha256"
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: DJAEGER-Control-Center-v1.0.0-adaptive-clean
-          path: |
-            DJAEGER-Control-Center-v1.0.0-adaptive-clean.apk
-            DJAEGER-Control-Center-v1.0.0-adaptive-clean.apk.sha256
-          if-no-files-found: error
+      - name: Publish APK to build branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build-output
+          cp DJAEGER-Control-Center-v1.0.0-adaptive-clean.apk build-output/
+          cp DJAEGER-Control-Center-v1.0.0-adaptive-clean.apk.sha256 build-output/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add build-output/
+          git commit -m "Build Control Center APK" || exit 0
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
