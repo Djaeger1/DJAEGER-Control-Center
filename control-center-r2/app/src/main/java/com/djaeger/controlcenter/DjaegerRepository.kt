@@ -8,7 +8,7 @@ import java.util.concurrent.Executors
 data class Telemetry(val epoch:Long=0,val cpuT:Int=-1,val gpuT:Int=-1,val skinT:Int=-1,val batT:Int=-1,val littleKhz:Long=-1,val bigKhz:Long=-1,val gpuHz:Long=-1,val profile:String="NA",val frameMs:Double=0.0,val fps:Double=0.0,val jank:Double=0.0,val p95:Double=0.0,val p99:Double=0.0,val batteryStatus:String="NA",val currentUa:Long=-1,val voltageUv:Long=-1,val powerMw:Double=-1.0,val powerValid:String="REJECTED",val powerReason:String="NO_SAMPLE",val windowMode:String="INACTIVE")
 data class DecisionRecord(val id:String,val game:String,val scene:String,val profile:String,val little:String,val big:String,val gpu:String,val predSkin:String,val predFps:String,val outcome:String,val actualSkin:String,val actualFps:String,val window:String)
 data class PlanRecord(val state:String,val score:String,val reason:String,val mode:String,val profile:String,val lmin:String,val lmax:String,val bmin:String,val bmax:String,val gmin:String,val gmax:String)
-data class RuntimeState(val root:Boolean=false,val sampleFresh:Boolean=false,val installed:Boolean=false,val active:String="0",val game:String="NA",val window:String="INACTIVE",val controllerPid:String="",val predictorPid:String="",val updated:Long=0,val userMode:String="AUTO",val moduleVersion:String="unknown",val telemetry:Telemetry=Telemetry(),val brain:String="",val envelope:String="",val geminiHttp:String="",val geminiServer:String="",val decisions:String="",val plans:String="",val frameIntel:String="",val log:String="",val latestDecision:DecisionRecord?=null,val latestPlan:PlanRecord?=null,val error:String="")
+data class RuntimeState(val root:Boolean=false,val sampleFresh:Boolean=false,val installed:Boolean=false,val active:String="0",val game:String="NA",val window:String="INACTIVE",val controllerPid:String="",val predictorPid:String="",val updated:Long=0,val userMode:String="AUTO",val moduleVersion:String="unknown",val telemetry:Telemetry=Telemetry(),val brain:String="",val envelope:String="",val hermes_museHttp:String="",val hermes_museServer:String="",val decisions:String="",val plans:String="",val frameIntel:String="",val log:String="",val latestDecision:DecisionRecord?=null,val latestPlan:PlanRecord?=null,val error:String="")
 
 class DjaegerRepository {
     private val module="/data/adb/modules/djaeger_game_stabilizer"; private val persistent="/data/adb/djaeger_ai"
@@ -47,8 +47,8 @@ class DjaegerRepository {
         for z in /sys/class/thermal/thermal_zone*; do [ -r "${dollar}z/type" ] && [ -r "${dollar}z/temp" ] || continue; n=$dollar(cat "${dollar}z/type" 2>/dev/null); t=$dollar(cat "${dollar}z/temp" 2>/dev/null); printf 'THERMAL=%s|%s\n' "${dollar}n" "${dollar}t"; done
         echo __BRAIN__; cat '$persistent/local_brain_state' 2>/dev/null
         echo __ENV__; cat '$persistent/adaptive_operating_envelope' 2>/dev/null
-        echo __HTTP__; cat '$persistent/gemini_http_state' 2>/dev/null
-        echo __SERVER__; cat '$persistent/gemini_server_state' 2>/dev/null
+        echo __HTTP__; cat '$persistent/hermes_muse_http_state' 2>/dev/null
+        echo __SERVER__; cat '$persistent/hermes_muse_server_state' 2>/dev/null
         echo __DECISIONS__; tail -n 16 '$persistent/decision_ledger.csv' 2>/dev/null
         echo __PLANS__; tail -n 16 '$persistent/plan_history.csv' 2>/dev/null
         echo __FRAME__; tail -n 30 '$module/frame_intel.csv' 2>/dev/null
@@ -106,7 +106,7 @@ class DjaegerRepository {
         val decisions=section("DECISIONS","PLANS").trim();val plans=section("PLANS","FRAME").trim()
         val liveFresh=cpuLive>=0||gpuLive>=0||skinLive>=0||batLive>=0||little>0||big>0||gpu>0||hasLivePower
         val csvFresh=tel.epoch>0&&age in 0..5
-        RuntimeState(root=true,sampleFresh=liveFresh||csvFresh,installed=installed,active=rt["active"]?:"0",game=rt["game"]?:"NA",window=rt["window_mode"]?:"INACTIVE",controllerPid=rt["controller_pid"]?:"",predictorPid=rt["predictor_pid"]?:"",updated=rt["updated_at"]?.toLongOrNull()?:0,userMode=rt["user_mode"]?:"AUTO",moduleVersion=moduleVersion,telemetry=tel,brain=section("BRAIN","ENV").trim(),envelope=section("ENV","HTTP").trim(),geminiHttp=section("HTTP","SERVER").trim(),geminiServer=section("SERVER","DECISIONS").trim(),decisions=decisions,plans=plans,frameIntel=section("FRAME","LOG").trim(),log=section("LOG",null).trim(),latestDecision=parseDecision(decisions),latestPlan=parsePlan(plans))
+        RuntimeState(root=true,sampleFresh=liveFresh||csvFresh,installed=installed,active=rt["active"]?:"0",game=rt["game"]?:"NA",window=rt["window_mode"]?:"INACTIVE",controllerPid=rt["controller_pid"]?:"",predictorPid=rt["predictor_pid"]?:"",updated=rt["updated_at"]?.toLongOrNull()?:0,userMode=rt["user_mode"]?:"AUTO",moduleVersion=moduleVersion,telemetry=tel,brain=section("BRAIN","ENV").trim(),envelope=section("ENV","HTTP").trim(),hermes_museHttp=section("HTTP","SERVER").trim(),hermes_museServer=section("SERVER","DECISIONS").trim(),decisions=decisions,plans=plans,frameIntel=section("FRAME","LOG").trim(),log=section("LOG",null).trim(),latestDecision=parseDecision(decisions),latestPlan=parsePlan(plans))
     }
 
     suspend fun setUserMode(mode:String):Pair<Boolean,String> = withContext(Dispatchers.IO) {
@@ -132,26 +132,26 @@ class DjaegerRepository {
         }catch(e:Exception){Pair(127,"BRIDGE_ERROR="+(e.message?:"unknown"))}
         finally{readerExecutor.shutdownNow()}
     }
-    suspend fun geminiKeyStatus():Pair<Boolean,String> = withContext(Dispatchers.IO){
-        val (rc,out)=su("djaeger-ai gemini-key-status",5000); Pair(rc==0,out.trim())
+    suspend fun hermes_museKeyStatus():Pair<Boolean,String> = withContext(Dispatchers.IO){
+        val (rc,out)=su("djaeger-ai hermes_muse-key-status",5000); Pair(rc==0,out.trim())
     }
-    suspend fun saveGeminiKey(key:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
+    suspend fun saveHermes_MuseKey(key:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
         if(key.isBlank()) return@withContext Pair(false,"KEY_REJECTED=EMPTY")
-        val (rc,out)=suStdin("djaeger-ai gemini-key-stdin",key); Pair(rc==0,out.trim())
+        val (rc,out)=suStdin("djaeger-ai hermes_muse-key-stdin",key); Pair(rc==0,out.trim())
     }
-    suspend fun deleteGeminiKey():Pair<Boolean,String> = withContext(Dispatchers.IO){
-        val (rc,out)=su("djaeger-ai gemini-key-delete",5000); Pair(rc==0,out.trim())
+    suspend fun deleteHermes_MuseKey():Pair<Boolean,String> = withContext(Dispatchers.IO){
+        val (rc,out)=su("djaeger-ai hermes_muse-key-delete",5000); Pair(rc==0,out.trim())
     }
-    suspend fun geminiChat(prompt:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
+    suspend fun hermes_museChat(prompt:String):Pair<Boolean,String> = withContext(Dispatchers.IO){
         if(prompt.isBlank()) return@withContext Pair(false,"CHAT_ERROR=EMPTY_PROMPT")
-        val (rc,out)=suStdin("djaeger-ai gemini-chat-stdin",prompt.take(8000)); Pair(rc==0,out.trim())
+        val (rc,out)=suStdin("djaeger-ai hermes_muse-chat-stdin",prompt.take(8000)); Pair(rc==0,out.trim())
     }
 
-    suspend fun geminiKnowledgeStatus():Pair<Boolean,String> = withContext(Dispatchers.IO){
-        val (rc,out)=su("djaeger-ai gemini-knowledge-status"); Pair(rc==0,out.trim())
+    suspend fun hermes_museKnowledgeStatus():Pair<Boolean,String> = withContext(Dispatchers.IO){
+        val (rc,out)=su("djaeger-ai hermes_muse-knowledge-status"); Pair(rc==0,out.trim())
     }
-    suspend fun geminiChatClear():Pair<Boolean,String> = withContext(Dispatchers.IO){
-        val (rc,out)=su("djaeger-ai gemini-chat-clear",5000); Pair(rc==0,out.trim())
+    suspend fun hermes_museChatClear():Pair<Boolean,String> = withContext(Dispatchers.IO){
+        val (rc,out)=su("djaeger-ai hermes_muse-chat-clear",5000); Pair(rc==0,out.trim())
     }
 
     suspend fun authoritySyncStatus():Pair<Boolean,String> = withContext(Dispatchers.IO){
