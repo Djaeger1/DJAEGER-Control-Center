@@ -1,0 +1,7 @@
+{
+  "name":"djaeger-ai-clean-core",
+  "version":"1.0.0",
+  "private":true,
+  "scripts":{"test":"node --check server.js && node selftest.js && node isolation-check.js","start":"node server.js"},
+  "engines":{"node":">=20"}
+}
